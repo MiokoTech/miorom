@@ -1,0 +1,129 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "miorom"
+version = "0.12.0"
+description = "A Python library for ROM hacking and game reverse engineering"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "MiokoTech", email = "miokotech@gmail.com" }
+]
+keywords = [
+    # Core Domain & Reverse Engineering
+    "romhacking",
+    "rom-hacking",
+    "game-hacking",
+    "reverse-engineering",
+    "game-reverse-engineering",
+    "binary-analysis",
+    "game-localization",
+    "fan-translation",
+    "game-modding",
+    "binary-patching",
+    "binary-parser",
+    "decompilation",
+    "disassembler",
+    "bytecode-vm",
+    "elf-linker",
+    "code-injection",
+
+    # Consoles & Platforms
+    "nintendo",
+    "wii",
+    "gamecube",
+    "nintendo-ds",
+    "nds",
+    "gba",
+    "gameboy-advance",
+    "gameboy",
+    "n64",
+    "nintendo-64",
+    "snes",
+    "super-nintendo",
+    "playstation",
+    "ps1",
+    "psx",
+    "sega-genesis",
+    "megadrive",
+
+    # CPU Architectures & Assembly
+    "powerpc",
+    "mips",
+    "arm",
+    "split-pointer",
+    "code-cave",
+    "trampoline-hook",
+    "dol-executable",
+
+    # Formats, Containers & Filesystems
+    "iso9660",
+    "u8-archive",
+    "narc",
+    "sdat",
+    "sseq",
+    "brfnt",
+    "nftr",
+    "tpl-texture",
+    "tim-image",
+    "toc-archive",
+    "dual-table",
+
+    # Compression & Patching
+    "lz10",
+    "lz11",
+    "yaz0",
+    "rle-compression",
+    "huffman",
+    "ips-patch",
+    "bps-patch",
+    "xdelta",
+    "rom-patcher",
+
+    # Typography & Text Extraction
+    "variable-width-font",
+    "vwf",
+    "font-metrics",
+    "word-wrapper",
+    "textbox-simulator",
+    "string-scanner",
+    "pointer-table",
+    "charmap",
+    "ttf-compiler",
+
+    # Dynamic Analysis & Emulation
+    "dolphin-emulator",
+    "gdb-stub",
+    "memory-inspection",
+    "live-patching",
+    "shannon-entropy",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Disassemblers",
+    "Topic :: Games/Entertainment",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.scripts]
+miorom = "miorom.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
