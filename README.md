@@ -28,10 +28,10 @@ Designed with a **library-first philosophy** (analogous to `ndspy` and `pwntools
 
 ### From GitHub
 
-Install directly using `pip`:
+Install using `pip`:
 
 ```bash
-pip install git+https://github.com/MiokoTech/miorom.git
+pip install miorom
 ```
 
 ### From Source (Development Mode)
