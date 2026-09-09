@@ -770,6 +770,9 @@ def repack_rom(rom_in: str, rom_out: str, work_dir: str, patch_file: str = "") -
     os.makedirs(os.path.dirname(os.path.abspath(rom_out)), exist_ok=True)
     rom.saveToFile(rom_out)
     _post_fix_checksum(rom_out)
+    if patch_file:
+        from miorom.patch.xdelta import XdeltaPatcher
+        XdeltaPatcher.create_patch(rom_in, rom_out, patch_file)
 
 
 def _post_fix_checksum(rom_out: str) -> None:
@@ -779,10 +782,6 @@ def _post_fix_checksum(rom_out: str) -> None:
         fixed = fix_nds_checksum(rom_chk_bytes)
         with open(rom_out, "wb") as f_fix:
             f_fix.write(fixed)
-
-    if patch_file:
-        from miorom.patch.xdelta import XdeltaPatcher
-        XdeltaPatcher.create_patch(rom_in, rom_out, patch_file)
 
 
 # Descriptive aliases
