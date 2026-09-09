@@ -18,6 +18,7 @@ Designed with a **library-first philosophy** (analogous to `ndspy` and `pwntools
 - [Command-Line Interface (CLI) Reference](docs/CLI_REFERENCE.md) - Complete manual for `miorom` terminal tools (`unpack`, `repack`, `inspect`, `scan`, etc.).
 - [Console Platform & Format Reference](docs/PLATFORMS.md) - Deep dive into NDS, Wii/GC, PS1, N64, GBA, SNES, and Mega Drive formats.
 - [End-to-End Localization Workflow Guide](docs/WORKFLOW_GUIDE.md) - 6-phase walkthrough from untouched ROM to distributed patch.
+- [Adding New Platforms (Plugin Guide)](docs/PLUGIN_GUIDE.md) - Registering custom console handlers and codecs via inheritance or entry_points.
 - [Library Contracts](docs/LIBRARY_CONTRACTS.md) - Serialization, streaming, structured exceptions, patch composition, pipeline extension, and structural-typing contracts.
 - [Security Guide](docs/SECURITY.md) - Path traversal / zip-slip protection and the checklist for safely extracting untrusted archives.
 
