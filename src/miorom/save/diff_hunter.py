@@ -6,20 +6,21 @@ Compares sequential emulator save-states / memory dumps to isolate dynamic game 
 variables, and traces multi-level pointer chains through RAM back to static base anchors.
 """
 
+from miorom.result import MioRomResult
 import struct
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Union
 
 
 @dataclass
-class RAMSnapshot:
+class RAMSnapshot(MioRomResult):
     name: str
     data: bytes
     ram_base: int = 0x80000000
 
 
 @dataclass
-class DiffMatch:
+class DiffMatch(MioRomResult):
     offset: int
     ram_addr: int
     values: List[int]
@@ -31,7 +32,7 @@ class DiffMatch:
 
 
 @dataclass
-class PointerTrail:
+class PointerTrail(MioRomResult):
     base_ram: int
     offsets: List[int]
     resolved_target: int
@@ -44,7 +45,7 @@ class PointerTrail:
 
 
 @dataclass
-class DiffHunterReport:
+class DiffHunterReport(MioRomResult):
     snapshots_analyzed: int
     matches: List[DiffMatch] = field(default_factory=list)
     pointer_trails: List[PointerTrail] = field(default_factory=list)

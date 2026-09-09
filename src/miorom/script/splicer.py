@@ -6,13 +6,14 @@ Enables inserting or replacing bytes in a binary VM bytecode stream
 while automatically recalculating absolute and relative branch jump targets.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass
 import struct
 from typing import List, Sequence, Tuple
 
 
 @dataclass
-class SpliceTarget:
+class SpliceTarget(MioRomResult):
     """Represents a branch or jump operand in a bytecode stream."""
     instruction_offset: int
     operand_offset: int

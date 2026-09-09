@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Tests: 345 Passed](https://img.shields.io/badge/Tests-345%20Passed-brightgreen.svg)](tests/)
+[![Tests: 468 Passed](https://img.shields.io/badge/Tests-468%20Passed-brightgreen.svg)](tests/)
 [![Platforms: Multi-Console](https://img.shields.io/badge/Platforms-NDS%20%7C%20Wii%20%7C%20GC%20%7C%20N64%20%7C%20GBA%20%7C%20SNES%20%7C%20PS1-orange.svg)](docs/API_REFERENCE.md)
 
 **MioROM** is an advanced, modular Python framework and low-level primitive library for ROM hacking, game localization engineering, and binary reverse engineering.
@@ -18,6 +18,9 @@ Designed with a **library-first philosophy** (analogous to `ndspy` and `pwntools
 - [Command-Line Interface (CLI) Reference](docs/CLI_REFERENCE.md) - Complete manual for `miorom` terminal tools (`unpack`, `repack`, `inspect`, `scan`, etc.).
 - [Console Platform & Format Reference](docs/PLATFORMS.md) - Deep dive into NDS, Wii/GC, PS1, N64, GBA, SNES, and Mega Drive formats.
 - [End-to-End Localization Workflow Guide](docs/WORKFLOW_GUIDE.md) - 6-phase walkthrough from untouched ROM to distributed patch.
+- [Adding New Platforms (Plugin Guide)](docs/PLUGIN_GUIDE.md) - Registering custom `BaseRomHandler` implementations without forking MioROM.
+- [Library Contracts](docs/LIBRARY_CONTRACTS.md) - Serialization, streaming, structured exceptions, patch composition, pipeline extension, and structural-typing contracts.
+- [Security Guide](docs/SECURITY.md) - Path traversal / zip-slip protection and the checklist for safely extracting untrusted archives.
 
 ---
 
@@ -248,7 +251,13 @@ miorom/
 ├── README.md                   # Project overview and quickstart
 ├── docs/
 │   ├── API_REFERENCE.md        # Comprehensive 60+ class API reference
-│   └── BINARY_PRIMITIVES.md    # Low-level primitives developer guide
+│   ├── BINARY_PRIMITIVES.md    # Low-level primitives developer guide
+│   ├── CLI_REFERENCE.md        # Terminal command manual
+│   ├── PLATFORMS.md            # Per-console format specifications
+│   ├── WORKFLOW_GUIDE.md       # 6-phase localization pipeline walkthrough
+│   ├── PLUGIN_GUIDE.md         # Custom BaseRomHandler registration guide
+│   ├── LIBRARY_CONTRACTS.md    # Serialization, streaming, extensibility contracts
+│   └── SECURITY.md             # Untrusted-archive extraction safety guide
 ├── src/miorom/
 │   ├── core/                   # Stream I/O, Structs, Relocation, SymbolMap, HexDiff
 │   ├── patch/                  # IPS, BPS, Xdelta, and PatchWriter
@@ -265,7 +274,7 @@ miorom/
 │   ├── rom/                    # Universal ROM unpacker and repacker manager
 │   ├── scanner/                # Deep signature inspector, entropy profiling, crypto scans
 │   └── cli/                    # Command-line interface commands
-└── tests/                      # Pytest verification suite (345 unit tests)
+└── tests/                      # Pytest verification suite (405 unit tests)
 ```
 
 ---

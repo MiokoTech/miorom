@@ -1,13 +1,39 @@
-import struct
+from miorom.result import MioRomResult
+from miorom.errors import ParseError
 from dataclasses import dataclass, field
+from miorom.core.schema import BinaryStruct, RawBytes, U16, U32
 from typing import Dict, Optional, Tuple, List
 
 
 @dataclass
-class CharWidth:
+class CharWidth(MioRomResult):
     left_bearing: int
     glyph_width: int
     char_advance: int
+
+class BRFNTHeaderStruct(BinaryStruct):
+    magic = RawBytes(4)
+    byte_order_mark = U16()
+    version = U16()
+    file_size = U32()
+    header_size = U16()
+    num_sections = U16()
+
+class BRFNTWidthHeaderStruct(BinaryStruct):
+    magic = RawBytes(4)
+    size = U32()
+    first_glyph = U16()
+    last_glyph = U16()
+    next_section_offset = U32()
+
+class BRFNTCharMapHeaderStruct(BinaryStruct):
+    magic = RawBytes(4)
+    size = U32()
+    first_char = U16()
+    last_char = U16()
+    map_type = U16()
+    _reserved = U16()
+    next_section_offset = U32()
 
 
 class BRFNTFont:
@@ -47,15 +73,14 @@ class BRFNTFont:
     @classmethod
     def from_bytes(cls, data: bytes) -> "BRFNTFont":
         if len(data) < 16:
-            raise ValueError("Data too short for Nintendo font header.")
+            raise ParseError("Data too short for Nintendo font header.")
 
         magic = data[:4]
-        bom = struct.unpack(">H", data[4:6])[0]
+        bom = U16(endian=">").unpack(data, 4, ">")[0]
         endian = ">" if bom == 0xFEFF else "<"
-
-        magic_bytes, _, version, file_size, header_size, num_sections = struct.unpack(
-            f"{endian}4sHHIHH", data[:16]
-        )
+        header = BRFNTHeaderStruct.from_bytes(data, endian=endian)
+        header_size = header.header_size
+        num_sections = header.num_sections
 
         font = cls(endian=endian)
         pos = header_size
@@ -64,7 +89,7 @@ class BRFNTFont:
             if pos + 8 > len(data):
                 break
             sec_magic = data[pos:pos+4]
-            sec_size = struct.unpack(f"{endian}I", data[pos+4:pos+8])[0]
+            sec_size = U32(endian=endian).unpack(data, pos + 4, endian)[0]
             sec_data = data[pos:pos+sec_size]
 
             if sec_magic == b"FINF":
@@ -96,7 +121,8 @@ class BRFNTFont:
         if len(data) < 16:
             return
         # Magic (4), Size (4), First Glyph (2), Last Glyph (2), Next Section (4)
-        first_glyph, last_glyph = struct.unpack(f"{endian}HH", data[8:12])
+        width_header = BRFNTWidthHeaderStruct.from_bytes(data, endian=endian)
+        first_glyph, last_glyph = width_header.first_glyph, width_header.last_glyph
         pos = 16
         for g_idx in range(first_glyph, last_glyph + 1):
             if pos + 3 <= len(data):
@@ -111,26 +137,30 @@ class BRFNTFont:
         if len(data) < 20:
             return
         # Magic (4), Size (4), First Char (2), Last Char (2), Map Type (2), Reserved (2), Next Section (4)
-        first_char, last_char, map_type = struct.unpack(f"{endian}HHH", data[8:14])
+        charmap_header = BRFNTCharMapHeaderStruct.from_bytes(data, endian=endian)
+        first_char = charmap_header.first_char
+        last_char = charmap_header.last_char
+        map_type = charmap_header.map_type
         pos = 20
 
         if map_type == 0:  # Direct sequential mapping
-            index_offset = struct.unpack(f"{endian}H", data[pos:pos+2])[0]
+            index_offset = U16(endian=endian).unpack(data, pos, endian)[0]
             for c in range(first_char, last_char + 1):
                 self.char_to_glyph[c] = index_offset + (c - first_char)
         elif map_type == 1:  # Table mapping
             for c in range(first_char, last_char + 1):
                 if pos + 2 <= len(data):
-                    g_idx = struct.unpack(f"{endian}H", data[pos:pos+2])[0]
+                    g_idx = U16(endian=endian).unpack(data, pos, endian)[0]
                     if g_idx != 0xFFFF:
                         self.char_to_glyph[c] = g_idx
                     pos += 2
         elif map_type == 2:  # Key-value mapping
-            count = struct.unpack(f"{endian}H", data[pos:pos+2])[0]
+            count = U16(endian=endian).unpack(data, pos, endian)[0]
             pos += 2
             for _ in range(count):
                 if pos + 4 <= len(data):
-                    c, g_idx = struct.unpack(f"{endian}HH", data[pos:pos+4])
+                    c = U16(endian=endian).unpack(data, pos, endian)[0]
+                    g_idx = U16(endian=endian).unpack(data, pos + 2, endian)[0]
                     self.char_to_glyph[c] = g_idx
                     pos += 4
 

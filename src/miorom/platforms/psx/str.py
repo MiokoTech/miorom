@@ -1,12 +1,13 @@
-import struct
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from miorom.audio.xa import CdXaDecoder, cdxa_to_wav
+from miorom.core.schema import BinaryStruct, U16, U32
 
 
 @dataclass
-class CdSector:
+class CdSector(MioRomResult):
     index: int
     file_num: int
     channel: int
@@ -18,7 +19,7 @@ class CdSector:
 
 
 @dataclass
-class StrFrameChunk:
+class StrFrameChunk(MioRomResult):
     magic: int
     channel_id: int
     chunk_index: int
@@ -31,7 +32,7 @@ class StrFrameChunk:
 
 
 @dataclass
-class StrFrame:
+class StrFrame(MioRomResult):
     frame_index: int
     width: int
     height: int
@@ -42,6 +43,17 @@ class StrFrame:
     @property
     def is_complete(self) -> bool:
         return self.chunks_found >= self.chunks_total
+
+class STRVideoChunkHeaderStruct(BinaryStruct):
+    _endian = "<"
+    magic = U16()
+    channel_id = U16()
+    chunk_index = U16()
+    chunk_count = U16()
+    frame_index = U32()
+    bytes_used = U32()
+    width = U16()
+    height = U16()
 
 
 class StrDemuxer:
@@ -105,7 +117,7 @@ class StrDemuxer:
 
             # Fallback heuristic if submode is 0 (raw sectors)
             if not is_audio and not is_video and len(payload) >= 2:
-                magic = struct.unpack_from("<H", payload, 0)[0]
+                magic = U16().unpack(payload, 0, "<")[0]
                 if magic in (0x0160, 0x0150):
                     is_video = True
 
@@ -150,9 +162,15 @@ class StrDemuxer:
             if not sec.is_video or len(sec.payload) < 32:
                 continue
 
-            magic, channel_id, chunk_idx, chunk_count, frame_idx, bytes_used, width, height = struct.unpack_from(
-                "<HHHHIIHH", sec.payload, 0
-            )
+            chunk_header = STRVideoChunkHeaderStruct.from_bytes(sec.payload)
+            magic = chunk_header.magic
+            channel_id = chunk_header.channel_id
+            chunk_idx = chunk_header.chunk_index
+            chunk_count = chunk_header.chunk_count
+            frame_idx = chunk_header.frame_index
+            bytes_used = chunk_header.bytes_used
+            width = chunk_header.width
+            height = chunk_header.height
 
             # STR chunk magic 0x0160 (v2/v3) or 0x0150 (v1)
             if magic not in (0x0160, 0x0150):

@@ -1,5 +1,16 @@
-import struct
+from miorom.errors import ParseError
+from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U8
 from typing import Optional, List
+
+class GBAHeaderStruct(BinaryStruct):
+    _endian = "<"
+    _reserved_0x00 = RawBytes(0xA0)
+    title = FixedString(12)
+    game_code = FixedString(4)
+    maker_code = FixedString(2)
+    _reserved_0xB2 = RawBytes(10)
+    version = U8()
+    header_checksum = U8()
 
 
 class GBARom:
@@ -22,8 +33,10 @@ class GBARom:
 
     def __init__(self, data: bytes):
         if len(data) < 0xC0:
-            raise ValueError("Data too small to contain a valid GBA ROM header.")
+            raise ParseError("Data too small to contain a valid GBA ROM header.")
         self.data = bytearray(data)
+        self._header = GBAHeaderStruct.from_bytes(self.data, offset=0)
+        self._original_logo_and_entry = bytes(self.data[0:0xA0])
 
     @classmethod
     def from_file(cls, path: str) -> "GBARom":
@@ -32,34 +45,33 @@ class GBARom:
 
     @property
     def title(self) -> str:
-        raw_title = self.data[0xA0:0xAC]
-        return raw_title.split(b"\x00")[0].decode("ascii", errors="replace")
+        return self._header.title
 
     @title.setter
     def title(self, val: str):
-        encoded = val.encode("ascii", errors="replace")[:12].ljust(12, b"\x00")
-        self.data[0xA0:0xAC] = encoded
+        self._header.title = val
+        self.data[0xA0:0xBE] = self._header.to_bytes()[0xA0:]
 
     @property
     def game_code(self) -> str:
-        return self.data[0xAC:0xB0].decode("ascii", errors="replace")
+        return self._header.game_code
 
     @game_code.setter
     def game_code(self, val: str):
-        encoded = val.encode("ascii", errors="replace")[:4].ljust(4, b"\x00")
-        self.data[0xAC:0xB0] = encoded
+        self._header.game_code = val
+        self.data[0xA0:0xBE] = self._header.to_bytes()[0xA0:]
 
     @property
     def maker_code(self) -> str:
-        return self.data[0xB0:0xB2].decode("ascii", errors="replace")
+        return self._header.maker_code
 
     @property
     def version(self) -> int:
-        return self.data[0xBC]
+        return self._header.version
 
     @property
     def header_checksum(self) -> int:
-        return self.data[0xBD]
+        return self._header.header_checksum
 
     def calculate_header_checksum(self) -> int:
         """
@@ -78,7 +90,8 @@ class GBARom:
 
     def fix_header_checksum(self):
         """Recalculates and updates the complement check byte at 0xBD."""
-        self.data[0xBD] = self.calculate_header_checksum()
+        self._header.header_checksum = self.calculate_header_checksum()
+        self.data[0xA0:0xBE] = self._header.to_bytes()[0xA0:]
 
     def fix_checksum(self):
         """Alias for fix_header_checksum."""

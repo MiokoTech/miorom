@@ -7,12 +7,13 @@ and provides safe alignment-aware allocation and end-of-file growth.
 Prevents DMA corruption and downstream shifting when injecting expanded assets.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
 
 @dataclass
-class SlackBlock:
+class SlackBlock(MioRomResult):
     """Represents an unallocated contiguous region of padding bytes."""
     offset: int
     size: int
@@ -145,3 +146,57 @@ class SlackSpaceManager:
         offset = self.allocate(len(payload), alignment=alignment, allow_eof_growth=allow_eof_growth)
         self.buffer[offset : offset + len(payload)] = payload
         return offset
+
+
+class FarMemoryHeap:
+    """
+    Dedicated memory allocator for expanded ROM regions (e.g. 32MB -> 64MB far memory).
+    Allocates sequential chunks above a base offset with strict boundary and alignment tracking.
+    """
+
+    def __init__(
+        self,
+        buffer: bytearray,
+        base_offset: int,
+        max_size: Optional[int] = None,
+        alignment: int = 16,
+    ):
+        self.buffer = buffer
+        self.base_offset = base_offset
+        self.current_offset = base_offset
+        self.max_size = max_size or len(buffer)
+        self.alignment = alignment
+        self.allocated_blocks: List[Tuple[int, int]] = []
+
+    def allocate(self, size: int, alignment: Optional[int] = None) -> int:
+        align = alignment or self.alignment
+        rem = self.current_offset % align
+        if rem != 0:
+            self.current_offset += (align - rem)
+
+        alloc_offset = self.current_offset
+        end_offset = alloc_offset + size
+
+        if end_offset > self.max_size:
+            raise MemoryError(
+                f"FarMemoryHeap exhausted: cannot allocate {size} bytes at 0x{alloc_offset:08X} "
+                f"(limit: 0x{self.max_size:08X})"
+            )
+
+        # Grow buffer if needed
+        if end_offset > len(self.buffer):
+            self.buffer.extend(b"\x00" * (end_offset - len(self.buffer)))
+
+        self.current_offset = end_offset
+        self.allocated_blocks.append((alloc_offset, size))
+        return alloc_offset
+
+    def write(self, payload: bytes, alignment: Optional[int] = None) -> int:
+        """Allocate and write payload directly into far memory."""
+        offset = self.allocate(len(payload), alignment=alignment)
+        self.buffer[offset : offset + len(payload)] = payload
+        return offset
+
+    @property
+    def total_allocated_bytes(self) -> int:
+        return sum(sz for _, sz in self.allocated_blocks)

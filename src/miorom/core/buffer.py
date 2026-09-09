@@ -1,3 +1,4 @@
+from miorom.result import MioRomResult
 import struct
 from dataclasses import dataclass
 from typing import List, Dict, Optional, Tuple, Union, Any
@@ -5,8 +6,10 @@ from typing import List, Dict, Optional, Tuple, Union, Any
 from miorom.core.mapper import ByteOffsetMapper
 
 
+from miorom.errors import RelocationError
+
 @dataclass
-class RegisteredPointer:
+class RegisteredPointer(MioRomResult):
     pristine_pos: int
     size: int = 4  # 2 or 4 bytes
     endian: str = "<"
@@ -14,7 +17,7 @@ class RegisteredPointer:
 
 
 @dataclass
-class AnchoredField:
+class AnchoredField(MioRomResult):
     pristine_pos: int
     size: int = 2  # 2 or 4 bytes
     endian: str = "<"
@@ -140,7 +143,7 @@ class RelocatableBuffer:
             pos = idx + len(old_b)
 
         if not matches:
-            raise ValueError(f"Target text {old_text!r} not found in buffer.")
+            raise RelocationError(f"Target text {old_text!r} not found in buffer.")
 
         if occurrence >= len(matches):
             raise IndexError(

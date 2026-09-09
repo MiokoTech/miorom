@@ -1,10 +1,13 @@
+from miorom.result import MioRomResult
 import os
 from dataclasses import dataclass
 from typing import List, Optional, Dict, BinaryIO
 
+from miorom.security import sanitize_extract_path
+
 
 @dataclass
-class ArchiveEntry:
+class ArchiveEntry(MioRomResult):
     index: int
     name: str
     offset: int
@@ -26,7 +29,7 @@ class ArchiveContainer:
         for entry in self.entries:
             data_stream.seek(entry.offset)
             raw = data_stream.read(entry.size)
-            filepath = os.path.join(output_dir, entry.name)
+            filepath = sanitize_extract_path(output_dir, entry.name)
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
             with open(filepath, "wb") as f:
                 f.write(raw)

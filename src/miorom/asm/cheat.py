@@ -6,13 +6,14 @@ Generates Gecko Codes (Wii / GameCube), Action Replay (NDS / GBA),
 and CWCheat / GameShark (PSX / PSP) from memory edits and binary diffs.
 """
 
+from miorom.result import MioRomResult
 import struct
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Union
 
 
 @dataclass
-class CheatEntry:
+class CheatEntry(MioRomResult):
     entry_type: str  # "write32", "write16", "write8", "c2_asm", "raw"
     address: int
     value: int = 0

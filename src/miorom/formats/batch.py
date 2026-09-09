@@ -1,7 +1,11 @@
 import os
 import glob
 from typing import List, Optional
+import logging
 from miorom.formats.csv_handler import CsvHandler, TranslationRow
+
+logger = logging.getLogger(__name__)
+
 
 
 TRANSLATION_INSTRUCTIONS = """# Translation Guidelines
@@ -99,7 +103,7 @@ class BatchMerger:
                         if r.offset != 0:
                             translation_by_offset[r.offset] = val
             except Exception as e:
-                print(f"[!] Warning reading {b_file}: {e}")
+                logger.warning("Warning reading %s: %s", b_file, e)
 
         # If master_csv exists, apply onto master
         if master_csv and os.path.exists(master_csv):

@@ -1,4 +1,5 @@
 """
+from miorom.errors import RelocationError
 miorom.rom.expander
 ~~~~~~~~~~~~~~~~~~~
 Physical ROM Layout Expander & Far Memory Relocator.
@@ -8,6 +9,7 @@ enabling massive space expansions for translated script pools, high-res textures
 and injected C/assembly code payloads.
 """
 
+from miorom.result import MioRomResult
 import math
 import struct
 from dataclasses import dataclass, field
@@ -17,7 +19,7 @@ from miorom.platforms.n64 import fix_n64_checksum
 
 
 @dataclass
-class RomExpansionReport:
+class RomExpansionReport(MioRomResult):
     platform: str
     original_size: int
     new_size: int
@@ -66,11 +68,11 @@ class RomLayoutExpander:
         """
         orig_len = len(rom_data)
         if target_size <= orig_len:
-            raise ValueError(
+            raise RelocationError(
                 f"Target size (0x{target_size:X}) must be greater than current size (0x{orig_len:X})"
             )
         if target_size > cls.GBA_MAX_SIZE:
-            raise ValueError(f"GBA hardware addressing maximum is 32MB (0x{cls.GBA_MAX_SIZE:X})")
+            raise RelocationError(f"GBA hardware addressing maximum is 32MB (0x{cls.GBA_MAX_SIZE:X})")
 
         out = bytearray(rom_data)
         delta = target_size - orig_len
@@ -102,7 +104,7 @@ class RomLayoutExpander:
         """
         orig_len = len(rom_data)
         if target_size <= orig_len:
-            raise ValueError(f"Target size 0x{target_size:X} must exceed current size 0x{orig_len:X}")
+            raise RelocationError(f"Target size 0x{target_size:X} must exceed current size 0x{orig_len:X}")
 
         out = bytearray(rom_data)
         delta = target_size - orig_len
@@ -138,7 +140,7 @@ class RomLayoutExpander:
         """
         orig_len = len(rom_data)
         if target_size <= orig_len:
-            raise ValueError(f"Target size 0x{target_size:X} must exceed current size 0x{orig_len:X}")
+            raise RelocationError(f"Target size 0x{target_size:X} must exceed current size 0x{orig_len:X}")
 
         out = bytearray(rom_data)
         delta = target_size - orig_len
@@ -187,9 +189,9 @@ class RomLayoutExpander:
         Returns the number of pointers successfully updated.
         """
         if source_offset + source_size > len(rom_data):
-            raise ValueError("Source slice exceeds ROM buffer bounds")
+            raise RelocationError("Source slice exceeds ROM buffer bounds")
         if target_offset + source_size > len(rom_data):
-            raise ValueError("Target offset exceeds expanded ROM buffer bounds")
+            raise RelocationError("Target offset exceeds expanded ROM buffer bounds")
 
         # 1. Copy data chunk to far target
         payload = bytes(rom_data[source_offset : source_offset + source_size])

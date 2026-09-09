@@ -6,6 +6,8 @@ Eliminates character limits on fixed-width item names, menus, and spell tables
 by converting inline fixed slots into dynamic heap pointers, allowing arbitrary
 text expansion without corrupting adjacent record attributes.
 """
+from miorom.result import MioRomResult
+from miorom.errors import PatchError
 
 from dataclasses import dataclass, field
 import struct
@@ -17,7 +19,7 @@ from miorom.text.charmap import CharMap
 
 
 @dataclass
-class PointerizedSlot:
+class PointerizedSlot(MioRomResult):
     """Represents a converted record slot."""
     record_index: int
     slot_offset: int
@@ -27,7 +29,7 @@ class PointerizedSlot:
 
 
 @dataclass
-class SlotConversionReport:
+class SlotConversionReport(MioRomResult):
     """Report on fixed-slot to heap pointer conversion."""
     total_records: int
     slot_size: int
@@ -194,7 +196,7 @@ class PascalStringManager:
 
         if length_size == 1:
             if str_len > 255:
-                raise ValueError(f"String exceeds 1-byte Pascal length limit ({str_len} > 255)")
+                raise PatchError(f"String exceeds 1-byte Pascal length limit ({str_len} > 255)")
             buffer[offset] = str_len
         else:
             struct.pack_into(f"{endian}H", buffer, offset, str_len)

@@ -1,3 +1,4 @@
+from miorom.result import MioRomResult
 import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -12,7 +13,7 @@ from miorom.text.font_builder import BitmapFont
 
 
 @dataclass
-class TextboxConfig:
+class TextboxConfig(MioRomResult):
     """Dimensions, typography, and constraints for a simulated game dialogue box."""
     box_width_pixels: int = 240      # Total width of the textbox (e.g. 240 for GBA, 256 for SNES)
     box_height_pixels: int = 64      # Total height of the textbox
@@ -33,7 +34,7 @@ class TextboxConfig:
 
 
 @dataclass
-class DialoguePage:
+class DialoguePage(MioRomResult):
     """Represents a single screen/page of dialogue within a textbox."""
     page_index: int
     lines: List[str]

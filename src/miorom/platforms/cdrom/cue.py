@@ -1,4 +1,6 @@
+from miorom.result import MioRomResult
 import re
+from miorom.errors import ParseError
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -21,7 +23,7 @@ def parse_msf(msf_str: str) -> int:
     """Parse 'MM:SS:FF' string to LBA."""
     parts = msf_str.strip().split(":")
     if len(parts) != 3:
-        raise ValueError(f"Invalid MSF timestamp '{msf_str}'. Expected MM:SS:FF.")
+        raise ParseError(f"Invalid MSF timestamp '{msf_str}'. Expected MM:SS:FF.")
     return msf_to_lba(int(parts[0]), int(parts[1]), int(parts[2]))
 
 
@@ -32,7 +34,7 @@ def format_msf(lba: int) -> str:
 
 
 @dataclass
-class CueTrack:
+class CueTrack(MioRomResult):
     """Represents a single track within a CD CUE sheet."""
     number: int
     track_type: str  # "MODE1/2352", "MODE2/2352", "AUDIO", "MODE1/2048", "MODE2/2336"

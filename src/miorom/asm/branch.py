@@ -2,6 +2,8 @@ import struct
 from typing import Optional, Tuple
 
 
+from miorom.errors import RelocationError
+
 class ARMBranch:
     """
     32-bit ARM state branch encoder and decoder (ARMv4T / ARMv5TE, used in GBA and NDS).
@@ -23,7 +25,7 @@ class ARMBranch:
         """
         diff = target_addr - (source_pc + 8)
         if diff % 4 != 0:
-            raise ValueError(f"Target address 0x{target_addr:08X} is not 4-byte aligned.")
+            raise ParseError(f"Target address 0x{target_addr:08X} is not 4-byte aligned.")
 
         imm24 = (diff >> 2) & 0x00FFFFFF
         opcode_base = 0x0B000000 if link else 0x0A000000
@@ -62,7 +64,7 @@ class ThumbBranch:
         """
         diff = target_addr - (source_pc + 4)
         if diff % 2 != 0:
-            raise ValueError(f"Thumb target address 0x{target_addr:08X} is not 2-byte aligned.")
+            raise ParseError(f"Thumb target address 0x{target_addr:08X} is not 2-byte aligned.")
 
         imm11 = (diff >> 1) & 0x7FF
         instr = 0xE000 | imm11
@@ -76,7 +78,7 @@ class ThumbBranch:
         """
         diff = target_addr - (source_pc + 4)
         if diff % 2 != 0:
-            raise ValueError(f"Thumb target address 0x{target_addr:08X} is not 2-byte aligned.")
+            raise ParseError(f"Thumb target address 0x{target_addr:08X} is not 2-byte aligned.")
 
         offset22 = (diff >> 1)
         hi_11 = (offset22 >> 11) & 0x7FF
@@ -112,10 +114,10 @@ class PowerPCBranch:
             diff = target_addr - source_pc
 
         if diff % 4 != 0:
-            raise ValueError(f"PowerPC target address 0x{target_addr:08X} is not 4-byte aligned.")
+            raise ParseError(f"PowerPC target address 0x{target_addr:08X} is not 4-byte aligned.")
 
         if not absolute and (diff < -0x02000000 or diff > 0x01FFFFFC):
-            raise ValueError(f"PowerPC relative branch target 0x{target_addr:08X} out of range (diff: {diff}).")
+            raise RelocationError(f"PowerPC relative branch target 0x{target_addr:08X} out of range (diff: {diff}).")
 
         li24 = (diff >> 2) & 0x00FFFFFF
         aa = 1 if absolute else 0
@@ -132,7 +134,7 @@ class PowerPCBranch:
         instr = struct.unpack(">I", instr_bytes[:4])[0]
         opcode = (instr >> 26) & 0x3F
         if opcode != 18:
-            raise ValueError(f"Instruction 0x{instr:08X} is not a PowerPC unconditional branch (opcode {opcode} != 18).")
+            raise ParseError(f"Instruction 0x{instr:08X} is not a PowerPC unconditional branch (opcode {opcode} != 18).")
 
         li24 = (instr >> 2) & 0x00FFFFFF
         aa = bool((instr >> 1) & 1)
@@ -176,12 +178,12 @@ class MIPSBranch:
         MIPS jump targets must share the same 256MB region with the jump delay slot (source_pc + 4).
         """
         if target_addr % 4 != 0:
-            raise ValueError(f"MIPS target address 0x{target_addr:08X} is not 4-byte aligned.")
+            raise ParseError(f"MIPS target address 0x{target_addr:08X} is not 4-byte aligned.")
 
         pc_seg = (source_pc + 4) & 0xF0000000
         tgt_seg = target_addr & 0xF0000000
         if pc_seg != tgt_seg:
-            raise ValueError(
+            raise ParseError(
                 f"MIPS jump target 0x{target_addr:08X} is in a different 256MB segment than PC 0x{source_pc:08X}."
             )
 
@@ -199,7 +201,7 @@ class MIPSBranch:
         instr = struct.unpack(f"{endian}I", instr_bytes[:4])[0]
         opcode = (instr >> 26) & 0x3F
         if opcode not in (2, 3):
-            raise ValueError(f"Instruction 0x{instr:08X} is not a MIPS J/JAL instruction (opcode {opcode}).")
+            raise ParseError(f"Instruction 0x{instr:08X} is not a MIPS J/JAL instruction (opcode {opcode}).")
 
         target_index = instr & 0x03FFFFFF
         target_addr = ((source_pc + 4) & 0xF0000000) | (target_index << 2)

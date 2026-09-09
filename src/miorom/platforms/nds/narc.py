@@ -1,11 +1,15 @@
+from miorom.result import MioRomResult
 import os
-import struct
+from miorom.errors import ParseError
 from dataclasses import dataclass
+from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U8, U16, U32
 from typing import List, Optional, Tuple, Dict, Any
+
+from miorom.security import sanitize_extract_path
 
 
 @dataclass
-class NARCEntry:
+class NARCEntry(MioRomResult):
     index: int
     name: str
     size: int
@@ -22,6 +26,37 @@ class NARCArchive:
     BTAF_MAGIC = b"BTAF"
     BTNF_MAGIC = b"BTNF"
     GMIF_MAGIC = b"GMIF"
+
+    class _Header(BinaryStruct):
+        _endian = "<"
+        magic = FixedString(4)
+        bom = U16()
+        version = U16()
+        file_size = U32()
+        header_size = U16()
+        num_chunks = U16()
+
+    class _SectionHeader(BinaryStruct):
+        _endian = "<"
+        magic = RawBytes(4)
+        size = U32()
+
+    class _FatHeader(BinaryStruct):
+        _endian = "<"
+        file_count = U16()
+        _reserved = U16()
+
+    class _FatEntry(BinaryStruct):
+        _endian = "<"
+        start_offset = U32()
+        end_offset = U32()
+
+    class _BtNFRoot(BinaryStruct):
+        _endian = "<"
+        root_offset = U32()
+        first_file_id = U16()
+        directory_count = U8()
+        _reserved = U8()
 
     @classmethod
     def is_narc(cls, data: bytes) -> bool:
@@ -40,7 +75,7 @@ class NARCArchive:
         padding = max(4, len(str(len(entries))))
         for e in entries:
             filename = e.name if e.name else f"file_{e.index:0{padding}d}.bin"
-            file_path = os.path.join(output_dir, filename)
+            file_path = sanitize_extract_path(output_dir, filename)
             with open(file_path, "wb") as f_out:
                 f_out.write(e.data)
             extracted.append(file_path)
@@ -51,40 +86,54 @@ class NARCArchive:
     def unpack_entries(cls, data: bytes) -> List[NARCEntry]:
         """Parses all file entries from NARC binary data."""
         if not cls.is_narc(data):
-            raise ValueError("Data is not a valid Nintendo NARC archive.")
+            raise ParseError("Data is not a valid Nintendo NARC archive.")
 
         # Header (16 bytes): MAGIC (4), BOM (2), Version (2), FileSize (4), HeaderSize (2), Chunks (2)
-        bom, version, file_size, header_size, num_chunks = struct.unpack_from("<HHIHH", data, 4)
+        narc_header = cls._Header.from_bytes(data, offset=0)
+        bom = narc_header.bom
+        version = narc_header.version
+        file_size = narc_header.file_size
+        header_size = narc_header.header_size
+        num_chunks = narc_header.num_chunks
 
         # 1. BTAF section (File Allocation Table)
         btaf_pos = header_size
-        btaf_magic, btaf_size = struct.unpack_from("<4sI", data, btaf_pos)
+        btaf_header = cls._SectionHeader.from_bytes(data, offset=btaf_pos)
+        btaf_magic = btaf_header.magic
+        btaf_size = btaf_header.size
         if btaf_magic != cls.BTAF_MAGIC:
-            raise ValueError(f"Expected BTAF header at 0x{btaf_pos:X}, got {btaf_magic}")
+            raise ParseError(f"Expected BTAF header at 0x{btaf_pos:X}, got {btaf_magic}")
 
-        file_count = struct.unpack_from("<H", data, btaf_pos + 8)[0]
+        fat_header = cls._FatHeader.from_bytes(data, offset=btaf_pos + 8)
+        file_count = fat_header.file_count
         fat_entries = []
         fat_ptr = btaf_pos + 12
 
         for i in range(file_count):
-            start_off, end_off = struct.unpack_from("<II", data, fat_ptr)
+            fat_entry = cls._FatEntry.from_bytes(data, offset=fat_ptr)
+            start_off = fat_entry.start_offset
+            end_off = fat_entry.end_offset
             fat_entries.append((start_off, end_off))
             fat_ptr += 8
 
         # 2. BTNF section (File Name Table)
         btnf_pos = btaf_pos + btaf_size
-        btnf_magic, btnf_size = struct.unpack_from("<4sI", data, btnf_pos)
+        btnf_header = cls._SectionHeader.from_bytes(data, offset=btnf_pos)
+        btnf_magic = btnf_header.magic
+        btnf_size = btnf_header.size
         if btnf_magic != cls.BTNF_MAGIC:
-            raise ValueError(f"Expected BTNF header at 0x{btnf_pos:X}, got {btnf_magic}")
+            raise ParseError(f"Expected BTNF header at 0x{btnf_pos:X}, got {btnf_magic}")
 
         # Parse file names if BTNF is not dummy (size > 16)
         names = cls._parse_btnf_names(data[btnf_pos:btnf_pos + btnf_size], file_count)
 
         # 3. GMIF section (Game Image File / Payload)
         gmif_pos = btnf_pos + btnf_size
-        gmif_magic, gmif_size = struct.unpack_from("<4sI", data, gmif_pos)
+        gmif_header = cls._SectionHeader.from_bytes(data, offset=gmif_pos)
+        gmif_magic = gmif_header.magic
+        gmif_size = gmif_header.size
         if gmif_magic != cls.GMIF_MAGIC:
-            raise ValueError(f"Expected GMIF header at 0x{gmif_pos:X}, got {gmif_magic}")
+            raise ParseError(f"Expected GMIF header at 0x{gmif_pos:X}, got {gmif_magic}")
 
         gmif_data_start = gmif_pos + 8
 
@@ -152,26 +201,26 @@ class NARCArchive:
 
         gmif_section = bytearray()
         gmif_section.extend(cls.GMIF_MAGIC)
-        gmif_section.extend(struct.pack("<I", len(gmif_body) + 8))
+        gmif_section.extend(cls._SectionHeader(magic=cls.GMIF_MAGIC, size=len(gmif_body) + 8).to_bytes()[4:])
         gmif_section.extend(gmif_body)
 
         # 2. Build BTAF section
         btaf_body = bytearray()
-        btaf_body.extend(struct.pack("<HH", file_count, 0))
+        btaf_body.extend(cls._FatHeader(file_count=file_count, _reserved=0).to_bytes())
         for start, end in fat_offsets:
-            btaf_body.extend(struct.pack("<II", start, end))
+            btaf_body.extend(cls._FatEntry(start_offset=start, end_offset=end).to_bytes())
 
         btaf_section = bytearray()
         btaf_section.extend(cls.BTAF_MAGIC)
-        btaf_section.extend(struct.pack("<I", len(btaf_body) + 8))
+        btaf_section.extend(cls._SectionHeader(magic=cls.BTAF_MAGIC, size=len(btaf_body) + 8).to_bytes()[4:])
         btaf_section.extend(btaf_body)
 
         # 3. Build minimal dummy BTNF section (16 bytes)
         btnf_section = bytearray()
         btnf_section.extend(cls.BTNF_MAGIC)
-        btnf_section.extend(struct.pack("<I", 16))
+        btnf_section.extend(cls._SectionHeader(magic=cls.BTNF_MAGIC, size=16).to_bytes()[4:])
         # 8 bytes standard root directory record
-        btnf_section.extend(struct.pack("<IHBB", 0x00000004, 0x0000, 0x01, 0x00))
+        btnf_section.extend(cls._BtNFRoot(root_offset=4, first_file_id=0, directory_count=1, _reserved=0).to_bytes())
 
         # 4. Build NARC Header
         header_size = 16
@@ -179,6 +228,14 @@ class NARCArchive:
 
         header = bytearray()
         header.extend(cls.MAGIC)
-        header.extend(struct.pack("<HHIHH", 0xFFFE, 0x0100, total_size, header_size, 3))
+        narc_header = cls._Header(
+            magic=cls.MAGIC,
+            bom=0xFFFE,
+            version=0x0100,
+            file_size=total_size,
+            header_size=header_size,
+            num_chunks=3,
+        )
+        header.extend(narc_header.to_bytes()[4:])
 
         return bytes(header + btaf_section + btnf_section + gmif_section)

@@ -8,6 +8,8 @@ ROM caves or expanded slack space and automatically patches split instruction
 pairs (ARM MOV/MOVT, PowerPC LIS/ADDI, MIPS LUI/ADDIU) and PC-relative literal pools.
 """
 
+from miorom.errors import RelocationError
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 import struct
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
@@ -24,7 +26,7 @@ from miorom.asm.instruction_scanner import (
 
 
 @dataclass
-class LiteralRelocationReport:
+class LiteralRelocationReport(MioRomResult):
     """Detailed summary of code literal relocation."""
     old_string: str
     new_string: str
@@ -62,7 +64,7 @@ class CodeLiteralRelocator:
         # 1. Locate original string in ROM
         old_off = rom.find(old_bytes)
         if old_off == -1:
-            raise ValueError(f"Old string {old_str!r} not found in ROM buffer.")
+            raise RelocationError(f"Old string {old_str!r} not found in ROM buffer.")
 
         old_vaddr = ram_base + old_off
         new_vaddr = ram_base + cave_offset

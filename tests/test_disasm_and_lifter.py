@@ -154,3 +154,47 @@ def test_binary_lifter_to_c():
     assert "int add_ten()" in c_code
     assert "r3_1 = r3 + 0xA;" in c_code
     assert "return r3_1;" in c_code
+
+
+def test_universal_disassembler_mips():
+    # MIPS instructions (big-endian):
+    # 0x00: addiu $a0, $zero, 42 -> 0x2404002A (li $a0, 42)
+    # 0x04: lw $v0, 0($a0)       -> 0x8C820000
+    # 0x08: jal 0x80002000       -> 0x0C000800
+    # 0x0C: nop                  -> 0x00000000 (delay slot)
+    # 0x10: jr $ra               -> 0x03E00008
+    text = bytearray(20)
+    struct.pack_into(">I", text, 0, 0x2404002A)
+    struct.pack_into(">I", text, 4, 0x8C820000)
+    struct.pack_into(">I", text, 8, 0x0C000800)
+    struct.pack_into(">I", text, 12, 0x00000000)
+    struct.pack_into(">I", text, 16, 0x03E00008)
+
+    instrs = UniversalDisassembler.disassemble(bytes(text), base_address=0x80001000, arch="mips", endian=">")
+    assert len(instrs) == 5
+    assert instrs[0].mnemonic == "li"
+    assert instrs[0].operands == ["$a0", "42"]
+    assert instrs[1].mnemonic == "lw"
+    assert instrs[1].operands == ["$v0", "0($a0)"]
+    assert instrs[2].mnemonic == "jal"
+    assert instrs[2].is_call is True
+    assert instrs[2].target_address == 0x80002000
+    assert instrs[3].mnemonic == "nop"
+    assert instrs[4].mnemonic == "jr"
+    assert instrs[4].is_return is True
+
+
+def test_binary_lifter_mips_to_c():
+    # MIPS function:
+    # 0x00: addiu $v0, $a0, 10 -> 0x2482000A
+    # 0x04: jr $ra              -> 0x03E00008
+    code = bytearray(8)
+    struct.pack_into(">I", code, 0, 0x2482000A)
+    struct.pack_into(">I", code, 4, 0x03E00008)
+
+    ir_func = BinaryLifter.lift(bytes(code), base_address=0x80001000, arch="mips", endian=">", function_name="mips_add_ten")
+    assert ir_func.name == "mips_add_ten"
+    c_code = BinaryLifter.decompile_to_c(ir_func)
+    assert "int mips_add_ten()" in c_code
+    assert "$v0_1 = $a0 + 0xA;" in c_code
+    assert "return $v0_1;" in c_code

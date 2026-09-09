@@ -1,4 +1,12 @@
-import struct
+from miorom.errors import CompressionError
+from miorom.core.schema import BinaryStruct, RawBytes, U32
+
+
+class Yaz0CompressionHeaderStruct(BinaryStruct):
+    _endian = ">"
+    magic = RawBytes(4)
+    uncompressed_size = U32()
+    _reserved = RawBytes(8)
 from typing import Optional
 
 
@@ -14,11 +22,11 @@ class Yaz0:
     @classmethod
     def decompress(cls, data: bytes) -> bytes:
         if len(data) < 16:
-            raise ValueError("Data too short for Yaz0 header (minimum 16 bytes).")
+            raise CompressionError("Data too short for Yaz0 header (minimum 16 bytes).")
         if data[:4] != cls.MAGIC:
-            raise ValueError(f"Invalid Yaz0 magic: {data[:4]!r}")
+            raise CompressionError(f"Invalid Yaz0 magic: {data[:4]!r}")
 
-        uncompressed_size = struct.unpack(">I", data[4:8])[0]
+        uncompressed_size = Yaz0CompressionHeaderStruct.from_bytes(data).uncompressed_size
         output = bytearray()
         src_pos = 16
         src_len = len(data)
@@ -62,7 +70,7 @@ class Yaz0:
 
                 copy_pos = len(output) - (dist + 1)
                 if copy_pos < 0:
-                    raise ValueError(f"Invalid Yaz0 back-reference distance: {dist + 1}")
+                    raise CompressionError(f"Invalid Yaz0 back-reference distance: {dist + 1}")
 
                 for _ in range(copy_len):
                     if len(output) >= uncompressed_size:
@@ -78,9 +86,10 @@ class Yaz0:
         Compresses data into Yaz0 format.
         """
         data_len = len(data)
-        out_header = bytearray(cls.MAGIC)
-        out_header += struct.pack(">I", data_len)
-        out_header += b"\x00" * 8  # 8 bytes reserved
+        out_header = Yaz0CompressionHeaderStruct(
+            magic=cls.MAGIC,
+            uncompressed_size=data_len,
+        ).to_bytes()
 
         out_body = bytearray()
         src_pos = 0

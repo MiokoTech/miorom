@@ -1,9 +1,9 @@
 import os
-import struct
 from typing import Dict, Any, Optional, List, Tuple
 
 from miorom.rom.base import BaseRomHandler
-from miorom.platforms.nds.rom import NDSRom
+from miorom.core.schema import U16, U32
+from miorom.platforms.nds.rom import NDSFatEntryStruct, NDSFntDirectoryEntryStruct, NDSHeaderCrcStruct, NDSRom
 
 
 def calculate_nds_crc16(data: bytes, init: int = 0xFFFF) -> int:
@@ -26,7 +26,10 @@ def parse_nds_fnt(fnt_data: bytes) -> Dict[int, str]:
     if len(fnt_data) < 8:
         return {}
 
-    root_start, root_top_id, num_dirs = struct.unpack_from("<IHH", fnt_data, 0)
+    root = NDSFntDirectoryEntryStruct.from_bytes(fnt_data, offset=0)
+    root_start = root.first_entry_offset
+    root_top_id = root.first_file_id
+    num_dirs = root.parent_directory_id
     # Clamp num_dirs to reasonable range to prevent corrupted headers from hanging
     num_dirs = min(num_dirs & 0x0FFF, len(fnt_data) // 8)
     if num_dirs == 0:
@@ -37,7 +40,12 @@ def parse_nds_fnt(fnt_data: bytes) -> Dict[int, str]:
         off = i * 8
         if off + 8 > len(fnt_data):
             break
-        entry_start, top_file_id, parent_id = struct.unpack_from("<IHH", fnt_data, off)
+        entry = NDSFntDirectoryEntryStruct.from_bytes(fnt_data, offset=off)
+        entry_start, top_file_id, parent_id = (
+            entry.first_entry_offset,
+            entry.first_file_id,
+            entry.parent_directory_id,
+        )
         dirs.append((entry_start, top_file_id, parent_id))
 
     file_map: Dict[int, str] = {}
@@ -68,7 +76,7 @@ def parse_nds_fnt(fnt_data: bytes) -> Dict[int, str]:
             if is_subdir:
                 if pos + 2 > len(fnt_data):
                     break
-                subdir_id = struct.unpack_from("<H", fnt_data, pos)[0]
+                subdir_id = U16().unpack(fnt_data, pos, "<")[0]
                 pos += 2
                 dir_paths[subdir_id] = f"{cur_path}/{name}".strip("/")
             else:
@@ -145,7 +153,7 @@ def build_nds_fnt(file_paths: List[str]) -> Tuple[bytes, List[Tuple[str, str]]]:
             b = 0x80 | (len(sd_name) & 0x7F)
             subtables.append(b)
             subtables.extend(sd_name.encode("latin1", errors="replace"))
-            subtables.extend(struct.pack("<H", sd_id))
+            subtables.extend(U16(sd_id).pack(sd_id, endian="<"))
 
         # File entries
         for fname, _ in dir_files[d]:
@@ -158,7 +166,11 @@ def build_nds_fnt(file_paths: List[str]) -> Tuple[bytes, List[Tuple[str, str]]]:
 
     fnt = bytearray()
     for entry_start, top_id, parent_id in table_headers:
-        fnt.extend(struct.pack("<IHH", entry_start, top_id, parent_id))
+        fnt.extend(NDSFntDirectoryEntryStruct(
+            first_entry_offset=entry_start,
+            first_file_id=top_id,
+            parent_directory_id=parent_id,
+        ).to_bytes())
     fnt.extend(subtables)
 
     return bytes(fnt), ordered_files
@@ -189,8 +201,8 @@ class NDSRomHandler(BaseRomHandler):
         if unit_code not in (0x00, 0x01, 0x02, 0x03):
             return False
 
-        arm9_off = struct.unpack_from("<I", data, 0x20)[0]
-        arm7_off = struct.unpack_from("<I", data, 0x30)[0]
+        arm9_off = U32().unpack(data, 0x20, "<")[0]
+        arm7_off = U32().unpack(data, 0x30, "<")[0]
 
         # In valid NDS ROMs, ARM9 and ARM7 offsets are at or above 0x200
         return (0x200 <= arm9_off < len(data)) and (0x200 <= arm7_off < len(data))
@@ -309,7 +321,11 @@ class NDSRomHandler(BaseRomHandler):
         if file_paths:
             fnt_bytes, ordered_files = build_nds_fnt(file_paths)
         else:
-            fnt_bytes = struct.pack("<IHH", 8, 0, 1) + b"\x00"
+            fnt_bytes = NDSFntDirectoryEntryStruct(
+                first_entry_offset=8,
+                first_file_id=0,
+                parent_directory_id=1,
+            ).to_bytes() + b"\x00"
             ordered_files = []
 
         # ROM Assembly layout
@@ -368,7 +384,7 @@ class NDSRomHandler(BaseRomHandler):
         # Write FAT table
         fat_bin = bytearray()
         for f_start, f_end in fat_entries:
-            fat_bin.extend(struct.pack("<II", f_start, f_end))
+            fat_bin.extend(NDSFatEntryStruct(start_offset=f_start, end_offset=f_end).to_bytes())
         rom_out[fat_off : fat_off + len(fat_bin)] = fat_bin
 
         # Total ROM size
@@ -377,19 +393,23 @@ class NDSRomHandler(BaseRomHandler):
             rom_out.extend(b"\x00" * (total_size - len(rom_out)))
 
         # Update Header fields
-        struct.pack_into("<I", rom_out, 0x20, arm9_off)
-        struct.pack_into("<I", rom_out, 0x2C, arm9_size)
-        struct.pack_into("<I", rom_out, 0x30, arm7_off)
-        struct.pack_into("<I", rom_out, 0x3C, arm7_size)
-        struct.pack_into("<I", rom_out, 0x40, fnt_off)
-        struct.pack_into("<I", rom_out, 0x44, fnt_size)
-        struct.pack_into("<I", rom_out, 0x48, fat_off)
-        struct.pack_into("<I", rom_out, 0x4C, fat_size)
-        struct.pack_into("<I", rom_out, 0x68, banner_off)
-        struct.pack_into("<I", rom_out, 0x80, total_size)
+        header_fields = {
+            0x20: arm9_off,
+            0x2C: arm9_size,
+            0x30: arm7_off,
+            0x3C: arm7_size,
+            0x40: fnt_off,
+            0x44: fnt_size,
+            0x48: fat_off,
+            0x4C: fat_size,
+            0x68: banner_off,
+            0x80: total_size,
+        }
+        for offset, value in header_fields.items():
+            rom_out[offset:offset + 4] = U32().pack(value, endian="<")
 
         # Recalculate Header CRC16 at 0x15E
         crc16 = calculate_nds_crc16(bytes(rom_out[:0x15E]))
-        struct.pack_into("<H", rom_out, 0x15E, crc16)
+        rom_out[0x15E:0x160] = NDSHeaderCrcStruct(checksum=crc16).to_bytes()
 
         return bytes(rom_out)

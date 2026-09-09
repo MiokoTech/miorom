@@ -6,6 +6,7 @@ from ROM files, archives, and memory dumps.
 Supports Nintendo standard formats: LZ10, LZ11, RLE, Huffman, and Yaz0.
 """
 
+from miorom.result import MioRomResult
 import os
 import struct
 from dataclasses import dataclass
@@ -19,7 +20,7 @@ from miorom.compression.yaz0 import Yaz0
 
 
 @dataclass
-class CarvedStream:
+class CarvedStream(MioRomResult):
     """Represents a discovered and decompressed stream within binary data."""
     offset: int
     format: str

@@ -1,3 +1,4 @@
+from miorom.result import MioRomResult
 import struct
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -6,7 +7,7 @@ from miorom.asm.disasm import DisasmInstruction, UniversalDisassembler
 
 
 @dataclass
-class JumpTable:
+class JumpTable(MioRomResult):
     """
     Representation of an indirect jump table (switch-case statement)
     resolved through backward data flow slicing.

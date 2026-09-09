@@ -1,9 +1,10 @@
+from miorom.result import MioRomResult
 import os
-import struct
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Tuple, Union
 
+from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U32, U8
 from miorom.platforms.n64.checksum import (
     N64CIC,
     calculate_n64_checksum,
@@ -11,6 +12,23 @@ from miorom.platforms.n64.checksum import (
     fix_n64_checksum,
     verify_n64_checksum,
 )
+
+
+class N64HeaderStruct(BinaryStruct):
+    _endian = ">"
+    magic = RawBytes(4)
+    clock_rate = U32()
+    entrypoint = U32()
+    release_addr = U32()
+    crc1 = U32()
+    crc2 = U32()
+    _reserved_0x18 = RawBytes(8)
+    title = FixedString(20, pad=b" ")
+    _reserved_0x34 = RawBytes(7)
+    media_format_code = U8()
+    game_code = FixedString(2, pad=b" ")
+    country_code = FixedString(1)
+    version = U8()
 
 
 class N64ByteOrder(Enum):
@@ -96,7 +114,7 @@ def swap_from_big_endian(data: bytes, target_order: N64ByteOrder) -> bytes:
 
 
 @dataclass
-class N64Header:
+class N64Header(MioRomResult):
     clock_rate: int
     entrypoint: int
     release_addr: int
@@ -114,41 +132,39 @@ class N64Header:
         if len(header_bytes) < 0x40:
             header_bytes = header_bytes.ljust(0x40, b"\x00")
 
-        clock_rate, entrypoint, release_addr, crc1, crc2 = struct.unpack_from(">IIIII", header_bytes, 0x04)
-        raw_title = header_bytes[0x20:0x34]
-        title = raw_title.decode("ascii", errors="replace").strip("\x00 ").strip()
-        media_format = chr(header_bytes[0x3B]) if 32 <= header_bytes[0x3B] <= 126 else "?"
-        game_code = header_bytes[0x3C:0x3E].decode("ascii", errors="replace")
-        country_code = chr(header_bytes[0x3E]) if 32 <= header_bytes[0x3E] <= 126 else "?"
-        version = header_bytes[0x3F]
+        parsed = N64HeaderStruct.from_bytes(header_bytes)
+        media_format = chr(parsed.media_format_code) if 32 <= parsed.media_format_code <= 126 else "?"
+        country_code = parsed.country_code if parsed.country_code.isprintable() else "?"
 
         return cls(
-            clock_rate=clock_rate,
-            entrypoint=entrypoint,
-            release_addr=release_addr,
-            crc1=crc1,
-            crc2=crc2,
-            title=title,
+            clock_rate=parsed.clock_rate,
+            entrypoint=parsed.entrypoint,
+            release_addr=parsed.release_addr,
+            crc1=parsed.crc1,
+            crc2=parsed.crc2,
+            title=parsed.title.strip(),
             media_format=media_format,
-            game_code=game_code,
+            game_code=parsed.game_code.strip(),
             country_code=country_code,
-            version=version,
+            version=parsed.version,
         )
 
     def pack(self) -> bytes:
         """Serialize header into 64-byte big-endian buffer."""
-        out = bytearray(0x40)
-        out[0:4] = b"\x80\x37\x12\x40"
-        struct.pack_into(">IIIII", out, 0x04, self.clock_rate, self.entrypoint, self.release_addr, self.crc1, self.crc2)
-        # Title (20 bytes)
-        enc_title = self.title.encode("ascii", errors="replace")[:20].ljust(20, b" ")
-        out[0x20:0x34] = enc_title
-        out[0x3B] = ord(self.media_format[0]) if self.media_format else ord("N")
-        enc_code = self.game_code.encode("ascii", errors="replace")[:2].ljust(2, b" ")
-        out[0x3C:0x3E] = enc_code
-        out[0x3E] = ord(self.country_code[0]) if self.country_code else ord("E")
-        out[0x3F] = self.version & 0xFF
-        return bytes(out)
+        parsed = N64HeaderStruct(
+            magic=b"\x80\x37\x12\x40",
+            clock_rate=self.clock_rate,
+            entrypoint=self.entrypoint,
+            release_addr=self.release_addr,
+            crc1=self.crc1,
+            crc2=self.crc2,
+            title=self.title,
+            media_format_code=ord(self.media_format[0]) if self.media_format else ord("N"),
+            game_code=self.game_code,
+            country_code=self.country_code[0] if self.country_code else "E",
+            version=self.version & 0xFF,
+        )
+        return parsed.to_bytes()
 
 
 class N64Rom:
@@ -162,6 +178,7 @@ class N64Rom:
         self.original_byte_order = detect_byte_order(data)
         # Normalize internal buffer to native Big-Endian
         self.data: bytearray = bytearray(swap_to_big_endian(data, self.original_byte_order))
+        self._header_struct = N64HeaderStruct.from_bytes(self.data, offset=0)
         self.header: N64Header = N64Header.parse(bytes(self.data[:0x40]))
         self.cic: Optional[N64CIC] = detect_cic(bytes(self.data))
 
@@ -175,12 +192,19 @@ class N64Rom:
         """Verify ROM header checksum against IPL3 calculation."""
         return verify_n64_checksum(bytes(self.data), self.cic)
 
-    def recalculate_checksum(self) -> Tuple[int, int]:
-        """Recalculate checksum, update ROM header in memory, and return (crc1, crc2)."""
+    def recalculate_checksum(self, preserve_database_crc: bool = False) -> Tuple[int, int]:
+        """
+        Recalculate checksum and update ROM header.
+        If preserve_database_crc=True, preserves original header CRC for emulator database matching.
+        """
+        if preserve_database_crc:
+            return self.header.crc1, self.header.crc2
         crc1, crc2 = calculate_n64_checksum(bytes(self.data), self.cic)
         self.header.crc1 = crc1
         self.header.crc2 = crc2
-        struct.pack_into(">II", self.data, 0x10, crc1, crc2)
+        self._header_struct.crc1 = crc1
+        self._header_struct.crc2 = crc2
+        self.data[0x10:0x18] = self._header_struct.to_bytes()[0x10:0x18]
         return crc1, crc2
 
     def to_bytes(self, target_order: N64ByteOrder = N64ByteOrder.BIG_ENDIAN) -> bytes:

@@ -1,7 +1,14 @@
 import struct
 from typing import Dict, List, Optional, Tuple
 
-from PIL import Image, ImageDraw, ImageFont
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    HAS_PIL = True
+except ImportError:
+    Image = None
+    ImageDraw = None
+    ImageFont = None
+    HAS_PIL = False
 
 from miorom.graphics.tiles import Tile, encode_tile
 from miorom.platforms.nds.nftr import NFTRFont, NFTRGlyph
@@ -17,6 +24,11 @@ class TTFCompiler:
     """
 
     def __init__(self, font_path: Optional[str] = None, font_size: int = 12):
+        if not HAS_PIL:
+            raise ImportError(
+                "Pillow is required for TTFCompiler. Install with 'pip install Pillow'."
+            )
+
         self.font_size = font_size
         self.font_path = font_path
 

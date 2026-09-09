@@ -1,3 +1,4 @@
+from miorom.result import MioRomResult
 import struct
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -6,7 +7,7 @@ from miorom.asm.codecave import CodeCave, CodeCaveFinder
 
 
 @dataclass
-class DolSection:
+class DolSection(MioRomResult):
     index: int
     is_text: bool
     file_offset: int

@@ -1,6 +1,7 @@
+from miorom.errors import CompressionError
 import heapq
 import struct
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class _HuffmanNode:
@@ -27,11 +28,11 @@ class Huffman:
     @classmethod
     def decompress(cls, data: bytes) -> bytes:
         if len(data) < 5:
-            raise ValueError("Data too short for Nintendo Huffman header.")
+            raise CompressionError("Data too short for Nintendo Huffman header.")
 
         type_byte = data[0]
         if type_byte not in (0x24, 0x28):
-            raise ValueError(f"Invalid Huffman type byte: 0x{type_byte:02X} (expected 0x24 or 0x28)")
+            raise CompressionError(f"Invalid Huffman type byte: 0x{type_byte:02X} (expected 0x24 or 0x28)")
 
         bit_depth = 4 if type_byte == 0x24 else 8
         uncompressed_size = data[1] | (data[2] << 8) | (data[3] << 16)
@@ -47,7 +48,7 @@ class Huffman:
         tree_end = tree_start + tree_bytes_len
 
         if tree_end > len(data):
-            raise ValueError("Malformed Huffman tree: extends beyond input data.")
+            raise CompressionError("Malformed Huffman tree: extends beyond input data.")
 
         tree_data = data[tree_start:tree_end]
         stream_pos = tree_end
@@ -84,7 +85,7 @@ class Huffman:
             bits_left -= 1
 
             if cur_node_idx >= len(tree_data):
-                raise ValueError("Huffman tree index out of range.")
+                raise CompressionError("Huffman tree index out of range.")
 
             node_byte = tree_data[cur_node_idx]
             offset_val = node_byte & 0x3F
@@ -101,7 +102,7 @@ class Huffman:
 
             if is_leaf:
                 if child_idx >= len(tree_data):
-                    raise ValueError("Huffman leaf index out of tree range.")
+                    raise CompressionError("Huffman leaf index out of tree range.")
                 symbol = tree_data[child_idx]
                 cur_node_idx = 0  # reset to root
 
@@ -127,7 +128,7 @@ class Huffman:
         Compresses data using Nintendo Huffman 4-bit (0x24) or 8-bit (0x28).
         """
         if bit_depth not in (4, 8):
-            raise ValueError("bit_depth must be 4 or 8")
+            raise CompressionError("bit_depth must be 4 or 8")
 
         # Extract symbols
         symbols: List[int] = []
@@ -233,7 +234,7 @@ class Huffman:
             # => offset = (child_base - (c_pos & ~1) - 2) // 2
             offset_val = (child_base - (c_pos & ~1) - 2) // 2
             if offset_val > 0x3F:
-                raise ValueError("Huffman tree too deep for Nintendo format.")
+                raise CompressionError("Huffman tree too deep for Nintendo format.")
 
             flag_byte = offset_val
             if left_is_leaf:

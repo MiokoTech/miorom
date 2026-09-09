@@ -1,3 +1,4 @@
+from miorom.result import MioRomResult
 import string
 from collections import Counter
 from dataclasses import dataclass, field
@@ -7,7 +8,7 @@ from miorom.text.charmap import CharMap
 
 
 @dataclass
-class MinedCharMapResult:
+class MinedCharMapResult(MioRomResult):
     charmap: CharMap
     confidence: float
     mapped_count: int
@@ -116,3 +117,31 @@ class CharMapMiner:
             text_preview="".join(preview_chars).strip(),
             sample_matches=sample_matches,
         )
+
+    @classmethod
+    def solve_ngram_frequencies(
+        cls,
+        data: bytes,
+        min_occurrences: int = 3,
+    ) -> Dict[bytes, str]:
+        """
+        Solves unknown substitution ciphers by calculating bigram frequencies
+        and aligning against standard linguistic distributions (TH, HE, IN, ER, AN).
+        """
+        bigrams: Counter[bytes] = Counter()
+        for i in range(len(data) - 1):
+            pair = data[i : i + 2]
+            if pair[0] != 0 and pair[1] != 0:
+                bigrams[pair] += 1
+
+        common_target_bigrams = ["th", "he", "in", "er", "an", "re", "ed", "on", "es", "st"]
+        frequent_rom_bigrams = [bg for bg, cnt in bigrams.most_common(len(common_target_bigrams)) if cnt >= min_occurrences]
+
+        table: Dict[bytes, str] = {}
+        for rom_bg, tgt_bg in zip(frequent_rom_bigrams, common_target_bigrams):
+            if bytes([rom_bg[0]]) not in table:
+                table[bytes([rom_bg[0]])] = tgt_bg[0]
+            if bytes([rom_bg[1]]) not in table:
+                table[bytes([rom_bg[1]])] = tgt_bg[1]
+
+        return table

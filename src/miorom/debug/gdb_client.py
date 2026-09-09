@@ -7,6 +7,8 @@ register reading, and string tracing across mGBA, No$gba, MelonDS, PCSX-Redux,
 Dolphin, Citra, and QEMU.
 """
 
+from miorom.errors import ParseError
+from miorom.result import MioRomResult
 import socket
 import struct
 from dataclasses import dataclass
@@ -16,7 +18,7 @@ from miorom.debug.client import EmulatorClient
 
 
 @dataclass
-class StopReason:
+class StopReason(MioRomResult):
     """Represents a target halt event (e.g. watchpoint hit or breakpoint)."""
     signal: int
     reason: str
@@ -197,7 +199,7 @@ class GDBEmulatorClient(EmulatorClient):
         """Reads raw bytes from target memory space."""
         resp = self.send_packet(f"m{address:x},{size:x}")
         if resp.startswith("E"):
-            raise ValueError(f"GDB memory read error at 0x{address:08X}: {resp}")
+            raise ParseError(f"GDB memory read error at 0x{address:08X}: {resp}")
         return bytes.fromhex(resp)
 
     def write_bytes(self, address: int, data: bytes) -> None:
@@ -205,13 +207,13 @@ class GDBEmulatorClient(EmulatorClient):
         hex_str = data.hex()
         resp = self.send_packet(f"M{address:x},{len(data):x}:{hex_str}")
         if resp != "OK":
-            raise ValueError(f"GDB memory write error at 0x{address:08X}: {resp}")
+            raise ParseError(f"GDB memory write error at 0x{address:08X}: {resp}")
 
     def read_register(self, reg_num: int) -> int:
         """Reads a 32-bit CPU register value."""
         resp = self.send_packet(f"p{reg_num:x}")
         if resp.startswith("E") or not resp:
-            raise ValueError(f"Failed to read register R{reg_num}: {resp}")
+            raise ParseError(f"Failed to read register R{reg_num}: {resp}")
         raw = bytes.fromhex(resp)
         return struct.unpack("<I", raw)[0]
 
@@ -220,7 +222,7 @@ class GDBEmulatorClient(EmulatorClient):
         hex_val = struct.pack("<I", value).hex()
         resp = self.send_packet(f"P{reg_num:x}={hex_val}")
         if resp != "OK":
-            raise ValueError(f"Failed to write register R{reg_num}: {resp}")
+            raise ParseError(f"Failed to write register R{reg_num}: {resp}")
 
     def set_watchpoint(self, address: int, size: int = 4, kind: str = "write") -> bool:
         """
@@ -362,4 +364,3 @@ class GDBEmulatorClient(EmulatorClient):
             with open(output_path, "wb") as f:
                 f.write(res)
         return res
-

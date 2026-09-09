@@ -1,4 +1,5 @@
-import struct
+from miorom.errors import CompressionError
+from miorom.core.schema import BinaryStruct, U32
 
 
 class RLE:
@@ -8,24 +9,28 @@ class RLE:
     """
 
     MAGIC = 0x30
+    END_OF_STREAM = 0xFF
+
 
     @classmethod
     def decompress(cls, data: bytes) -> bytes:
         """Decompress Nintendo RLE (Type 0x30) data."""
         if len(data) < 4:
-            raise ValueError("Data too short for RLE header")
+            raise CompressionError("Data too short for RLE header")
 
         magic = data[0]
         if magic != cls.MAGIC:
-            raise ValueError(f"Invalid RLE magic byte: expected 0x30, got {hex(magic)}")
+            raise CompressionError(f"Invalid RLE magic byte: expected 0x30, got {hex(magic)}")
 
         uncompressed_size = data[1] | (data[2] << 8) | (data[3] << 16)
         in_pos = 4
 
         if uncompressed_size == 0:
+            if len(data) == 4:
+                return b""
             if len(data) < 8:
-                raise ValueError("Data too short for extended RLE header")
-            uncompressed_size = struct.unpack("<I", data[4:8])[0]
+                raise CompressionError("Data too short for extended RLE header")
+            uncompressed_size = RLEExtendedSizeStruct.from_bytes(data, offset=4).uncompressed_size
             in_pos = 8
 
         out = bytearray()
@@ -61,7 +66,7 @@ class RLE:
         return bytes(out)
 
     @classmethod
-    def compress(cls, data: bytes) -> bytes:
+    def compress(cls, data: bytes, include_end_marker: bool = False) -> bytes:
         """Compress data using Nintendo RLE (Type 0x30) format."""
         out = bytearray()
         uncompressed_size = len(data)
@@ -75,7 +80,7 @@ class RLE:
         else:
             out.append(cls.MAGIC)
             out.extend(b"\x00\x00\x00")
-            out.extend(struct.pack("<I", uncompressed_size))
+            out.extend(RLEExtendedSizeStruct(uncompressed_size=uncompressed_size).to_bytes())
 
         in_pos = 0
         data_len = len(data)

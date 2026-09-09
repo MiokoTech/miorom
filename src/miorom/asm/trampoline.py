@@ -1,11 +1,13 @@
+from miorom.result import MioRomResult
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 from miorom.asm.branch import ARMBranch, ThumbBranch, PowerPCBranch, MIPSBranch
 from miorom.asm.codecave import CodeCaveFinder
 
 
+from miorom.errors import ParseError, RelocationError, UnsupportedFormatError
 @dataclass
-class HookRecord:
+class HookRecord(MioRomResult):
     arch: str
     hook_ram_addr: int
     cave_ram_addr: int
@@ -48,7 +50,7 @@ class TrampolineHook:
             cave_bytes: Custom payload + original displaced instruction + return branch.
         """
         if len(original_instr_bytes) != 4:
-            raise ValueError("ARM original instruction must be exactly 4 bytes.")
+            raise RelocationError("ARM original instruction must be exactly 4 bytes.")
 
         hook_bytes = ARMBranch.encode_b(source_pc=hook_ram_addr, target_addr=cave_ram_addr)
 
@@ -74,7 +76,7 @@ class TrampolineHook:
         Returns (hook_bytes, cave_bytes).
         """
         if len(original_instr_bytes) != 2:
-            raise ValueError("Thumb original instruction must be exactly 2 bytes.")
+            raise RelocationError("Thumb original instruction must be exactly 2 bytes.")
 
         hook_bytes = ThumbBranch.encode_b(source_pc=hook_ram_addr, target_addr=cave_ram_addr)
 
@@ -101,7 +103,7 @@ class TrampolineHook:
         Returns (hook_bytes, cave_bytes).
         """
         if len(original_instr_bytes) != 4:
-            raise ValueError("PowerPC original instruction must be exactly 4 bytes.")
+            raise RelocationError("PowerPC original instruction must be exactly 4 bytes.")
 
         hook_bytes = PowerPCBranch.encode_b(
             source_pc=hook_ram_addr,
@@ -137,7 +139,7 @@ class TrampolineHook:
         Returns (hook_bytes, cave_bytes).
         """
         if len(original_instr_bytes) not in (4, 8):
-            raise ValueError("MIPS original instructions must be 4 or 8 bytes (instruction + delay slot).")
+            raise ParseError("MIPS original instructions must be 4 or 8 bytes (instruction + delay slot).")
 
         # Encode jump to cave
         j_instr = MIPSBranch.encode_j(source_pc=hook_ram_addr, target_addr=cave_ram_addr, endian=endian)
@@ -186,7 +188,7 @@ class TrampolineHook:
             end = endian or ">"
             return cls.create_mips_hook(hook_ram_addr, original_instr_bytes, custom_payload_bytes, cave_ram_addr, endian=end)
         else:
-            raise ValueError(f"Unsupported architecture: '{arch}'. Supported: 'ppc', 'arm', 'thumb', 'mips_le', 'mips_be'.")
+            raise UnsupportedFormatError(f"Unsupported architecture: '{arch}'. Supported: 'ppc', 'arm', 'thumb', 'mips_le', 'mips_be'.")
 
     @classmethod
     def auto_hook(

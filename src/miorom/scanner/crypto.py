@@ -1,10 +1,11 @@
+from miorom.result import MioRomResult
 import struct
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterator, List, Optional, Tuple
 
 
 @dataclass
-class CryptoMatch:
+class CryptoMatch(MioRomResult):
     """
     Representation of a cryptographic primitive detected in binary data.
     """
@@ -24,7 +25,7 @@ class CryptoMatch:
 
 
 @dataclass
-class CryptoReport:
+class CryptoReport(MioRomResult):
     total_bytes: int
     matches: List[CryptoMatch] = field(default_factory=list)
 
@@ -89,17 +90,23 @@ class CryptoScanner:
         base_address: int = 0,
         scan_xrefs: bool = True,
     ) -> CryptoReport:
-        matches: List[CryptoMatch] = []
-        total_len = len(data)
+        return CryptoReport(total_bytes=len(data), matches=list(cls.iter_matches(data, base_address=base_address, scan_xrefs=scan_xrefs)))
 
+    @classmethod
+    def iter_matches(
+        cls,
+        data: bytes,
+        base_address: int = 0,
+        scan_xrefs: bool = True,
+    ) -> Iterator[CryptoMatch]:
+        """Yield cryptographic primitives as they are found."""
         # 1. Scan AES S-Box
         pos = 0
         while True:
             idx = data.find(cls.AES_SBOX_PREFIX, pos)
             if idx == -1:
                 break
-            matches.append(
-                CryptoMatch(
+            yield CryptoMatch(
                     algorithm="AES",
                     pattern_type="Forward S-Box",
                     offset=base_address + idx,
@@ -107,7 +114,6 @@ class CryptoScanner:
                     confidence=1.0,
                     details="Rijndael AES Encryption Substitution Box",
                 )
-            )
             pos = idx + 1
 
         # 2. Scan AES Inverse S-Box
@@ -116,8 +122,7 @@ class CryptoScanner:
             idx = data.find(cls.AES_INV_SBOX_PREFIX, pos)
             if idx == -1:
                 break
-            matches.append(
-                CryptoMatch(
+            yield CryptoMatch(
                     algorithm="AES",
                     pattern_type="Inverse S-Box",
                     offset=base_address + idx,
@@ -125,7 +130,6 @@ class CryptoScanner:
                     confidence=1.0,
                     details="Rijndael AES Decryption Substitution Box",
                 )
-            )
             pos = idx + 1
 
         # 3. Scan MD5 Constants
@@ -135,8 +139,7 @@ class CryptoScanner:
                 idx = data.find(sig, pos)
                 if idx == -1:
                     break
-                matches.append(
-                    CryptoMatch(
+                yield CryptoMatch(
                         algorithm="MD5",
                         pattern_type="Hash Constants",
                         offset=base_address + idx,
@@ -144,7 +147,6 @@ class CryptoScanner:
                         confidence=0.95,
                         details=f"MD5 State Initializers ({end_name})",
                     )
-                )
                 pos = idx + 1
 
         # 4. Scan SHA-1 Constants
@@ -154,8 +156,7 @@ class CryptoScanner:
                 idx = data.find(sig, pos)
                 if idx == -1:
                     break
-                matches.append(
-                    CryptoMatch(
+                yield CryptoMatch(
                         algorithm="SHA-1",
                         pattern_type="Hash Constants",
                         offset=base_address + idx,
@@ -163,7 +164,6 @@ class CryptoScanner:
                         confidence=0.98,
                         details=f"SHA-1 Initial Digest Vector ({end_name})",
                     )
-                )
                 pos = idx + 1
 
         # 5. Scan TEA Delta (0x9E3779B9)
@@ -173,8 +173,7 @@ class CryptoScanner:
                 idx = data.find(sig, pos)
                 if idx == -1:
                     break
-                matches.append(
-                    CryptoMatch(
+                yield CryptoMatch(
                         algorithm="TEA/XTEA",
                         pattern_type="Golden Ratio Delta",
                         offset=base_address + idx,
@@ -182,7 +181,6 @@ class CryptoScanner:
                         confidence=0.85,
                         details=f"TEA / XTEA Key Schedule Delta 0x9E3779B9 ({end_name})",
                     )
-                )
                 pos = idx + 1
 
         # 6. Scan CRC32 Lookup Table
@@ -191,8 +189,7 @@ class CryptoScanner:
             idx = data.find(cls.CRC32_IEEE_PREFIX, pos)
             if idx == -1:
                 break
-            matches.append(
-                CryptoMatch(
+            yield CryptoMatch(
                     algorithm="CRC32",
                     pattern_type="Lookup Table",
                     offset=base_address + idx,
@@ -200,7 +197,4 @@ class CryptoScanner:
                     confidence=0.99,
                     details="IEEE 802.3 CRC32 Lookup Table (Polynomial 0xEDB88320)",
                 )
-            )
             pos = idx + 1
-
-        return CryptoReport(total_bytes=total_len, matches=matches)

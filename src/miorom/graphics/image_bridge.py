@@ -3,6 +3,7 @@ from miorom.graphics.palette import Color, Palette
 from miorom.graphics.tiles import Tile
 from miorom.graphics.tilemap import Tilemap, TileReducer
 
+from miorom.errors import ParseError
 try:
     from PIL import Image
     HAS_PIL = True
@@ -77,7 +78,7 @@ class ImageBridge:
         width, height = img.size
 
         if width % 8 != 0 or height % 8 != 0:
-            raise ValueError(f"Image dimensions ({width}x{height}) must be multiples of 8.")
+            raise ParseError(f"Image dimensions ({width}x{height}) must be multiples of 8.")
 
         # Build or use palette
         max_colors = {1: 2, 2: 4, 4: 16, 8: 256}.get(bpp, 16)

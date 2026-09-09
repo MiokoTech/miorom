@@ -1,4 +1,4 @@
-from miorom.save.checksum import SaveChecksum
+from miorom.save.checksum import SaveChecksum, SaveChecksumEngine
 from miorom.save.slots import DualSlotSave
 from miorom.save.diff_hunter import (
     SaveStateDiffHunter,
@@ -10,6 +10,7 @@ from miorom.save.diff_hunter import (
 
 __all__ = [
     "SaveChecksum",
+    "SaveChecksumEngine",
     "DualSlotSave",
     "SaveStateDiffHunter",
     "RAMSnapshot",

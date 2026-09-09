@@ -6,6 +6,7 @@ Detects console platforms (NDS, GBA, GB/GBC, N64, Mega Drive, SNES) and provides
 automated verification and header checksum repair for modified and translated ROMs.
 """
 
+from miorom.result import MioRomResult
 import struct
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -29,7 +30,7 @@ from miorom.rom.handlers.nds import calculate_nds_crc16
 
 
 @dataclass
-class IntegrityReport:
+class IntegrityReport(MioRomResult):
     """Detailed summary of ROM integrity verification and repair."""
     platform: str
     is_valid: bool

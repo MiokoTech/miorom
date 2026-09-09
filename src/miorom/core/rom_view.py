@@ -7,6 +7,8 @@ reverse engineering, string querying, pointer scanning, and automated diagnosis.
 """
 
 import os
+
+from miorom.errors import ParseError
 import re
 from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Set, Tuple, Union
 
@@ -264,7 +266,7 @@ class ROM:
         """Save binary data to file."""
         dest = filepath or self.filepath
         if not dest:
-            raise ValueError("No destination filepath specified.")
+            raise ParseError("No destination filepath specified.")
         with open(dest, "wb") as f:
             f.write(self._data)
 

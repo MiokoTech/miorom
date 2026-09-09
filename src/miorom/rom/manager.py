@@ -1,9 +1,14 @@
+import mmap
 import os
+from miorom.errors import ParseError
 import json
+import importlib.metadata
 from typing import Dict, Any, Optional, List, Union
 
 from miorom import __version__
+from miorom.core.binary import BinaryReader
 from miorom.rom.base import BaseRomHandler
+from miorom.rom.protocols import RomHandlerProtocol
 from miorom.rom.handlers import (
     NDSRomHandler,
     GameCubeRomHandler,
@@ -32,8 +37,10 @@ class RomManager:
         self.register(Iso9660RomHandler())
         self.register(CartridgeRomHandler())
 
-    def register(self, handler: BaseRomHandler):
-        """Registers a custom or platform-specific ROM handler."""
+    def register(self, handler: Union[BaseRomHandler, RomHandlerProtocol]):
+        """Registers an ABC handler or any structurally compatible handler."""
+        if not isinstance(handler, (BaseRomHandler, RomHandlerProtocol)):
+            raise TypeError("handler must implement BaseRomHandler or RomHandlerProtocol")
         self.handlers[handler.name] = handler
 
     def get_handler(self, fmt: str) -> BaseRomHandler:
@@ -41,7 +48,7 @@ class RomManager:
         clean = fmt.lower().strip()
         if clean not in self.handlers:
             supported = ", ".join(sorted(self.handlers.keys()))
-            raise ValueError(f"Unknown ROM format '{fmt}'. Supported formats: {supported}")
+            raise ParseError(f"Unknown ROM format '{fmt}'. Supported formats: {supported}")
         return self.handlers[clean]
 
     def detect_format(self, data: bytes, filepath: Optional[str] = None) -> Optional[str]:
@@ -72,34 +79,61 @@ class RomManager:
         Writes miorom.meta.json manifest containing structural metadata.
         """
         filepath: Optional[str] = None
+        use_mmap = kwargs.pop("use_mmap", None)
+        mmap_min_size = kwargs.pop("mmap_min_size", 100 * 1024 * 1024)
+
         if isinstance(source, (str, os.PathLike)):
             filepath = str(source)
-            with open(filepath, "rb") as f:
-                data = f.read()
-        else:
-            data = source
+            reader = BinaryReader.open_file(
+                    filepath,
+                    use_mmap=use_mmap,
+                    mmap_min_size=mmap_min_size,
+                )
+            try:
+                stream = reader.stream
+                used_mmap = isinstance(stream, mmap.mmap)
+                data = stream if used_mmap else stream.read()
+                if not fmt:
+                    fmt = self.detect_format(data, filepath)
+                    if not fmt:
+                        raise ParseError(
+                            f"Could not automatically detect ROM container format for '{filepath}'. "
+                            f"Please specify format explicitly "
+                            f"(choices: {', '.join(sorted(self.handlers.keys()))})."
+                        )
+                handler = self.get_handler(fmt)
+                os.makedirs(output_dir, exist_ok=True)
+                meta = handler.unpack(data, output_dir, filepath=filepath, **kwargs)
+                meta["used_mmap"] = used_mmap
+            finally:
+                reader.close()
+            return self._write_manifest(meta, output_dir, handler)
 
         if not fmt:
-            fmt = self.detect_format(data, filepath)
+            fmt = self.detect_format(source, None)
             if not fmt:
-                raise ValueError(
-                    f"Could not automatically detect ROM container format for '{filepath or 'bytes'}'. "
-                    f"Please specify format explicitly (choices: {', '.join(sorted(self.handlers.keys()))})."
+                raise ParseError(
+                    "Could not automatically detect ROM container format for bytes. "
+                    f"Please specify format explicitly "
+                    f"(choices: {', '.join(sorted(self.handlers.keys()))})."
                 )
-
         handler = self.get_handler(fmt)
         os.makedirs(output_dir, exist_ok=True)
+        meta = handler.unpack(source, output_dir, **kwargs)
+        meta["used_mmap"] = False
+        return self._write_manifest(meta, output_dir, handler)
 
-        meta = handler.unpack(data, output_dir, filepath=filepath, **kwargs)
+    @staticmethod
+    def _write_manifest(
+        meta: Dict[str, Any], output_dir: str, handler: BaseRomHandler
+    ) -> Dict[str, Any]:
         meta["generator"] = "miorom"
         meta["version"] = __version__
         meta["format"] = handler.name
 
-        # Write metadata manifest
         meta_path = os.path.join(output_dir, "miorom.meta.json")
-        with open(meta_path, "w", encoding="utf-8") as f_meta:
-            json.dump(meta, f_meta, indent=2)
-
+        with open(meta_path, "w", encoding="utf-8") as file_obj:
+            json.dump(meta, file_obj, indent=2)
         return meta
 
     def repack(
@@ -180,3 +214,20 @@ def repack_rom(
     High-level convenience function to repack an unpacked directory back into a ROM image.
     """
     return _default_manager.repack(unpacked_dir, output_path=output_path, fmt=fmt, **kwargs)
+
+def _discover_plugins():
+    """Auto-discover third-party platform handlers via entry_points."""
+    try:
+        eps = importlib.metadata.entry_points(group="miorom.platforms")
+        for ep in eps:
+            try:
+                handler_cls = ep.load()
+                handler = handler_cls() if isinstance(handler_cls, type) else handler_cls
+                _default_manager.register(handler)
+            except Exception:
+                pass
+    except TypeError:
+        pass  # Python < 3.10
+
+
+_discover_plugins()

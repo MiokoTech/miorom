@@ -1,3 +1,4 @@
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
@@ -16,7 +17,7 @@ class Statement(ASTNode):
 
 
 @dataclass
-class InstructionStmt(Statement):
+class InstructionStmt(Statement, MioRomResult):
     instruction: Instruction
 
     def format_call(self) -> str:
@@ -25,34 +26,34 @@ class InstructionStmt(Statement):
 
 
 @dataclass
-class LabelStmt(Statement):
+class LabelStmt(Statement, MioRomResult):
     name: str
 
 
 @dataclass
-class GotoStmt(Statement):
+class GotoStmt(Statement, MioRomResult):
     target: str
 
 
 @dataclass
-class ReturnStmt(Statement):
+class ReturnStmt(Statement, MioRomResult):
     instruction: Instruction
 
 
 @dataclass
-class BlockStmt(Statement):
+class BlockStmt(Statement, MioRomResult):
     statements: List[Statement] = field(default_factory=list)
 
 
 @dataclass
-class IfStmt(Statement):
+class IfStmt(Statement, MioRomResult):
     condition: Instruction
     then_block: BlockStmt
     else_block: Optional[BlockStmt] = None
 
 
 @dataclass
-class WhileStmt(Statement):
+class WhileStmt(Statement, MioRomResult):
     condition: Optional[Instruction]
     body: BlockStmt
 

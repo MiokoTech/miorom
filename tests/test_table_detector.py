@@ -73,3 +73,33 @@ def test_detect_stride_records():
     assert rec.pointer_offset_in_entry == 4
     assert rec.count == 4
     assert "Warrior" in rec.sample_strings
+
+
+def test_detect_length_offset_tables_utf8():
+    # Construct binary with [u32 length, u32 pointer] pairs
+    buf = bytearray(0x100)
+    items = ["RADISH", "POTATO", "カギ01", "CABBAGE"]
+    # Table of 4 records: 4 * 8 = 32 bytes (offset 0..32)
+    # Pointers starting at 0x20
+    targets = [0x20, 0x30, 0x40, 0x50]
+
+    for i, (item, target) in enumerate(zip(items, targets)):
+        encoded = item.encode("utf-8")
+        rec_off = i * 8
+        struct.pack_into("<I", buf, rec_off + 0, len(encoded))
+        struct.pack_into("<I", buf, rec_off + 4, target)
+        buf[target : target + len(encoded)] = encoded
+        buf[target + len(encoded)] = 0
+
+    cands = HeuristicTableDetector.detect_length_offset_tables(bytes(buf), candidate_strides=(8,))
+    assert len(cands) >= 1
+    c = cands[0]
+    assert c.count == 4
+    assert c.stride == 8
+    assert c.pointer_offset_in_entry == 4
+    assert c.confidence >= 0.9
+
+    extracted = HeuristicTableDetector.extract_strings(bytes(buf), c, encoding="utf-8")
+    assert len(extracted) == 4
+    assert extracted[0] == (0, "RADISH")
+    assert extracted[2] == (2, "カギ01")

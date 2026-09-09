@@ -1,13 +1,22 @@
+from miorom.result import MioRomResult
 import os
-import struct
+from miorom.errors import ParseError
 from dataclasses import dataclass
+from miorom.core.schema import BinaryStruct, RawBytes, U32, U8, U16
 from typing import List, Dict, Optional, Tuple
 
 from miorom.compression import decompress
+from miorom.security import sanitize_extract_path
+
+
+class Yaz0HeaderStruct(BinaryStruct):
+    _endian = ">"
+    magic = RawBytes(4)
+    uncompressed_size = U32()
 
 
 @dataclass
-class U8Entry:
+class U8Entry(MioRomResult):
     index: int
     name: str
     path: str
@@ -15,6 +24,22 @@ class U8Entry:
     data_offset: int
     size: int
     parent_index: int = 0
+
+class U8HeaderStruct(BinaryStruct):
+    _endian = ">"
+    magic = RawBytes(4)
+    root_node_offset = U32()
+    header_size = U32()
+    data_offset = U32()
+    _reserved_0x10 = RawBytes(16)
+
+class U8NodeStruct(BinaryStruct):
+    _endian = ">"
+    kind = U8()
+    name_high = U8()
+    name_low = U16()
+    value1 = U32()
+    value2 = U32()
 
 
 class U8Archive:
@@ -29,8 +54,7 @@ class U8Archive:
     def is_u8(cls, data: bytes) -> bool:
         if len(data) < 4:
             return False
-        magic = struct.unpack(">I", data[:4])[0]
-        return magic == cls.MAGIC
+        return data[:4] == b"\x55\xAA\x38\x2D"
 
     @classmethod
     def extract_all(cls, archive_path: str, output_dir: str) -> List[str]:
@@ -51,7 +75,7 @@ class U8Archive:
                 data = cls._decompress_yaz0(data)
 
         if not cls.is_u8(data):
-            raise ValueError(f"File '{archive_path}' is not a valid Nintendo U8 archive.")
+            raise ParseError(f"File '{archive_path}' is not a valid Nintendo U8 archive.")
 
         entries, file_data_map = cls._parse_archive(data)
         os.makedirs(output_dir, exist_ok=True)
@@ -59,7 +83,7 @@ class U8Archive:
 
         # Create directories first
         for entry in entries:
-            dest_path = os.path.join(output_dir, entry.path)
+            dest_path = sanitize_extract_path(output_dir, entry.path)
             if entry.is_dir:
                 os.makedirs(dest_path, exist_ok=True)
             else:
@@ -81,18 +105,21 @@ class U8Archive:
             data = decompress(data)
 
         if not cls.is_u8(data):
-            raise ValueError(f"File '{archive_path}' is not a valid Nintendo U8 archive.")
+            raise ParseError(f"File '{archive_path}' is not a valid Nintendo U8 archive.")
 
         entries, _ = cls._parse_archive(data, read_data=False)
         return entries
 
     @classmethod
     def _parse_archive(cls, data: bytes, read_data: bool = True) -> Tuple[List[U8Entry], Dict[int, bytes]]:
-        root_node_offset, header_size, data_offset = struct.unpack(">III", data[4:16])
+        archive_header = U8HeaderStruct.from_bytes(data, offset=0)
+        root_node_offset = archive_header.root_node_offset
+        header_size = archive_header.header_size
+        data_offset = archive_header.data_offset
 
-        # Node 0 (Root Node)
-        root_type, _, _, total_nodes = struct.unpack(">BBHI", data[root_node_offset:root_node_offset+8])
-        root_total_nodes = struct.unpack(">I", data[root_node_offset+8:root_node_offset+12])[0]
+        root_node = U8NodeStruct.from_bytes(data, offset=root_node_offset)
+        total_nodes = root_node.value2
+        root_total_nodes = total_nodes
 
         string_pool_offset = root_node_offset + (root_total_nodes * 12)
 
@@ -109,8 +136,12 @@ class U8Archive:
 
         for i in range(root_total_nodes):
             node_offset = root_node_offset + (i * 12)
-            type_byte, name_hi, name_lo, val1 = struct.unpack(">BBHI", data[node_offset:node_offset+8])
-            val2 = struct.unpack(">I", data[node_offset+8:node_offset+12])[0]
+            node = U8NodeStruct.from_bytes(data, offset=node_offset)
+            type_byte = node.kind
+            name_hi = node.name_high
+            name_lo = node.name_low
+            val1 = node.value1
+            val2 = node.value2
 
             is_dir = (type_byte == 1)
             name_offset = (name_hi << 16) | name_lo
@@ -161,7 +192,7 @@ class U8Archive:
         Ensures 32-byte data alignment according to Nintendo Wii SDK standards.
         """
         if not os.path.isdir(input_dir):
-            raise ValueError(f"Input path '{input_dir}' is not a directory.")
+            raise ParseError(f"Input path '{input_dir}' is not a directory.")
 
         # Build node tree via preorder traversal
         nodes_info = []  # dict of entry attributes
@@ -243,9 +274,13 @@ class U8Archive:
 
         # Step 5: Build binary archive
         out = bytearray()
-        # Header (0x20 bytes)
-        out.extend(struct.pack(">IIII", cls.MAGIC, root_node_offset, header_size, data_offset))
-        out.extend(b"\x00" * 16)
+        archive_header = U8HeaderStruct(
+            magic=b"\x55\xAA\x38\x2D",
+            root_node_offset=root_node_offset,
+            header_size=header_size,
+            data_offset=data_offset,
+        )
+        out.extend(archive_header.to_bytes())
 
         # Write nodes (12 bytes each)
         for node in nodes_info:
@@ -260,7 +295,13 @@ class U8Archive:
                 val1 = node["data_offset"]
                 val2 = node["size"]
 
-            out.extend(struct.pack(">BBHII", type_byte, name_hi, name_lo, val1, val2))
+            out.extend(U8NodeStruct(
+                kind=type_byte,
+                name_high=name_hi,
+                name_low=name_lo,
+                value1=val1,
+                value2=val2,
+            ).to_bytes())
 
         # Write string pool
         out.extend(string_pool)
@@ -285,10 +326,13 @@ class U8Archive:
     @classmethod
     def _decompress_yaz0(cls, data: bytes) -> bytes:
         """Decompress Nintendo Yaz0 compressed stream."""
-        if len(data) < 16 or data[:4] != b"Yaz0":
-            raise ValueError("Invalid Yaz0 header")
+        if len(data) < Yaz0HeaderStruct.sizeof():
+            raise ParseError("Invalid Yaz0 header")
+        header = Yaz0HeaderStruct.from_bytes(data, offset=0)
+        if header.magic != b"Yaz0":
+            raise ParseError("Invalid Yaz0 header")
 
-        uncompressed_size = struct.unpack(">I", data[4:8])[0]
+        uncompressed_size = header.uncompressed_size
         out = bytearray()
         in_pos = 16
         data_len = len(data)

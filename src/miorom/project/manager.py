@@ -7,6 +7,7 @@ translation catalogs (.po / .json), and one-command rebuilding with automated
 text lengthening, VWF auto-pagination, heap relocation, and checksum verification.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 import json
 import os
@@ -20,7 +21,7 @@ from miorom.text.po_handler import PoHandler
 
 
 @dataclass
-class ProjectManifest:
+class ProjectManifest(MioRomResult):
     """Project metadata and configuration for ROM translation workspace."""
     name: str
     platform: str
@@ -52,7 +53,7 @@ class ProjectManifest:
 
 
 @dataclass
-class BuildResult:
+class BuildResult(MioRomResult):
     """Detailed summary of a ROM repack build."""
     project_name: str
     tables_injected: int

@@ -48,3 +48,21 @@ def test_mips_snippet_invalid_reg():
     mips = AsmSnippet.mips()
     with pytest.raises(ValueError, match="Unknown MIPS register"):
         mips.lui("$invalid_reg", 0)
+
+
+def test_mips_snippet_advanced():
+    mips = (
+        AsmSnippet.mips(">")
+        .li("a0", 42)
+        .lw("v0", "a0", 0)
+        .sw("v0", "sp", 16)
+        .addu("v1", "v0", "a0")
+        .subu("t0", "v1", "a0")
+        .sll("t1", "t0", 2)
+        .srl("t2", "t1", 1)
+        .ori("t3", "t2", 0xFF)
+        .move("t4", "t3")
+        .jr_ra()
+    )
+    code = mips.emit()
+    assert len(code) == 11 * 4

@@ -1,4 +1,5 @@
 """
+from miorom.errors import ParseError
 miorom.script.vm
 ~~~~~~~~~~~~~~~~
 Declarative Event & Cutscene Script Virtual Machine (VM) Engine.
@@ -7,6 +8,7 @@ binary script files into human-readable text, and recompile them with automatic
 label and branch target resolution.
 """
 
+from miorom.result import MioRomResult
 import re
 import struct
 from dataclasses import dataclass, field
@@ -14,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 
 @dataclass
-class VMOpcodeSpec:
+class VMOpcodeSpec(MioRomResult):
     code: int
     name: str
     args: List[str]  # e.g. ["u16", "str_utf16", "label"]
@@ -202,7 +204,7 @@ class ScriptVM:
                 continue
 
             if op_name not in self._name_to_opcode:
-                raise ValueError(f"Unknown opcode: '{op_name}' in line: '{line}'")
+                raise ParseError(f"Unknown opcode: '{op_name}' in line: '{line}'")
 
             spec = self._name_to_opcode[op_name]
             parsed_instructions.append((spec, raw_args))

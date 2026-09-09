@@ -1,10 +1,11 @@
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 from miorom.graphics.tiles import Tile
 
 
 @dataclass
-class Glyph:
+class Glyph(MioRomResult):
     char: str
     width: int
     height: int

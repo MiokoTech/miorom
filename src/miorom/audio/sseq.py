@@ -1,8 +1,10 @@
+from miorom.result import MioRomResult
 import struct
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 
+from miorom.errors import ParseError
 def read_vlq(data: bytes, pos: int) -> Tuple[int, int]:
     """Read a Variable-Length Quantity (VLQ) from data at pos. Returns (value, new_pos)."""
     val = 0
@@ -26,7 +28,7 @@ def write_vlq(val: int) -> bytes:
 
 
 @dataclass
-class SSEQEvent:
+class SSEQEvent(MioRomResult):
     """Represents a discrete musical or control event in an SSEQ track."""
     delta_ticks: int
     event_type: str  # "note", "rest", "tempo", "program_change", "pan", "volume", "pitch_bend", "end"
@@ -52,11 +54,11 @@ class SSEQSequence:
     def from_bytes(cls, data: bytes) -> "SSEQSequence":
         """Disassemble SSEQ binary into an SSEQSequence object."""
         if len(data) < 32 or data[:4] != b"SSEQ":
-            raise ValueError("Invalid SSEQ binary: missing 'SSEQ' magic.")
+            raise ParseError("Invalid SSEQ binary: missing 'SSEQ' magic.")
 
         data_magic = data[16:20]
         if data_magic != b"DATA":
-            raise ValueError("Invalid SSEQ binary: missing 'DATA' block.")
+            raise ParseError("Invalid SSEQ binary: missing 'DATA' block.")
 
         base_offset = struct.unpack_from("<I", data, 24)[0]
         seq_start = base_offset if base_offset >= 16 else (16 + base_offset)
@@ -297,7 +299,7 @@ class SSEQSequence:
         Parse Standard MIDI file bytes and compile into an SSEQSequence.
         """
         if len(midi_bytes) < 14 or midi_bytes[:4] != b"MThd":
-            raise ValueError("Invalid MIDI file: missing 'MThd' header.")
+            raise ParseError("Invalid MIDI file: missing 'MThd' header.")
 
         fmt, num_tracks, division = struct.unpack_from(">HHH", midi_bytes, 8)
         pos = 14

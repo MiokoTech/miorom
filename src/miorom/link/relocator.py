@@ -1,5 +1,7 @@
+from miorom.result import MioRomResult
 import struct
 from dataclasses import dataclass
+from miorom.core.schema import U16, U32
 from typing import Dict, List, Optional, Tuple
 
 from miorom.link.elf import (
@@ -15,7 +17,7 @@ from miorom.link.elf import (
 
 
 @dataclass
-class ElfLinkResult:
+class ElfLinkResult(MioRomResult):
     """
     Result of linking and relocating an ELF32 object into memory.
     """
@@ -118,60 +120,61 @@ class ElfRelocator:
             if self.elf.e_machine == EM_ARM:
                 # R_ARM_ABS32 = 2
                 if rel.rel_type == 2:
-                    val = struct.unpack_from(f"{endian}I", buf, rel.r_offset)[0]
+                    val = U32().unpack(buf, rel.r_offset, endian)[0]
                     res = (val + s_addr + addend) & 0xFFFFFFFF
-                    struct.pack_into(f"{endian}I", buf, rel.r_offset, res)
+                    buf[rel.r_offset:rel.r_offset + 4] = U32().pack(res, endian=endian)
 
                 # R_ARM_REL32 = 3
                 elif rel.rel_type == 3:
-                    val = struct.unpack_from(f"{endian}I", buf, rel.r_offset)[0]
+                    val = U32().unpack(buf, rel.r_offset, endian)[0]
                     res = (val + s_addr + addend - p_addr) & 0xFFFFFFFF
-                    struct.pack_into(f"{endian}I", buf, rel.r_offset, res)
+                    buf[rel.r_offset:rel.r_offset + 4] = U32().pack(res, endian=endian)
 
                 # R_ARM_CALL = 28, R_ARM_JUMP24 = 29
                 elif rel.rel_type in (28, 29):
-                    orig_instr = struct.unpack_from(f"{endian}I", buf, rel.r_offset)[0]
+                    orig_instr = U32().unpack(buf, rel.r_offset, endian)[0]
                     branch_offset = (s_addr + addend - p_addr - 8) >> 2
                     new_instr = (orig_instr & 0xFF000000) | (branch_offset & 0x00FFFFFF)
-                    struct.pack_into(f"{endian}I", buf, rel.r_offset, new_instr)
+                    buf[rel.r_offset:rel.r_offset + 4] = U32().pack(new_instr, endian=endian)
 
                 # R_ARM_THM_CALL = 10 (Thumb BL/BLX pair)
                 elif rel.rel_type == 10:
-                    h1, h2 = struct.unpack_from(f"{endian}HH", buf, rel.r_offset)
+                    h1 = U16().unpack(buf, rel.r_offset, endian)[0]
+                    h2 = U16().unpack(buf, rel.r_offset + 2, endian)[0]
                     diff = s_addr + addend - p_addr - 4
                     diff >>= 1
                     h1 = 0xF000 | ((diff >> 11) & 0x07FF)
                     h2 = 0xF800 | (diff & 0x07FF)
-                    struct.pack_into(f"{endian}HH", buf, rel.r_offset, h1, h2)
+                    buf[rel.r_offset:rel.r_offset + 4] = U16().pack(h1, endian=endian) + U16().pack(h2, endian=endian)
 
             # MIPS Relocations (EM_MIPS = 8)
             elif self.elf.e_machine == EM_MIPS:
                 # R_MIPS_32 = 2
                 if rel.rel_type == 2:
-                    val = struct.unpack_from(f"{endian}I", buf, rel.r_offset)[0]
+                    val = U32().unpack(buf, rel.r_offset, endian)[0]
                     res = (val + s_addr + addend) & 0xFFFFFFFF
-                    struct.pack_into(f"{endian}I", buf, rel.r_offset, res)
+                    buf[rel.r_offset:rel.r_offset + 4] = U32().pack(res, endian=endian)
 
                 # R_MIPS_26 = 4 (J / JAL)
                 elif rel.rel_type == 4:
-                    orig_instr = struct.unpack_from(f"{endian}I", buf, rel.r_offset)[0]
+                    orig_instr = U32().unpack(buf, rel.r_offset, endian)[0]
                     target = (s_addr + addend) >> 2
                     new_instr = (orig_instr & 0xFC000000) | (target & 0x03FFFFFF)
-                    struct.pack_into(f"{endian}I", buf, rel.r_offset, new_instr)
+                    buf[rel.r_offset:rel.r_offset + 4] = U32().pack(new_instr, endian=endian)
 
                 # R_MIPS_HI16 = 5
                 elif rel.rel_type == 5:
-                    orig_instr = struct.unpack_from(f"{endian}I", buf, rel.r_offset)[0]
+                    orig_instr = U32().unpack(buf, rel.r_offset, endian)[0]
                     hi = ((s_addr + addend + 0x8000) >> 16) & 0xFFFF
                     new_instr = (orig_instr & 0xFFFF0000) | hi
-                    struct.pack_into(f"{endian}I", buf, rel.r_offset, new_instr)
+                    buf[rel.r_offset:rel.r_offset + 4] = U32().pack(new_instr, endian=endian)
 
                 # R_MIPS_LO16 = 6
                 elif rel.rel_type == 6:
-                    orig_instr = struct.unpack_from(f"{endian}I", buf, rel.r_offset)[0]
+                    orig_instr = U32().unpack(buf, rel.r_offset, endian)[0]
                     lo = (s_addr + addend) & 0xFFFF
                     new_instr = (orig_instr & 0xFFFF0000) | lo
-                    struct.pack_into(f"{endian}I", buf, rel.r_offset, new_instr)
+                    buf[rel.r_offset:rel.r_offset + 4] = U32().pack(new_instr, endian=endian)
 
             # PowerPC Relocations (EM_PPC = 20)
             elif self.elf.e_machine == EM_PPC:
@@ -181,68 +184,68 @@ class ElfRelocator:
 
                 # R_PPC_ADDR32 = 1
                 elif rel.rel_type == 1:
-                    val = struct.unpack_from(f"{endian}I", buf, rel.r_offset)[0]
+                    val = U32().unpack(buf, rel.r_offset, endian)[0]
                     res = (val + s_addr + addend) & 0xFFFFFFFF
-                    struct.pack_into(f"{endian}I", buf, rel.r_offset, res)
+                    buf[rel.r_offset:rel.r_offset + 4] = U32().pack(res, endian=endian)
 
                 # R_PPC_ADDR24 = 2 (Unconditional branch target)
                 elif rel.rel_type == 2:
-                    orig_instr = struct.unpack_from(f"{endian}I", buf, rel.r_offset)[0]
+                    orig_instr = U32().unpack(buf, rel.r_offset, endian)[0]
                     res = (orig_instr & 0xFC000003) | ((s_addr + addend) & 0x03FFFFFC)
-                    struct.pack_into(f"{endian}I", buf, rel.r_offset, res)
+                    buf[rel.r_offset:rel.r_offset + 4] = U32().pack(res, endian=endian)
 
                 # R_PPC_ADDR16_LO = 4
                 elif rel.rel_type == 4:
-                    orig_instr = struct.unpack_from(f"{endian}I", buf, rel.r_offset)[0]
+                    orig_instr = U32().unpack(buf, rel.r_offset, endian)[0]
                     lo = (s_addr + addend) & 0xFFFF
                     res = (orig_instr & 0xFFFF0000) | lo
-                    struct.pack_into(f"{endian}I", buf, rel.r_offset, res)
+                    buf[rel.r_offset:rel.r_offset + 4] = U32().pack(res, endian=endian)
 
                 # R_PPC_ADDR16_HI = 5
                 elif rel.rel_type == 5:
-                    orig_instr = struct.unpack_from(f"{endian}I", buf, rel.r_offset)[0]
+                    orig_instr = U32().unpack(buf, rel.r_offset, endian)[0]
                     hi = ((s_addr + addend) >> 16) & 0xFFFF
                     res = (orig_instr & 0xFFFF0000) | hi
-                    struct.pack_into(f"{endian}I", buf, rel.r_offset, res)
+                    buf[rel.r_offset:rel.r_offset + 4] = U32().pack(res, endian=endian)
 
                 # R_PPC_ADDR16_HA = 6 (High-adjusted to compensate for signed addi)
                 elif rel.rel_type == 6:
-                    orig_instr = struct.unpack_from(f"{endian}I", buf, rel.r_offset)[0]
+                    orig_instr = U32().unpack(buf, rel.r_offset, endian)[0]
                     ha = ((s_addr + addend + 0x8000) >> 16) & 0xFFFF
                     res = (orig_instr & 0xFFFF0000) | ha
-                    struct.pack_into(f"{endian}I", buf, rel.r_offset, res)
+                    buf[rel.r_offset:rel.r_offset + 4] = U32().pack(res, endian=endian)
 
                 # R_PPC_ADDR14 = 7 (Conditional branch target)
                 elif rel.rel_type == 7:
-                    orig_instr = struct.unpack_from(f"{endian}I", buf, rel.r_offset)[0]
+                    orig_instr = U32().unpack(buf, rel.r_offset, endian)[0]
                     res = (orig_instr & 0xFFFF0003) | ((s_addr + addend) & 0x0000FFFC)
-                    struct.pack_into(f"{endian}I", buf, rel.r_offset, res)
+                    buf[rel.r_offset:rel.r_offset + 4] = U32().pack(res, endian=endian)
 
                 # R_PPC_REL24 = 10 (Relative branch b/bl)
                 elif rel.rel_type == 10:
-                    orig_instr = struct.unpack_from(f"{endian}I", buf, rel.r_offset)[0]
+                    orig_instr = U32().unpack(buf, rel.r_offset, endian)[0]
                     diff = s_addr + addend - p_addr
                     res = (orig_instr & 0xFC000003) | (diff & 0x03FFFFFC)
-                    struct.pack_into(f"{endian}I", buf, rel.r_offset, res)
+                    buf[rel.r_offset:rel.r_offset + 4] = U32().pack(res, endian=endian)
 
                 # R_PPC_REL14 = 11 (Relative conditional branch)
                 elif rel.rel_type == 11:
-                    orig_instr = struct.unpack_from(f"{endian}I", buf, rel.r_offset)[0]
+                    orig_instr = U32().unpack(buf, rel.r_offset, endian)[0]
                     diff = s_addr + addend - p_addr
                     res = (orig_instr & 0xFFFF0003) | (diff & 0x0000FFFC)
-                    struct.pack_into(f"{endian}I", buf, rel.r_offset, res)
+                    buf[rel.r_offset:rel.r_offset + 4] = U32().pack(res, endian=endian)
 
                 # R_PPC_REL32 = 26
                 elif rel.rel_type == 26:
-                    val = struct.unpack_from(f"{endian}I", buf, rel.r_offset)[0]
+                    val = U32().unpack(buf, rel.r_offset, endian)[0]
                     res = (val + s_addr + addend - p_addr) & 0xFFFFFFFF
-                    struct.pack_into(f"{endian}I", buf, rel.r_offset, res)
+                    buf[rel.r_offset:rel.r_offset + 4] = U32().pack(res, endian=endian)
 
             # Generic 32-bit absolute
             elif rel.rel_type == 1:
-                val = struct.unpack_from(f"{endian}I", buf, rel.r_offset)[0]
+                val = U32().unpack(buf, rel.r_offset, endian)[0]
                 res = (val + s_addr + addend) & 0xFFFFFFFF
-                struct.pack_into(f"{endian}I", buf, rel.r_offset, res)
+                buf[rel.r_offset:rel.r_offset + 4] = U32().pack(res, endian=endian)
 
         # 5. Pack all relocated sections into contiguous binary
         out = bytearray(current_offset)
@@ -307,3 +310,20 @@ class ElfRelocator:
             rom_data.extend(b"\x00" * (end_offset - len(rom_data)))
         rom_data[rom_offset:end_offset] = linked_bytes
         return len(linked_bytes)
+
+
+class CompoundRelocationLinker:
+    """
+    Solves MIPS compound relocations by pairing R_MIPS_HI16 with subsequent R_MIPS_LO16
+    and computing proper sign-extension carry bit adjustments.
+    """
+
+    @classmethod
+    def calculate_hi_lo_pair(cls, target_addr: int) -> Tuple[int, int]:
+        """
+        Computes (hi16, lo16) pair for MIPS LUI / ADDIU instructions with sign-extension carry.
+        """
+        lo = target_addr & 0xFFFF
+        simm = struct.unpack(">h", struct.pack(">H", lo))[0]
+        hi = ((target_addr - simm) >> 16) & 0xFFFF
+        return hi, lo

@@ -64,3 +64,87 @@ def test_schema_nested_struct_and_arrays():
 
     # Roundtrip to_bytes
     assert container.to_bytes() == bytes(raw)
+
+
+from enum import IntEnum
+
+from miorom.core.schema import (
+    Alignment,
+    Bitfield,
+    ChecksumField,
+    EnumField,
+    If,
+    Padding,
+    PascalString,
+    SentinelArray,
+)
+
+
+class Compression(IntEnum):
+    NONE = 0
+    LZ10 = 0x10
+    LZ11 = 0x11
+
+
+class ComplexHeader(BinaryStruct):
+    compression = EnumField(U8(), Compression)
+    flags = Bitfield(U8(), {"visible": 1, "locked": 2}, default=0)
+    name = PascalString(U8())
+    conditional = If(lambda struct: struct.flags.visible, U16(), default=0)
+    pad = Padding(2)
+    items = SentinelArray(U16(), sentinel=b"\xff\xff")
+    checksum = ChecksumField(1)
+
+
+class Aligned(BinaryStruct):
+    value = U8()
+    aligned_value = Alignment(4)
+    result = U8()
+
+
+def test_schema_enum_bitfield_conditional_pascal_and_sentinel():
+    raw = bytes([
+        0x11,
+        0x03,
+        0x04,
+        ord("T"),
+        ord("E"),
+        ord("S"),
+        ord("T"),
+        0xAB,
+        0xCD,
+        0x00,
+        0x00,
+        0x01,
+        0x00,
+        0x02,
+        0x00,
+        0xFF,
+        0xFF,
+        0xD1,
+    ])
+
+    parsed = ComplexHeader.from_bytes(raw)
+    assert parsed.compression is Compression.LZ11
+    assert parsed.flags.visible is True
+    assert parsed.flags.locked is True
+    assert parsed.name == "TEST"
+    assert parsed.conditional == 0xCDAB
+    assert parsed.items == [1, 2]
+
+    aligned = Aligned.from_bytes(bytes([0x0A, 0x00, 0x00, 0x00, 0x2B]))
+    assert aligned.value == 0x0A
+    assert aligned.aligned_value == b"\x00\x00\x00"
+    assert aligned.result == 0x2B
+
+
+def test_schema_checksum_uses_preceding_bytes():
+    class Checksummed(BinaryStruct):
+        value = U16()
+        checksum = ChecksumField(1)
+
+    data = bytes([0x34, 0x12, 0x46])
+    parsed = Checksummed.from_bytes(data)
+    assert parsed.value == 0x1234
+    assert parsed.checksum == 0x46
+    assert Checksummed(value=0x1234).to_bytes() == data

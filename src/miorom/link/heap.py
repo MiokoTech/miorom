@@ -1,4 +1,5 @@
 """
+from miorom.errors import ParseError
 miorom.link.heap
 ~~~~~~~~~~~~~~~~
 Dynamic In-ROM Runtime Heap Allocator (miorom_heap).
@@ -6,6 +7,7 @@ Provides slab and buddy memory management primitives and C/assembly runtime payl
 generators to inject dynamic `malloc` and `free` routines into ROMs (DOL/ELF/GBA/NDS).
 """
 
+from miorom.result import MioRomResult
 import struct
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -17,7 +19,7 @@ ALIGNMENT = 16
 
 
 @dataclass
-class HeapStats:
+class HeapStats(MioRomResult):
     total_size: int
     used_bytes: int
     free_bytes: int
@@ -27,7 +29,7 @@ class HeapStats:
 
 
 @dataclass
-class MemBlock:
+class MemBlock(MioRomResult):
     offset: int         # Offset relative to heap start
     size: int           # Usable payload size
     is_allocated: bool  # True if in use
@@ -44,7 +46,7 @@ class MioRomHeap:
 
     def __init__(self, base_ram: int = 0x80500000, total_size: int = 0x100000):
         if total_size < 0x1000:
-            raise ValueError("Heap total size must be at least 4KB (0x1000 bytes)")
+            raise ParseError("Heap total size must be at least 4KB (0x1000 bytes)")
 
         self.base_ram = base_ram
         self.total_size = total_size
@@ -89,7 +91,7 @@ class MioRomHeap:
         Returns the absolute RAM address of the allocated payload.
         """
         if size <= 0:
-            raise ValueError("Allocation size must be greater than 0")
+            raise ParseError("Allocation size must be greater than 0")
 
         needed = self._align(size)
         chosen_idx = None

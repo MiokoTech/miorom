@@ -72,3 +72,36 @@ class SaveChecksum:
             val = struct.unpack_from(fmt, data, i)[0]
             total = (total + val) & 0xFFFFFFFF
         return total
+
+
+class SaveChecksumEngine:
+    """
+    Universal save file checksum verification and auto-repair engine for
+    SRAM (32KB), EEPROM (512B/2KB), and FlashRAM (128KB) formats.
+    """
+
+    @classmethod
+    def verify_and_fix(
+        cls,
+        save_data: bytearray,
+        checksum_offset: int,
+        data_range: tuple[int, int],
+        algo: str = "crc16_xmodem",
+        endian: str = ">",
+    ) -> bool:
+        start, end = data_range
+        payload = bytes(save_data[start:end])
+        
+        algo_fn = getattr(SaveChecksum, algo.lower())
+        computed = algo_fn(payload)
+
+        fmt = f"{endian}H" if "16" in algo else f"{endian}I"
+        sz = 2 if "16" in algo else 4
+
+        current = struct.unpack_from(fmt, save_data, checksum_offset)[0]
+        matched = (current == computed)
+
+        if not matched:
+            struct.pack_into(fmt, save_data, checksum_offset, computed)
+
+        return matched

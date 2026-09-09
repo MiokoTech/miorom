@@ -6,13 +6,14 @@ Inspects and patches uncompressed size headers (Nintendo LZ10/LZ11/RLE, Yaz0)
 and evaluates payload size deltas to predict RAM buffer safety.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass
 import struct
 from typing import Dict, Optional, Tuple
 
 
 @dataclass
-class CompressionSizeReport:
+class CompressionSizeReport(MioRomResult):
     """Report comparing compressed and uncompressed sizes."""
     format: str
     original_size: int

@@ -1,6 +1,21 @@
-import struct
 from typing import Optional, Tuple
 
+from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U8, U16
+
+
+class SNESHeaderStruct(BinaryStruct):
+    _endian = "<"
+    title = FixedString(21, encoding="latin1", pad=b" ")
+    map_mode = U8()
+    chipset = U8()
+    rom_size = U8()
+    ram_size = U8()
+    country_code = U8()
+    license_code = U8()
+    version = U8()
+    checksum_complement = U16()
+    rom_checksum = U16()
+    _reserved_0x20 = RawBytes(16)
 
 class SNESRom:
     """
@@ -15,6 +30,7 @@ class SNESRom:
         self.data = bytearray(data)
         self.has_smc = (len(self.data) % 1024) == self.SMC_HEADER_SIZE
         self.header_offset = self._detect_header_offset()
+        self._header = SNESHeaderStruct.from_bytes(self.data, offset=self.header_offset)
 
     @classmethod
     def from_file(cls, path: str) -> "SNESRom":
@@ -27,6 +43,7 @@ class SNESRom:
             self.data = self.data[self.SMC_HEADER_SIZE:]
             self.has_smc = False
             self.header_offset = self._detect_header_offset()
+            self._header = SNESHeaderStruct.from_bytes(self.data, offset=self.header_offset)
             return True
         return False
 
@@ -36,6 +53,7 @@ class SNESRom:
             self.data = bytearray(self.SMC_HEADER_SIZE) + self.data
             self.has_smc = True
             self.header_offset = self._detect_header_offset()
+            self._header = SNESHeaderStruct.from_bytes(self.data, offset=self.header_offset)
             return True
         return False
 
@@ -44,8 +62,8 @@ class SNESRom:
             return -1
 
         score = 0
-        comp, chk = struct.unpack_from("<HH", self.data, offset + 0x1C)
-        if (comp ^ chk) == 0xFFFF and chk != 0:
+        parsed = SNESHeaderStruct.from_bytes(self.data, offset=offset)
+        if (parsed.checksum_complement ^ parsed.rom_checksum) == 0xFFFF and parsed.rom_checksum != 0:
             score += 100
 
         # Title printable characters check (offset to offset + 21)
@@ -54,13 +72,12 @@ class SNESRom:
         score += printable
 
         # Valid map modes (0x20, 0x21, 0x25, 0x30, 0x31, 0x35)
-        map_mode = self.data[offset + 0x15] & 0xEF  # ignore FastROM bit
+        map_mode = parsed.map_mode & 0xEF  # ignore FastROM bit
         if map_mode in (0x20, 0x21, 0x25, 0x30, 0x31, 0x35):
             score += 20
 
         # Valid ROM sizes (0x07 = 128KB to 0x0D = 8MB)
-        rom_size = self.data[offset + 0x17]
-        if 0x07 <= rom_size <= 0x0E:
+        if 0x07 <= parsed.rom_size <= 0x0E:
             score += 10
 
         return score
@@ -96,21 +113,20 @@ class SNESRom:
 
     @property
     def title(self) -> str:
-        raw = self.data[self.header_offset : self.header_offset + 21]
-        return raw.decode("latin1", errors="replace").strip()
+        return self._header.title.strip()
 
     @title.setter
     def title(self, value: str):
-        encoded = value.encode("latin1", errors="replace")[:21].ljust(21, b" ")
-        self.data[self.header_offset : self.header_offset + 21] = encoded
+        self._header.title = value
+        self.data[self.header_offset : self.header_offset + 0x30] = self._header.to_bytes()
 
     @property
     def rom_checksum(self) -> int:
-        return struct.unpack_from("<H", self.data, self.header_offset + 0x1E)[0]
+        return self._header.rom_checksum
 
     @property
     def checksum_complement(self) -> int:
-        return struct.unpack_from("<H", self.data, self.header_offset + 0x1C)[0]
+        return self._header.checksum_complement
 
     def is_checksum_valid(self) -> bool:
         comp, chk = self.checksum_complement, self.rom_checksum
@@ -153,7 +169,9 @@ class SNESRom:
         """Calculates and writes the correct checksum and complement into the ROM header."""
         chk = self.calculate_checksum()
         comp = chk ^ 0xFFFF
-        struct.pack_into("<HH", self.data, self.header_offset + 0x1C, comp, chk)
+        self._header.checksum_complement = comp
+        self._header.rom_checksum = chk
+        self.data[self.header_offset : self.header_offset + 0x30] = self._header.to_bytes()
 
     def to_bytes(self) -> bytes:
         return bytes(self.data)

@@ -4,6 +4,8 @@ from typing import Dict, Generator, List, Optional, Tuple, Union
 from miorom.archive.container import ArchiveContainer, ArchiveEntry
 
 
+from miorom.errors import ParseError
+
 class VFSNode:
     """Base class for any virtual file system node."""
 
@@ -155,7 +157,7 @@ class VirtualFileSystem:
         if "w" in mode or "a" in mode or "+" in mode:
             parts = self._split_path(path)
             if not parts:
-                raise ValueError("Cannot open root as a file.")
+                raise ParseError("Cannot open root as a file.")
             filename = parts[-1]
             parent_path = "/".join(parts[:-1])
             parent_dir = self.mkdir(parent_path, exist_ok=True)
@@ -174,7 +176,7 @@ class VirtualFileSystem:
         """Write content into a virtual file, creating parent directories if needed."""
         parts = self._split_path(path)
         if not parts:
-            raise ValueError("Invalid file path.")
+            raise ParseError("Invalid file path.")
         filename = parts[-1]
         parent_path = "/".join(parts[:-1])
 
@@ -204,7 +206,7 @@ class VirtualFileSystem:
         """Remove a file or empty directory."""
         parts = self._split_path(path)
         if not parts:
-            raise ValueError("Cannot remove root directory.")
+            raise ParseError("Cannot remove root directory.")
         filename = parts[-1]
         parent_path = "/".join(parts[:-1])
         parent = self.resolve(parent_path)

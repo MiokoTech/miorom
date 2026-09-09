@@ -7,13 +7,15 @@ implicit or explicit Table-of-Contents (TOC) arrays, determines endianness and
 sub-stream types, and provides 1-click unpacking and format-preserving repacking.
 """
 
+from miorom.result import MioRomResult
 import os
-import struct
 from dataclasses import dataclass, field
 from typing import BinaryIO, Dict, List, Optional, Tuple, Union
 
 from miorom.archive.container import ArchiveContainer, ArchiveEntry
+from miorom.core.schema import U16, U32
 from miorom.archive.vfs import VirtualFileSystem
+from miorom.security import sanitize_extract_path
 
 
 # Known magic signatures for sub-file type identification
@@ -64,7 +66,7 @@ def detect_file_extension(data: bytes) -> str:
 
 
 @dataclass
-class DissectedArchive:
+class DissectedArchive(MioRomResult):
     """
     Result of a successful heuristic archive analysis.
     """
@@ -84,7 +86,7 @@ class DissectedArchive:
             file_data = entry.data
             if file_data is None:
                 file_data = self.raw_data[entry.offset : entry.offset + entry.size]
-            filepath = os.path.join(output_dir, entry.name)
+            filepath = sanitize_extract_path(output_dir, entry.name)
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
             with open(filepath, "wb") as f:
                 f.write(file_data)
@@ -107,7 +109,7 @@ class DissectedArchive:
         num_entries = len(active_entries)
         end = self.endianness
         ptr_sz = self.pointer_size
-        fmt_ptr = f"{end}I" if ptr_sz == 4 else f"{end}H"
+        pointer_field = U32(endian=end) if ptr_sz == 4 else U16(endian=end)
 
         if self.format_type == "implicit_offsets":
             # Header has count (if has_count_prefix) + (num_entries + 1) offsets
@@ -138,9 +140,9 @@ class DissectedArchive:
             # Build header
             header = bytearray()
             if self.has_count_prefix:
-                header.extend(struct.pack(fmt_ptr, num_entries))
+                header.extend(pointer_field.pack(num_entries, end))
             for off in offsets:
-                header.extend(struct.pack(fmt_ptr, off))
+                header.extend(pointer_field.pack(off, end))
 
             # Pad header to base_data_offset
             pad_len = base_data_offset - len(header)
@@ -170,12 +172,11 @@ class DissectedArchive:
 
             header = bytearray()
             if self.has_count_prefix:
-                header.extend(struct.pack(fmt_ptr, num_entries))
+                header.extend(pointer_field.pack(num_entries, end))
             for off, sz in toc_records:
-                if self.format_type == "explicit_offset_size":
-                    header.extend(struct.pack(f"{end}{'I' if ptr_sz==4 else 'H'}{'I' if ptr_sz==4 else 'H'}", off, sz))
-                else:
-                    header.extend(struct.pack(f"{end}{'I' if ptr_sz==4 else 'H'}{'I' if ptr_sz==4 else 'H'}", sz, off))
+                first, second = (off, sz) if self.format_type == "explicit_offset_size" else (sz, off)
+                header.extend(pointer_field.pack(first, end))
+                header.extend(pointer_field.pack(second, end))
 
             pad_len = base_data_offset - len(header)
             if pad_len > 0:
@@ -245,8 +246,8 @@ class HeuristicArchiveDissector:
         min_entries: int,
         max_entries: int,
     ) -> Optional[DissectedArchive]:
-        fmt_val = f"{endian}I" if ptr_sz == 4 else f"{endian}H"
-        count = struct.unpack_from(fmt_val, data, 0)[0]
+        value_field = U32(endian=endian) if ptr_sz == 4 else U16(endian=endian)
+        count = value_field.unpack(data, 0, endian)[0]
 
         if not (min_entries <= count <= max_entries):
             return None
@@ -261,13 +262,13 @@ class HeuristicArchiveDissector:
         has_sentinel = False
 
         for i in range(count):
-            off = struct.unpack_from(fmt_val, data, ptr_sz + (i * ptr_sz))[0]
+            off = value_field.unpack(data, ptr_sz + (i * ptr_sz), endian)[0]
             offsets.append(off)
 
         # Check sentinel if exists
         sentinel_pos = ptr_sz + (count * ptr_sz)
         if sentinel_pos + ptr_sz <= len(data):
-            sentinel_val = struct.unpack_from(fmt_val, data, sentinel_pos)[0]
+            sentinel_val = value_field.unpack(data, sentinel_pos, endian)[0]
             if sentinel_val > offsets[-1] and sentinel_val <= len(data):
                 offsets.append(sentinel_val)
                 has_sentinel = True
@@ -323,8 +324,8 @@ class HeuristicArchiveDissector:
         min_entries: int,
         max_entries: int,
     ) -> Optional[DissectedArchive]:
-        fmt_val = f"{endian}I" if ptr_sz == 4 else f"{endian}H"
-        count = struct.unpack_from(fmt_val, data, 0)[0]
+        value_field = U32(endian=endian) if ptr_sz == 4 else U16(endian=endian)
+        count = value_field.unpack(data, 0, endian)[0]
 
         if not (min_entries <= count <= max_entries):
             return None
@@ -341,8 +342,8 @@ class HeuristicArchiveDissector:
 
             for i in range(count):
                 rec_off = ptr_sz + (i * ptr_sz * 2)
-                v1 = struct.unpack_from(fmt_val, data, rec_off)[0]
-                v2 = struct.unpack_from(fmt_val, data, rec_off + ptr_sz)[0]
+                v1 = value_field.unpack(data, rec_off, endian)[0]
+                v2 = value_field.unpack(data, rec_off + ptr_sz, endian)[0]
 
                 off = v1 if pair_mode == "explicit_offset_size" else v2
                 sz = v2 if pair_mode == "explicit_offset_size" else v1
@@ -379,9 +380,9 @@ class HeuristicArchiveDissector:
         min_entries: int,
         max_entries: int,
     ) -> Optional[DissectedArchive]:
-        fmt_val = f"{endian}I" if ptr_sz == 4 else f"{endian}H"
+        value_field = U32(endian=endian) if ptr_sz == 4 else U16(endian=endian)
         # First entry offset tells us where the TOC ends
-        first_off = struct.unpack_from(fmt_val, data, 0)[0]
+        first_off = value_field.unpack(data, 0, endian)[0]
         if first_off % ptr_sz != 0 or first_off < ptr_sz * min_entries or first_off >= len(data):
             return None
 
@@ -391,7 +392,7 @@ class HeuristicArchiveDissector:
 
         offsets: List[int] = []
         for i in range(candidate_count):
-            off = struct.unpack_from(fmt_val, data, i * ptr_sz)[0]
+            off = value_field.unpack(data, i * ptr_sz, endian)[0]
             offsets.append(off)
 
         # Check monotonically increasing

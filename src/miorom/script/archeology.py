@@ -1,3 +1,4 @@
+from miorom.result import MioRomResult
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
@@ -6,7 +7,7 @@ from miorom.script.vm import ScriptVM, VMOpcodeSpec
 
 
 @dataclass
-class OpcodeCandidate:
+class OpcodeCandidate(MioRomResult):
     code: int
     count: int
     inferred_args: List[str]
@@ -18,7 +19,7 @@ class OpcodeCandidate:
 
 
 @dataclass
-class ArcheologyReport:
+class ArcheologyReport(MioRomResult):
     total_bytes: int
     detected_opcodes: List[OpcodeCandidate] = field(default_factory=list)
     estimated_endian: str = ">"

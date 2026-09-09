@@ -7,13 +7,14 @@ instantly categorize files into Text, Graphics, Audio, Machine Code, Compressed 
 and Padding, recommending the exact reverse engineering tools to apply.
 """
 
+from miorom.result import MioRomResult
 import math
 import os
 import struct
 from collections import Counter
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Iterator, List, Optional, Tuple, Union
 
 
 class AssetType(str, Enum):
@@ -29,7 +30,7 @@ class AssetType(str, Enum):
 
 
 @dataclass
-class FileTriageRecord:
+class FileTriageRecord(MioRomResult):
     """Detailed triage findings for a single binary file or chunk."""
     path: str
     size: int
@@ -45,7 +46,7 @@ class FileTriageRecord:
 
 
 @dataclass
-class TriageReport:
+class TriageReport(MioRomResult):
     """Summary report across an entire directory or asset collection."""
     records: List[FileTriageRecord] = field(default_factory=list)
 
@@ -218,6 +219,12 @@ class RomTriageEngine:
     def triage_directory(cls, dir_path: str, recursive: bool = True) -> TriageReport:
         """Recursively scans a directory and classifies all contained files."""
         report = TriageReport()
+        report.records.extend(cls.iter_directory(dir_path, recursive=recursive))
+        return report
+
+    @classmethod
+    def iter_directory(cls, dir_path: str, recursive: bool = True) -> Iterator[FileTriageRecord]:
+        """Yield triage records for each readable file without waiting for the full report."""
         if not os.path.exists(dir_path):
             raise FileNotFoundError(f"Directory not found: {dir_path}")
 
@@ -228,10 +235,8 @@ class RomTriageEngine:
                     with open(file_path, "rb") as f:
                         data = f.read()
                     rec = cls.triage_buffer(data, name=file_path)
-                    report.records.append(rec)
+                    yield rec
                 except Exception:
                     pass
             if not recursive:
                 break
-
-        return report

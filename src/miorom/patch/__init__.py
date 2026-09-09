@@ -1,9 +1,11 @@
 import os
+from miorom.errors import PatchError
 from typing import Optional
 from miorom.patch.ips import IpsPatcher
 from miorom.patch.bps import BpsPatcher
+from miorom.patch.hunks import PatchHunk, filter_hunks, merge_patches
 from miorom.patch.xdelta import XdeltaPatcher
-from miorom.patch.slack import SlackSpaceManager, SlackBlock
+from miorom.patch.slack import SlackSpaceManager, SlackBlock, FarMemoryHeap
 from miorom.patch.relocator import (
     RelocatablePointer,
     RelocationRecord,
@@ -31,9 +33,13 @@ from miorom.patch.patch_writer import PatchWriter, PatchRecord
 __all__ = [
     "IpsPatcher",
     "BpsPatcher",
+    "PatchHunk",
+    "filter_hunks",
+    "merge_patches",
     "XdeltaPatcher",
     "SlackSpaceManager",
     "SlackBlock",
+    "FarMemoryHeap",
     "RelocatablePointer",
     "RelocationRecord",
     "RelocationSummary",
@@ -84,7 +90,7 @@ def create_patch(
     elif format_type == "xdelta":
         XdeltaPatcher.create_patch(source_path, target_path, patch_path)
     else:
-        raise ValueError(f"Unsupported patch format: '{format_type}'. Choose 'ips', 'bps', or 'xdelta'.")
+        raise PatchError(f"Unsupported patch format: '{format_type}'. Choose 'ips', 'bps', or 'xdelta'.")
 
 
 def apply_patch(
@@ -116,4 +122,4 @@ def apply_patch(
     elif format_type == "xdelta":
         XdeltaPatcher.apply_patch(source_path, patch_path, output_path)
     else:
-        raise ValueError(f"Unsupported patch format: '{format_type}'.")
+        raise PatchError(f"Unsupported patch format: '{format_type}'.")

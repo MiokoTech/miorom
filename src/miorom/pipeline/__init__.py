@@ -8,6 +8,7 @@ from miorom.pipeline.engine import (
     PipelineContext,
     PipelineRecipe,
     PipelineStep,
+    PipelineHook,
     STEP_REGISTRY,
 )
 
@@ -21,5 +22,6 @@ __all__ = [
     "FixChecksumStep",
     "CreatePatchStep",
     "PipelineRecipe",
+    "PipelineHook",
     "STEP_REGISTRY",
 ]

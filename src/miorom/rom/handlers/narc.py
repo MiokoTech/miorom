@@ -1,4 +1,5 @@
 import os
+from miorom.errors import ParseError
 from typing import Dict, Any, Optional
 
 from miorom.rom.base import BaseRomHandler
@@ -28,7 +29,7 @@ class NarcRomHandler(BaseRomHandler):
 
     def unpack(self, data: bytes, output_dir: str, **kwargs) -> Dict[str, Any]:
         if not NARCArchive.is_narc(data):
-            raise ValueError("Data is not a valid Nintendo NARC archive.")
+            raise ParseError("Data is not a valid Nintendo NARC archive.")
 
         root_dir = os.path.join(output_dir, "root")
         os.makedirs(root_dir, exist_ok=True)

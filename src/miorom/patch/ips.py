@@ -1,6 +1,10 @@
 import struct
 from typing import Union, BinaryIO
 from io import BytesIO
+from typing import Iterator, List, Tuple
+
+from miorom.patch.hunks import PatchHunk
+from miorom.errors import PatchError
 
 
 class IpsPatcher:
@@ -13,10 +17,43 @@ class IpsPatcher:
     EOF = b"EOF"
 
     @classmethod
+    def iter_records(cls, patch: bytes) -> List[Tuple[int, bytes]]:
+        """Return decoded normal/RLE IPS records for patch-translation tools."""
+        if not patch.startswith(cls.MAGIC):
+            raise PatchError("Invalid IPS patch: missing 'PATCH' magic header")
+        records: List[Tuple[int, bytes]] = []
+        pos = len(cls.MAGIC)
+        while pos + 3 <= len(patch):
+            if patch[pos:pos+3] == cls.EOF:
+                break
+            if pos + 5 > len(patch):
+                raise PatchError("Truncated IPS record")
+            offset = (patch[pos] << 16) | (patch[pos+1] << 8) | patch[pos+2]
+            size = (patch[pos+3] << 8) | patch[pos+4]
+            pos += 5
+            if size:
+                if pos + size > len(patch):
+                    raise PatchError("Truncated IPS payload")
+                records.append((offset, patch[pos:pos+size]))
+                pos += size
+            else:
+                if pos + 3 > len(patch):
+                    raise PatchError("Truncated IPS RLE record")
+                rle_size = (patch[pos] << 8) | patch[pos+1]
+                rle_val = patch[pos+2]
+                pos += 3
+                records.append((offset, bytes([rle_val]) * rle_size))
+        return records
+
+    @classmethod
+    def parse(cls, patch: bytes) -> List[PatchHunk]:
+        return [PatchHunk(offset, data) for offset, data in cls.iter_records(patch)]
+
+    @classmethod
     def apply(cls, original: bytes, patch: bytes) -> bytes:
         """Apply an IPS patch to original binary data."""
         if not patch.startswith(cls.MAGIC):
-            raise ValueError("Invalid IPS patch: missing 'PATCH' magic header")
+            raise PatchError("Invalid IPS patch: missing 'PATCH' magic header")
 
         result = bytearray(original)
         pos = len(cls.MAGIC)
@@ -32,7 +69,7 @@ class IpsPatcher:
                 break
 
             if pos + 5 > patch_len:
-                raise ValueError("Truncated IPS record")
+                raise PatchError("Truncated IPS record")
 
             offset = (patch[pos] << 16) | (patch[pos+1] << 8) | patch[pos+2]
             size = (patch[pos+3] << 8) | patch[pos+4]
@@ -41,7 +78,7 @@ class IpsPatcher:
             if size > 0:
                 # Normal record
                 if pos + size > patch_len:
-                    raise ValueError("Truncated IPS payload")
+                    raise PatchError("Truncated IPS payload")
                 data = patch[pos:pos+size]
                 pos += size
 
@@ -53,7 +90,7 @@ class IpsPatcher:
             else:
                 # RLE record
                 if pos + 3 > patch_len:
-                    raise ValueError("Truncated IPS RLE record")
+                    raise PatchError("Truncated IPS RLE record")
                 rle_size = (patch[pos] << 8) | patch[pos+1]
                 rle_val = patch[pos+2]
                 pos += 3
@@ -74,7 +111,7 @@ class IpsPatcher:
         max_len = max(orig_len, mod_len)
 
         if max_len > 0xFFFFFF:
-            raise ValueError(f"File size {max_len} exceeds IPS 16MB limit. Use BPS or Xdelta instead.")
+            raise PatchError(f"File size {max_len} exceeds IPS 16MB limit. Use BPS or Xdelta instead.")
 
         i = 0
         while i < max_len:
@@ -152,3 +189,40 @@ class IpsPatcher:
         patch = cls.create(orig, mod)
         with open(patch_path, "wb") as f:
             f.write(patch)
+
+    @classmethod
+    def apply_stream(
+        cls,
+        source_stream: BinaryIO,
+        patch_bytes: bytes,
+        output_stream: BinaryIO,
+        chunk_size: int = 65536,
+    ):
+        """
+        Apply IPS patch via constant-memory streaming buffers without loading full image into RAM.
+        Ideal for large disc images (PS1, GameCube, Wii) on memory-constrained devices.
+        """
+        hunks = sorted(cls.parse(patch_bytes), key=lambda h: h.offset)
+        source_stream.seek(0)
+        current_pos = 0
+
+        for hunk in hunks:
+            while current_pos < hunk.offset:
+                to_read = min(chunk_size, hunk.offset - current_pos)
+                chunk = source_stream.read(to_read)
+                if not chunk:
+                    output_stream.write(b"\x00" * (hunk.offset - current_pos))
+                    current_pos = hunk.offset
+                    break
+                output_stream.write(chunk)
+                current_pos += len(chunk)
+
+            output_stream.write(hunk.data)
+            source_stream.seek(current_pos + len(hunk.data))
+            current_pos += len(hunk.data)
+
+        while True:
+            chunk = source_stream.read(chunk_size)
+            if not chunk:
+                break
+            output_stream.write(chunk)

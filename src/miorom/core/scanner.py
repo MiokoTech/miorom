@@ -3,13 +3,14 @@ import string
 import struct
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple, Dict, Any, Set, Sequence, Union
+from typing import Iterator, List, Optional, Tuple, Dict, Any, Set, Sequence, Union
 
 from miorom.text.charmap import CharMap
+from miorom.result import MioRomResult
 
 
 @dataclass
-class FoundString:
+class FoundString(MioRomResult):
     offset: int
     length: int  # Byte length in file
     text: str
@@ -25,7 +26,7 @@ class FoundString:
 
 
 @dataclass
-class TextBlock:
+class TextBlock(MioRomResult):
     start_offset: int
     end_offset: int
     strings: List[FoundString] = field(default_factory=list)
@@ -44,7 +45,7 @@ class TextBlock:
 
 
 @dataclass
-class CandidatePointerTable:
+class CandidatePointerTable(MioRomResult):
     table_offset: int
     count: int
     stride: int
@@ -105,39 +106,71 @@ class StringScanner:
         if end_offset is None:
             end_offset = len(data)
 
+        return list(cls.iter_strings(
+            data=data,
+            min_length=min_length,
+            encoding=encoding,
+            charmap=charmap,
+            null_terminated=null_terminated,
+            allow_control_chars=allow_control_chars,
+            start_offset=start_offset,
+            end_offset=end_offset,
+            pattern=pattern,
+            regex=regex,
+            alignment=alignment,
+            max_strings=max_strings,
+            strip_whitespace=strip_whitespace,
+            case_sensitive=case_sensitive,
+        ))
+
+    @classmethod
+    def iter_strings(
+        cls,
+        data: bytes,
+        min_length: int = 4,
+        encoding: str = "ascii",
+        charmap: Optional[CharMap] = None,
+        null_terminated: bool = True,
+        allow_control_chars: bool = True,
+        start_offset: int = 0,
+        end_offset: Optional[int] = None,
+        pattern: Optional[str] = None,
+        regex: Optional[str] = None,
+        alignment: int = 1,
+        max_strings: Optional[int] = None,
+        strip_whitespace: bool = False,
+        case_sensitive: bool = True,
+    ):
+        """Yield filtered strings progressively; stop early when the consumer stops."""
+        if end_offset is None:
+            end_offset = len(data)
+        count = 0
         if charmap is not None:
-            results = cls._scan_charmap(data, charmap, min_length, start_offset, end_offset)
+            candidates = cls._iter_charmap(data, charmap, min_length, start_offset, end_offset)
         elif encoding.lower() in ("utf-16", "utf-16-le", "utf-16-be"):
-            results = cls._scan_utf16(data, encoding, min_length, start_offset, end_offset)
+            candidates = cls._iter_utf16(data, encoding, min_length, start_offset, end_offset)
         else:
-            results = cls._scan_standard(data, encoding, min_length, allow_control_chars, start_offset, end_offset)
+            candidates = cls._iter_standard(data, encoding, min_length, allow_control_chars, start_offset, end_offset)
 
-        if alignment > 1:
-            results = [s for s in results if s.offset % alignment == 0]
-
-        if strip_whitespace:
-            cleaned = []
-            for s in results:
-                t = s.text.strip()
-                if len(t) >= min_length:
-                    cleaned.append(FoundString(offset=s.offset, length=s.length, text=t, raw_bytes=s.raw_bytes))
-            results = cleaned
-
-        if pattern:
-            if case_sensitive:
-                results = [s for s in results if pattern in s.text]
-            else:
-                pat_lower = pattern.lower()
-                results = [s for s in results if pat_lower in s.text.lower()]
-
-        if regex:
-            rx = re.compile(regex) if isinstance(regex, str) else regex
-            results = [s for s in results if rx.search(s.text)]
-
-        if max_strings is not None and max_strings > 0:
-            results = results[:max_strings]
-
-        return results
+        for found in candidates:
+            if alignment > 1 and found.offset % alignment:
+                continue
+            if strip_whitespace:
+                text = found.text.strip()
+                if len(text) < min_length:
+                    continue
+                found = FoundString(offset=found.offset, length=found.length, text=text, raw_bytes=found.raw_bytes)
+            if pattern:
+                if case_sensitive and pattern not in found.text:
+                    continue
+                if not case_sensitive and pattern.lower() not in found.text.lower():
+                    continue
+            if regex and not re.compile(regex).search(found.text):
+                continue
+            if max_strings is not None and max_strings > 0 and count >= max_strings:
+                return
+            count += 1
+            yield found
 
     @classmethod
     def _is_printable_byte(cls, b: int, allow_control: bool) -> bool:
@@ -148,7 +181,7 @@ class StringScanner:
         return False
 
     @classmethod
-    def _scan_standard(
+    def _iter_standard(
         cls,
         data: bytes,
         encoding: str,
@@ -156,8 +189,7 @@ class StringScanner:
         allow_control: bool,
         start_offset: int,
         end_offset: int
-    ) -> List[FoundString]:
-        results: List[FoundString] = []
+    ) -> Iterator[FoundString]:
         in_pos = start_offset
         is_ascii = encoding.lower() in ("ascii", "latin1", "iso-8859-1")
 
@@ -189,19 +221,19 @@ class StringScanner:
                 try:
                     text = chunk.decode(encoding)
                     if cls._is_valid_text(text, allow_control):
-                        results.append(FoundString(
+                        yield FoundString(
                             offset=start,
                             length=full_len,
                             text=text,
                             raw_bytes=chunk
-                        ))
+                        )
                 except (UnicodeDecodeError, ValueError):
                     pass
 
             if has_null:
                 in_pos += 1
 
-        return results
+        return
 
     @classmethod
     def _is_valid_text(cls, text: str, allow_control_chars: bool) -> bool:
@@ -214,8 +246,7 @@ class StringScanner:
         return (printable_count / len(text)) >= 0.85
 
     @classmethod
-    def _scan_utf16(cls, data: bytes, encoding: str, min_length: int, start_offset: int, end_offset: int) -> List[FoundString]:
-        results: List[FoundString] = []
+    def _iter_utf16(cls, data: bytes, encoding: str, min_length: int, start_offset: int, end_offset: int) -> Iterator[FoundString]:
         in_pos = start_offset & ~1
 
         while in_pos + 1 < end_offset:
@@ -232,23 +263,22 @@ class StringScanner:
                 try:
                     text = raw.decode(encoding)
                     if cls._is_valid_text(text, allow_control_chars=True):
-                        results.append(FoundString(
+                        yield FoundString(
                             offset=start,
                             length=chunk_len + 2,
                             text=text,
                             raw_bytes=raw
-                        ))
+                        )
                 except (UnicodeDecodeError, ValueError):
                     pass
 
             while in_pos + 1 < end_offset and data[in_pos:in_pos+2] == b"\x00\x00":
                 in_pos += 2
 
-        return results
+        return
 
     @classmethod
-    def _scan_charmap(cls, data: bytes, charmap: CharMap, min_length: int, start_offset: int, end_offset: int) -> List[FoundString]:
-        results: List[FoundString] = []
+    def _iter_charmap(cls, data: bytes, charmap: CharMap, min_length: int, start_offset: int, end_offset: int) -> Iterator[FoundString]:
         in_pos = start_offset
 
         while in_pos < end_offset:
@@ -278,16 +308,16 @@ class StringScanner:
                     break
 
             if len(curr_str) >= min_length:
-                results.append(FoundString(
+                yield FoundString(
                     offset=start,
                     length=len(curr_bytes),
                     text="".join(curr_str),
                     raw_bytes=bytes(curr_bytes)
-                ))
+                )
 
             in_pos = max(in_pos + 1, start + 1)
 
-        return results
+        return
 
     @classmethod
     def group_into_blocks(cls, strings: List[FoundString], max_gap: int = 64) -> List[TextBlock]:
@@ -345,6 +375,37 @@ class PointerScanner:
         max_tables: Optional[int] = None,
         start_offset: int = 0,
     ) -> List[CandidatePointerTable]:
+        return list(cls.iter_pointer_tables(
+            data=data,
+            target_offsets=target_offsets,
+            strides=strides,
+            endians=endians,
+            min_pointers=min_pointers,
+            base_offsets=base_offsets,
+            max_search_offset=max_search_offset,
+            stride=stride,
+            endian=endian,
+            min_confidence=min_confidence,
+            max_tables=max_tables,
+            start_offset=start_offset,
+        ))
+
+    @classmethod
+    def iter_pointer_tables(
+        cls,
+        data: bytes,
+        target_offsets: List[int],
+        strides: Union[int, Sequence[int]] = (4, 2, 8),
+        endians: Union[str, Sequence[str]] = ("<", ">"),
+        min_pointers: int = 4,
+        base_offsets: Optional[List[int]] = None,
+        max_search_offset: Optional[int] = None,
+        stride: Optional[Union[int, Sequence[int]]] = None,
+        endian: Optional[Union[str, Sequence[str]]] = None,
+        min_confidence: float = 0.0,
+        max_tables: Optional[int] = None,
+        start_offset: int = 0,
+    ):
         """
         Finds arrays of pointers pointing to the given target string offsets.
 
@@ -359,7 +420,7 @@ class PointerScanner:
             max_tables: Maximum number of tables to return.
         """
         if not target_offsets:
-            return []
+            return iter([])
 
         if stride is not None:
             active_strides = (stride,) if isinstance(stride, int) else tuple(stride)
@@ -376,11 +437,10 @@ class PointerScanner:
             active_endians = tuple(endians)
 
         target_set = set(target_offsets)
+        yielded = 0
         data_len = len(data)
         if max_search_offset is None:
             max_search_offset = data_len
-
-        candidate_tables: List[CandidatePointerTable] = []
 
         bases_to_check = set(base_offsets if base_offsets is not None else [0])
         if not base_offsets:
@@ -400,16 +460,17 @@ class PointerScanner:
                         max_search_offset=max_search_offset,
                         start_offset=start_offset,
                     )
-                    candidate_tables.extend(tables)
-
-        candidate_tables.sort(key=lambda t: (t.confidence, t.count), reverse=True)
-
-        if min_confidence > 0.0:
-            candidate_tables = [t for t in candidate_tables if t.confidence >= min_confidence]
-        if max_tables is not None and max_tables > 0:
-            candidate_tables = candidate_tables[:max_tables]
-
-        return candidate_tables
+                    for table in sorted(
+                        tables,
+                        key=lambda item: (item.confidence, item.count),
+                        reverse=True,
+                    ):
+                        if min_confidence > 0.0 and table.confidence < min_confidence:
+                            continue
+                        if max_tables is not None and max_tables > 0 and yielded >= max_tables:
+                            return
+                        yielded += 1
+                        yield table
 
     @classmethod
     def _scan_for_stride(
@@ -499,8 +560,30 @@ class PointerScanner:
         this method scans backward from the end of file in a configurable window.
         A lower min_pointers default (2) is used since footer tables tend to be small.
         """
+        return list(cls.iter_footer_pointer_tables(
+            data, target_offsets, strides=strides, endians=endians,
+            min_pointers=min_pointers, footer_scan_bytes=footer_scan_bytes,
+            stride=stride, endian=endian, min_confidence=min_confidence,
+            max_tables=max_tables,
+        ))
+
+    @classmethod
+    def iter_footer_pointer_tables(
+        cls,
+        data: bytes,
+        target_offsets: List[int],
+        strides: Union[int, Sequence[int]] = (4, 2, 8),
+        endians: Union[str, Sequence[str]] = ("<", ">"),
+        min_pointers: int = 2,
+        footer_scan_bytes: int = 256,
+        stride: Optional[Union[int, Sequence[int]]] = None,
+        endian: Optional[Union[str, Sequence[int]]] = None,
+        min_confidence: float = 0.0,
+        max_tables: Optional[int] = None,
+    ) -> Iterator["CandidatePointerTable"]:
+        """Yield footer pointer-table candidates progressively."""
         if not target_offsets or len(data) < 16:
-            return []
+            return iter([])
 
         if stride is not None:
             active_strides = (stride,) if isinstance(stride, int) else tuple(stride)

@@ -2,6 +2,7 @@ import re
 from typing import List, Optional, Union, Tuple
 
 
+from miorom.errors import ParseError
 class SignaturePattern:
     """
     Byte pattern matcher with wildcard support (similar to Ghidra / IDA Pro / YARA).
@@ -38,7 +39,7 @@ class SignaturePattern:
                     val = int(tok, 16)
                     regex_parts.append(re.escape(bytes([val])))
                 except ValueError:
-                    raise ValueError(f"Invalid byte token in signature pattern: '{tok}'")
+                    raise ParseError(f"Invalid byte token in signature pattern: '{tok}'")
 
         regex_bytes = b"".join(regex_parts)
         return re.compile(regex_bytes, re.DOTALL)

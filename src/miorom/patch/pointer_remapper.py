@@ -5,6 +5,7 @@ Relative Pointer Table & Multi-Pointer Remapper Primitive.
 Solves relative offset arithmetic (offsets relative to header or end-of-table)
 and handles 1-to-many pointer references when text is relocated into new heaps.
 """
+from miorom.errors import RelocationError
 
 from dataclasses import dataclass
 import struct
@@ -59,7 +60,7 @@ class RelativePointerTable:
             pos = table_offset + (i * pointer_size)
             rel_val = target - base_offset
             if rel_val < 0:
-                raise ValueError(f"Relative pointer cannot be negative: {target} < {base_offset}")
+                raise RelocationError(f"Relative pointer cannot be negative: {target} < {base_offset}")
             struct.pack_into(fmt, buffer, pos, rel_val)
 
 

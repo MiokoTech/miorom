@@ -1,10 +1,11 @@
+from miorom.result import MioRomResult
 from dataclasses import dataclass
 from typing import List, Optional, Union
 import struct
 
 
 @dataclass
-class PointerEntry:
+class PointerEntry(MioRomResult):
     index: int
     table_offset: int
     target_offset: int
@@ -123,3 +124,40 @@ class PointerTable:
 
     def __getitem__(self, index: int) -> PointerEntry:
         return self.entries[index]
+
+
+class SegmentTable:
+    """
+    Registry of virtual segment base addresses (0x00 to 0x0F in N64, KSEG0 in PS1,
+    or SNES LoROM/HiROM bank bases).
+    """
+
+    def __init__(self, segments: Optional[dict[int, int]] = None):
+        self.segments: dict[int, int] = dict(segments or {})
+
+    def set_segment(self, segment_id: int, base_address: int) -> None:
+        self.segments[segment_id] = base_address
+
+    def get_segment(self, segment_id: int) -> int:
+        return self.segments.get(segment_id, 0)
+
+
+class SegmentedAddressResolver:
+    """
+    Two-way resolver between segmented virtual addresses (e.g. 0x07001234)
+    and physical / file offsets.
+    """
+
+    def __init__(self, segment_table: Optional[SegmentTable] = None):
+        self.segment_table = segment_table or SegmentTable()
+
+    def to_physical(self, segmented_addr: int) -> int:
+        segment_id = (segmented_addr >> 24) & 0xFF
+        offset = segmented_addr & 0x00FFFFFF
+        base = self.segment_table.get_segment(segment_id)
+        return base + offset
+
+    def to_segmented(self, physical_addr: int, segment_id: int) -> int:
+        base = self.segment_table.get_segment(segment_id)
+        offset = physical_addr - base
+        return ((segment_id & 0xFF) << 24) | (offset & 0x00FFFFFF)

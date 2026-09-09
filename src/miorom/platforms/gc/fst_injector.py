@@ -6,6 +6,7 @@ Enables reading, extracting, and repacking files directly inside disc images
 without relying on external tools (like wit / gcit / Wiimms).
 """
 
+from miorom.result import MioRomResult
 import os
 import struct
 from dataclasses import dataclass
@@ -13,7 +14,7 @@ from typing import Dict, List, Optional, Tuple
 
 
 @dataclass
-class FstNode:
+class FstNode(MioRomResult):
     index: int
     is_dir: bool
     name: str

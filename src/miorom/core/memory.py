@@ -1,9 +1,10 @@
+from miorom.result import MioRomResult
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Dict, Any
 
 
 @dataclass
-class MemoryRegion:
+class MemoryRegion(MioRomResult):
     name: str
     file_offset: int
     ram_address: int

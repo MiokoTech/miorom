@@ -6,13 +6,14 @@ Validates bracket balance, detects dangling tags, and ensures translation fideli
 for rich-text game variables without enforcing any translation framework.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 import re
 from typing import List, Optional, Sequence, Set
 
 
 @dataclass
-class TagValidationReport:
+class TagValidationReport(MioRomResult):
     """Report on tag syntax and variable integrity."""
     is_valid: bool
     syntax_errors: List[str] = field(default_factory=list)

@@ -1,4 +1,5 @@
 import os
+from miorom.errors import ParseError
 import tempfile
 from typing import Dict, Any, Optional
 import json
@@ -52,7 +53,7 @@ class U8RomHandler(BaseRomHandler):
             raw_u8 = decompress(data)
 
         if not U8Archive.is_u8(raw_u8):
-            raise ValueError("Data is not a valid Nintendo U8 archive.")
+            raise ParseError("Data is not a valid Nintendo U8 archive.")
 
         root_dir = os.path.join(output_dir, "root")
         os.makedirs(root_dir, exist_ok=True)

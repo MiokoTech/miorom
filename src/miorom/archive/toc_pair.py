@@ -13,6 +13,7 @@ Supports:
    - Array of (offset, size) pairs, big-endian uint32
 """
 
+from miorom.result import MioRomResult
 import os
 import shutil
 import struct
@@ -21,7 +22,7 @@ from typing import List, Optional, Tuple
 
 
 @dataclass
-class TocEntry:
+class TocEntry(MioRomResult):
     index: int
     offset: int
     size: int

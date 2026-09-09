@@ -7,6 +7,7 @@ and safe, overflow-aware re-injection with automatic slack relocation and
 ROM integrity checksum fixing.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import json
@@ -21,7 +22,7 @@ from miorom.text.dte_miner import DTEMiner
 
 
 @dataclass
-class ExtractedString:
+class ExtractedString(MioRomResult):
     """Represents a text string extracted from a binary table."""
     index: int
     offset: int

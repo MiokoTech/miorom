@@ -4,16 +4,44 @@ Designed as a modular building block for reverse engineering tools, unpackers, a
 """
 
 __version__ = "0.12.0"
+__version__ = "0.13.0"
+
+from miorom.errors import (
+    MioromError,
+    ParseError,
+    UnsupportedFormatError,
+    ChecksumError,
+    RelocationError,
+    PointerOverflowError,
+    CompressionError,
+    PatchError,
+    SymbolError,
+)
+
+from miorom.result import MioRomResult
 
 from miorom.core.binary import BinaryReader, BinaryWriter
-from miorom.core.pointer import PointerTable, PointerEntry
+from miorom.core.pointer import PointerTable, PointerEntry, SegmentTable, SegmentedAddressResolver
 from miorom.core.scanner import StringScanner, PointerScanner
 from miorom.core.mapper import ByteOffsetMapper
 from miorom.core.buffer import RelocatableBuffer
-from miorom.core.schema import BinaryStruct
+from miorom.core.schema import (
+    BinaryStruct,
+    EnumField,
+    Bitfield,
+    BitfieldView,
+    If,
+    Padding,
+    Alignment,
+    Computed,
+    PascalString,
+    SentinelArray,
+    ChecksumField,
+)
 from miorom.core.memory import MemoryMap, MemoryRegion
 from miorom.core.signatures import SignaturePattern, SignatureScanner
 from miorom.core.rom_view import ROM, StringQuery
+from miorom.security import UnsafeArchivePathError, sanitize_extract_path
 
 from miorom.project import (
     Game,
@@ -80,6 +108,9 @@ from miorom.diff import (
     BinDiffReport,
     FunctionMatch,
     FunctionFingerprint,
+    PatchAuditor,
+    AuditReport,
+    PatchCollision,
 )
 
 from miorom.text.tags import TagManager
@@ -87,8 +118,10 @@ from miorom.text.charmap import CharMap
 from miorom.text.wrapper import WordWrapper
 from miorom.text.font_builder import Glyph, BitmapFont
 from miorom.text.aligner import StringAligner, AlignedString
+from miorom.text.tokenizer import ControlCodeDef, ControlCodeSchema, ControlCodeTokenizer
 
 from miorom.graphics.palette import Color, Palette
+from miorom.graphics.palette import FloydSteinbergDitherer
 from miorom.graphics.tiles import (
     Tile,
     decode_tile,
@@ -100,9 +133,12 @@ from miorom.graphics.tilesheet import TileSheet, TileSheetRenderer
 from miorom.graphics.tilemap import Tilemap, TilemapEntry, TileReducer
 from miorom.graphics.image_bridge import ImageBridge
 from miorom.graphics.mdec import MdecDecoder
+from miorom.graphics.fast3d import Fast3DParser, F3DTextureDescriptor, Fast3DBuilder
+from miorom.graphics.n64_texture import N64TextureDecoder, N64TextureEncoder, N64TextureFormat
 
 from miorom.formats.csv_handler import CsvHandler
 from miorom.formats.batch import BatchSplitter, BatchMerger
+from miorom.formats.script_catalog import DialogueCleaner, ScriptCatalog
 
 from miorom.patch import (
     IpsPatcher,
@@ -110,6 +146,7 @@ from miorom.patch import (
     XdeltaPatcher,
     SlackSpaceManager,
     SlackBlock,
+    FarMemoryHeap,
     RelocatablePointer,
     RelocationRecord,
     RelocationSummary,
@@ -175,6 +212,9 @@ from miorom.audio import (
     CdXaDecoder,
     decode_cdxa_sector,
     cdxa_to_wav,
+    M64Sequence,
+    M64Command,
+    N64Audiobank,
 )
 from miorom.archive import (
     ArchiveContainer,
@@ -194,6 +234,9 @@ from miorom.archive import (
     CascadingContainerRepacker,
     ContainerEntry,
     CascadingRepackReport,
+    DmaTableArchive,
+    DmaFileEntry,
+    DmaTableEntryStruct,
 )
 from miorom.pipeline import (
     PipelineRecipe,
@@ -209,6 +252,7 @@ from miorom.pipeline import (
 
 from miorom.save import (
     SaveChecksum,
+    SaveChecksumEngine,
     DualSlotSave,
     SaveStateDiffHunter,
     RAMSnapshot,
@@ -256,9 +300,16 @@ from miorom.asm import (
     AsmSnippet,
     ArmSnippet,
     MipsSnippet,
+    SM83Snippet,
+    FunctionPrologueScanner,
+    DiscoveredFunction,
 )
 from miorom.script import (
     BytecodeEngine,
+    BytecodeBranchScanner,
+    RelativeBranch,
+    SwitchTable,
+    SwitchCase,
     DisassembledScript,
     Instruction,
     BasicBlock,
@@ -297,6 +348,7 @@ from miorom.link import (
     Elf32File,
     ElfRelocator,
     ElfLinkResult,
+    CompoundRelocationLinker,
     ElfSection,
     ElfSymbol,
     ElfRelocation,
@@ -435,14 +487,27 @@ from miorom.rom import (
     repack_rom,
     RomLayoutExpander,
     RomExpansionReport,
+    RomHandlerProtocol,
 )
 
+from miorom.project.protocols import AssetProtocol, ArchiveProtocol
+from miorom.debug.protocols import EmulatorClientProtocol
 
 __all__ = [
+    "XRefGraph",
+    "XRefAnalyzer",
+    "AnalysisDatabase",
+    "SignatureDatabase",
+    "SignatureBuilder",
+    "SignatureEntry",
+    "FunctionNamer",
+    "NamingRule",
     "BinaryReader",
     "BinaryWriter",
     "PointerTable",
     "PointerEntry",
+    "SegmentTable",
+    "SegmentedAddressResolver",
     "ByteOffsetMapper",
     "RelocatableBuffer",
     "BinaryStruct",
@@ -589,6 +654,10 @@ __all__ = [
     "XRefType",
     "CallerGraph",
     "BytecodeEngine",
+    "BytecodeBranchScanner",
+    "RelativeBranch",
+    "SwitchTable",
+    "SwitchCase",
     "DisassembledScript",
     "Instruction",
     "BasicBlock",
@@ -666,6 +735,8 @@ __all__ = [
     "repack_rom",
     "ROM",
     "StringQuery",
+    "UnsafeArchivePathError",
+    "sanitize_extract_path",
     "Game",
     "TocArchive",
     "DualTableDialogue",
@@ -760,6 +831,13 @@ __all__ = [
     "APBypassReport",
     "RomLayoutExpander",
     "RomExpansionReport",
+    "RomHandlerProtocol",
+    "AssetProtocol",
+    "ArchiveProtocol",
+    "EmulatorClientProtocol",
+    "AssetProtocol",
+    "ArchiveProtocol",
+    "EmulatorClientProtocol",
     "RomAddressSanitizer",
     "SanitizerViolation",
     "MemorySanitizerError",
@@ -772,6 +850,16 @@ __all__ = [
     "PointerTrail",
     "DiffHunterReport",
     "StructProfiler",
+    "EnumField",
+    "Bitfield",
+    "BitfieldView",
+    "If",
+    "Padding",
+    "Alignment",
+    "Computed",
+    "PascalString",
+    "SentinelArray",
+    "ChecksumField",
     "StructProfile",
     "FieldProfile",
     "FieldType",
@@ -833,6 +921,7 @@ __all__ = [
     "AsmSnippet",
     "ArmSnippet",
     "MipsSnippet",
+    "SM83Snippet",
     "RecordBuilder",
     "SymbolMap",
     "SymbolEntry",
@@ -840,4 +929,7 @@ __all__ = [
     "GameTextTemplate",
 ]
 
-
+from miorom.scanner.xref import XRefGraph, XRefAnalyzer
+from miorom.analysis_db import AnalysisDatabase
+from miorom.signature_db import SignatureDatabase, SignatureBuilder, SignatureEntry
+from miorom.naming import FunctionNamer, NamingRule

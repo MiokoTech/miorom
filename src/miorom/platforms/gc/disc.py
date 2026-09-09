@@ -1,11 +1,42 @@
+from miorom.result import MioRomResult
 import os
-import struct
+from miorom.errors import ParseError
 from dataclasses import dataclass, field
+from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U32, U8
 from typing import Dict, List, Optional, Tuple
 
 
+class GCHeaderStruct(BinaryStruct):
+    _endian = ">"
+    game_id = FixedString(4)
+    maker_code = FixedString(2)
+    disc_number = U8()
+    version = U8()
+    audio_streaming = U8()
+    stream_buf_size = U8()
+    _reserved_0x0A = RawBytes(0x12)
+    magic = U32()
+    game_title = FixedString(64, encoding="shift-jis")
+    _reserved_0x60 = RawBytes(0x3C0)
+    dol_offset = U32()
+    fst_offset = U32()
+    fst_size = U32()
+    fst_max_size = U32()
+    user_pos = U32()
+    user_length = U32()
+    _reserved_0x438 = RawBytes(8)
+
+
+class GCFstEntryStruct(BinaryStruct):
+    _endian = ">"
+    flags = U8()
+    name_offset_raw = RawBytes(3)
+    first_value = U32()
+    second_value = U32()
+
+
 @dataclass
-class GCHeader:
+class GCHeader(MioRomResult):
     """GameCube / Wii Disc Header (0x0000..0x0440)."""
     game_id: str
     maker_code: str
@@ -24,24 +55,18 @@ class GCHeader:
 
     @classmethod
     def parse(cls, data: bytes) -> "GCHeader":
-        if len(data) < 0x440:
-            raise ValueError("Disc buffer too small for GameCube header (requires at least 0x440 bytes).")
+        if len(data) < GCHeaderStruct.sizeof():
+            raise ParseError("Disc buffer too small for GameCube header (requires at least 0x440 bytes).")
 
-        game_id = data[0x00:0x04].decode("ascii", errors="replace").strip("\x00")
-        maker_code = data[0x04:0x06].decode("ascii", errors="replace").strip("\x00")
-        disc_num = data[0x06]
-        version = data[0x07]
-        audio_stream = data[0x08] != 0
-        stream_buf = data[0x09]
-        magic = struct.unpack_from(">I", data, 0x1C)[0]
-        title = data[0x20:0x60].decode("shift-jis", errors="replace").strip("\x00").strip()
-
-        dol_off = struct.unpack_from(">I", data, 0x420)[0]
-        fst_off = struct.unpack_from(">I", data, 0x424)[0]
-        fst_sz = struct.unpack_from(">I", data, 0x428)[0]
-        fst_max_sz = struct.unpack_from(">I", data, 0x42C)[0]
-        user_pos = struct.unpack_from(">I", data, 0x430)[0]
-        user_len = struct.unpack_from(">I", data, 0x434)[0]
+        parsed = GCHeaderStruct.from_bytes(data, offset=0)
+        game_id = parsed.game_id.strip("\x00")
+        maker_code = parsed.maker_code.strip("\x00")
+        disc_num = parsed.disc_number
+        version = parsed.version
+        audio_stream = parsed.audio_streaming != 0
+        stream_buf = parsed.stream_buf_size
+        magic = parsed.magic
+        title = parsed.game_title.strip("\x00").strip()
 
         return cls(
             game_id=game_id,
@@ -52,36 +77,36 @@ class GCHeader:
             stream_buf_size=stream_buf,
             magic=magic,
             game_title=title,
-            dol_offset=dol_off,
-            fst_offset=fst_off,
-            fst_size=fst_sz,
-            fst_max_size=fst_max_sz,
-            user_pos=user_pos,
-            user_length=user_len,
+            dol_offset=parsed.dol_offset,
+            fst_offset=parsed.fst_offset,
+            fst_size=parsed.fst_size,
+            fst_max_size=parsed.fst_max_size,
+            user_pos=parsed.user_pos,
+            user_length=parsed.user_length,
         )
 
     def pack(self) -> bytes:
-        out = bytearray(0x440)
-        out[0x00:0x04] = self.game_id.encode("ascii")[:4].ljust(4, b"\x00")
-        out[0x04:0x06] = self.maker_code.encode("ascii")[:2].ljust(2, b"\x00")
-        out[0x06] = self.disc_number
-        out[0x07] = self.version
-        out[0x08] = 1 if self.audio_streaming else 0
-        out[0x09] = self.stream_buf_size
-        struct.pack_into(">I", out, 0x1C, self.magic)
-        out[0x20:0x60] = self.game_title.encode("shift-jis", errors="replace")[:64].ljust(64, b"\x00")
-
-        struct.pack_into(">I", out, 0x420, self.dol_offset)
-        struct.pack_into(">I", out, 0x424, self.fst_offset)
-        struct.pack_into(">I", out, 0x428, self.fst_size)
-        struct.pack_into(">I", out, 0x42C, self.fst_max_size)
-        struct.pack_into(">I", out, 0x430, self.user_pos)
-        struct.pack_into(">I", out, 0x434, self.user_length)
-        return bytes(out)
+        struct_data = GCHeaderStruct(
+            game_id=self.game_id,
+            maker_code=self.maker_code,
+            disc_number=self.disc_number,
+            version=self.version,
+            audio_streaming=1 if self.audio_streaming else 0,
+            stream_buf_size=self.stream_buf_size,
+            magic=self.magic,
+            game_title=self.game_title,
+            dol_offset=self.dol_offset,
+            fst_offset=self.fst_offset,
+            fst_size=self.fst_size,
+            fst_max_size=self.fst_max_size,
+            user_pos=self.user_pos,
+            user_length=self.user_length,
+        )
+        return struct_data.to_bytes()
 
 
 @dataclass
-class FSTEntry:
+class FSTEntry(MioRomResult):
     """Represents a file or directory node within the GameCube FST."""
     index: int
     is_directory: bool
@@ -123,8 +148,8 @@ class GameCubeDisc:
         fst_data = self.raw_data[fst_off:fst_off + fst_sz]
 
         # Root entry (12 bytes)
-        root_flags = fst_data[0]
-        root_num_entries = struct.unpack_from(">I", fst_data, 8)[0]
+        root_entry = GCFstEntryStruct.from_bytes(fst_data, offset=0)
+        root_num_entries = root_entry.second_value
         string_table_offset = root_num_entries * 12
 
         str_table = fst_data[string_table_offset:]
@@ -142,12 +167,13 @@ class GameCubeDisc:
 
         for i in range(root_num_entries):
             off = i * 12
-            flags = fst_data[off]
-            name_offset = struct.unpack_from(">I", fst_data, off)[0] & 0x00FFFFFF
+            entry_raw = GCFstEntryStruct.from_bytes(fst_data, offset=off)
+            flags = entry_raw.flags
+            name_offset = int.from_bytes(entry_raw.name_offset_raw, "big")
 
             if flags & 1:  # Directory
-                parent_idx = struct.unpack_from(">I", fst_data, off + 4)[0]
-                next_idx = struct.unpack_from(">I", fst_data, off + 8)[0]
+                parent_idx = entry_raw.first_value
+                next_idx = entry_raw.second_value
 
                 if i == 0:
                     entry_name = ""
@@ -175,8 +201,8 @@ class GameCubeDisc:
                 self.entries.append(entry)
 
             else:  # File
-                f_offset = struct.unpack_from(">I", fst_data, off + 4)[0]
-                f_size = struct.unpack_from(">I", fst_data, off + 8)[0]
+                f_offset = entry_raw.first_value
+                f_size = entry_raw.second_value
                 entry_name = get_string(name_offset)
 
                 while dir_stack and i >= dir_stack[-1][2]:
@@ -344,12 +370,18 @@ class GameCubeDisc:
         for entry in fst_entries_meta:
             flags = 1 if entry["is_dir"] else 0
             name_off = entry.get("name_offset", 0) & 0x00FFFFFF
-            word0 = (flags << 24) | name_off
 
             if entry["is_dir"]:
-                fst_bin.extend(struct.pack(">III", word0, entry["parent"], entry["next_idx"]))
+                first_value, second_value = entry["parent"], entry["next_idx"]
             else:
-                fst_bin.extend(struct.pack(">III", word0, entry["offset"], entry["size"]))
+                first_value, second_value = entry["offset"], entry["size"]
+
+            fst_bin.extend(GCFstEntryStruct(
+                flags=flags,
+                name_offset_raw=name_off.to_bytes(3, "big"),
+                first_value=first_value,
+                second_value=second_value,
+            ).to_bytes())
 
         fst_bin.extend(str_table)
         fst_bin.extend(b"\x00" * pad)

@@ -8,13 +8,14 @@ recalculates internal File Allocation Tables (FAT), shifts subsequent file offse
 and updates parent archive headers all the way up to master ROM alignment.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 import struct
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 
 @dataclass
-class ContainerEntry:
+class ContainerEntry(MioRomResult):
     """Represents a file or sub-archive within a nested container tree."""
     entry_id: int
     name: str
@@ -32,7 +33,7 @@ class ContainerEntry:
 
 
 @dataclass
-class CascadingRepackReport:
+class CascadingRepackReport(MioRomResult):
     """Detailed summary of cascading container rebuild."""
     files_updated: int
     total_size_delta: int

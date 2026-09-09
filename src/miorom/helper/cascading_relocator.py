@@ -1,10 +1,11 @@
+from miorom.result import MioRomResult
 import struct
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 
 @dataclass
-class CascadingShiftReport:
+class CascadingShiftReport(MioRomResult):
     shift_boundary: int
     delta_bytes: int
     direct_pointers_updated: int

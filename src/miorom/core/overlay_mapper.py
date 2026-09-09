@@ -7,13 +7,14 @@ to physical ROM file offsets across systems with dynamic overlays, bank switchin
 and DMA load routines (Nintendo DS, Game Boy Advance, PlayStation 1, N64).
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 import struct
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 
 @dataclass
-class OverlayRegion:
+class OverlayRegion(MioRomResult):
     """Represents a mapped memory segment or overlay."""
     region_id: Union[int, str]
     name: str
@@ -45,7 +46,7 @@ class OverlayRegion:
 
 
 @dataclass
-class DMACopyRecord:
+class DMACopyRecord(MioRomResult):
     """Represents a discovered DMA or memcpy routine transferring ROM to RAM."""
     pc_address: int
     source_address: int

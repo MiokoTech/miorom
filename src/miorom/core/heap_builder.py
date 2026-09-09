@@ -6,12 +6,13 @@ Packs sequences or dictionaries of strings/bytes into an aligned binary heap,
 calculating individual offsets, padding, and null-termination cleanly for ROM insertion.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 
 @dataclass
-class HeapBuildResult:
+class HeapBuildResult(MioRomResult):
     """Result of binary heap compilation."""
     data: bytes
     offsets: List[int]

@@ -1,4 +1,5 @@
 import io
+from miorom.errors import ParseError
 import os
 import struct
 from typing import Dict, List, Optional, Tuple
@@ -116,7 +117,7 @@ class CueBinDisc:
         for trk in self.cue.tracks:
             if trk.number == track_number:
                 return trk
-        raise ValueError(f"Track {track_number} does not exist in CUE sheet.")
+        raise ParseError(f"Track {track_number} does not exist in CUE sheet.")
 
     def _get_track_byte_slice(self, track: CueTrack) -> Tuple[str, int, int]:
         """Return (bin_file_name, start_byte, byte_length) for given track."""
@@ -254,7 +255,7 @@ class CueBinDisc:
         """
         trk = self.get_track(track_number)
         if not trk.is_audio_track:
-            raise ValueError(f"Track {track_number} is not an AUDIO track ({trk.track_type}).")
+            raise ParseError(f"Track {track_number} is not an AUDIO track ({trk.track_type}).")
 
         pcm_data = self.extract_track_data(track_number, raw=True)
 
@@ -288,10 +289,10 @@ class CueBinDisc:
         """
         trk = self.get_track(track_number)
         if not trk.is_audio_track:
-            raise ValueError(f"Track {track_number} is not an AUDIO track.")
+            raise ParseError(f"Track {track_number} is not an AUDIO track.")
 
         if len(wav_data) < 44 or wav_data[:4] != b"RIFF" or wav_data[8:12] != b"WAVE":
-            raise ValueError("Invalid WAV file: missing RIFF/WAVE header.")
+            raise ParseError("Invalid WAV file: missing RIFF/WAVE header.")
 
         offset = 12
         pcm_bytes = None
@@ -306,7 +307,7 @@ class CueBinDisc:
             offset += 8 + ((chunk_sz + 1) & ~1)
 
         if pcm_bytes is None:
-            raise ValueError("Invalid WAV file: no 'data' chunk found.")
+            raise ParseError("Invalid WAV file: no 'data' chunk found.")
 
         # Align to 2352 bytes
         rem = len(pcm_bytes) % 2352

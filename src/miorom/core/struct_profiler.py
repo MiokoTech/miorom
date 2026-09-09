@@ -13,6 +13,8 @@ import math
 import struct
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
+from miorom.result import MioRomResult
+
 
 class FieldType(Enum):
     PADDING = "padding"
@@ -36,7 +38,7 @@ class FieldType(Enum):
 
 
 @dataclass
-class StrideCandidate:
+class StrideCandidate(MioRomResult):
     """Represents a potential record stride with statistical confidence."""
     stride: int
     score: float
@@ -44,7 +46,7 @@ class StrideCandidate:
 
 
 @dataclass
-class FieldProfile:
+class FieldProfile(MioRomResult):
     """Profile of a single column/field within a repetitive struct."""
     offset: int
     size: int
@@ -56,9 +58,20 @@ class FieldProfile:
     max_value: Optional[Union[int, float]] = None
     sample_values: List[Any] = field(default_factory=list)
 
+    def to_dict(self) -> Dict[str, Any]:
+        data = super().to_dict()
+        data["field_type"] = self.field_type.value
+        return data
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "FieldProfile":
+        payload = dict(data)
+        payload["field_type"] = FieldType(payload["field_type"])
+        return super().from_dict(payload)
+
 
 @dataclass
-class StructProfile:
+class StructProfile(MioRomResult):
     """Complete profile of a repetitive binary record table."""
     stride: int
     record_count: int
@@ -129,6 +142,57 @@ class StructProfile:
                 for f in self.fields
             ],
         }
+
+    def to_binary_struct_code(self, class_name: str = "DissectedRecord") -> str:
+        """
+        Generates ready-to-paste Python ``BinaryStruct`` subclass source code.
+
+        Workflow: dump bytes → profile_struct() → paste generated code → parse.
+        """
+        type_schema_map = {
+            FieldType.PADDING: ("U8", f"pad_{self.stride}"),  # placeholder, replaced below
+            FieldType.UINT8: ("U8", "u8"),
+            FieldType.INT8: ("I8", "i8"),
+            FieldType.UINT16_LE: ("U16", "u16"),
+            FieldType.UINT16_BE: ("U16", "u16"),
+            FieldType.INT16_LE: ("I16", "i16"),
+            FieldType.INT16_BE: ("I16", "i16"),
+            FieldType.UINT32_LE: ("U32", "u32"),
+            FieldType.UINT32_BE: ("U32", "u32"),
+            FieldType.INT32_LE: ("I32", "i32"),
+            FieldType.INT32_BE: ("I32", "i32"),
+            FieldType.FLOAT32_LE: ("F32", "f32"),
+            FieldType.FLOAT32_BE: ("F32", "f32"),
+            FieldType.POINTER_LE: ("U32", "ptr"),
+            FieldType.POINTER_BE: ("U32", "ptr"),
+            FieldType.BITFIELD: ("U32", "flags"),
+            FieldType.STRING: ("FixedString", "str"),
+            FieldType.UNKNOWN: ("U8", "raw"),
+        }
+
+        lines = [
+            "from miorom.core.schema import BinaryStruct, U8, I8, U16, I16, U32, I32, F32, FixedString, Array",
+            "",
+            "",
+            f"class {class_name}(BinaryStruct):",
+        ]
+
+        for f in self.fields:
+            name = f.name
+            if f.field_type == FieldType.PADDING:
+                if f.size > 1:
+                    lines.append(f'    {name}: Array(U8, {f.size})  # padding')
+                else:
+                    lines.append(f'    {name}: U8  # padding')
+            elif f.field_type == FieldType.STRING:
+                lines.append(f"    {name}: FixedString({f.size})")
+            elif f.field_type in (FieldType.POINTER_LE, FieldType.POINTER_BE):
+                lines.append(f"    {name}: U32  # pointer")
+            else:
+                base = type_schema_map.get(f.field_type, ("U8", "raw"))[0]
+                lines.append(f"    {name}: {base}")
+
+        return "\n".join(lines) + "\n"
 
 
 class StructProfiler:

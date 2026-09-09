@@ -365,6 +365,61 @@ def cmd_port_csv(args):
     if args.output:
         print(f"[✓] Ported translations exported to '{args.output}'!")
 
+def cmd_port_patch(args):
+    print(f"[*] Porting patch '{args.patch}' from '{args.from_file}' to '{args.to_file}'...")
+    from miorom.diff.bindiff import BinDiffEngine
+    from miorom.diff.mapper import BinaryDiffMapper
+    from miorom.diff.porter import CrossRegionPorter
+
+    def parse_address_list(raw: str) -> list:
+        if not raw:
+            return []
+        return [int(item, 0) for item in raw.split(",") if item.strip()]
+
+    with open(args.from_file, "rb") as file_handle:
+        source_data = file_handle.read()
+    with open(args.to_file, "rb") as file_handle:
+        target_data = file_handle.read()
+    with open(args.patch, "rb") as file_handle:
+        patch_data = file_handle.read()
+
+    source_funcs = parse_address_list(args.source_funcs)
+    target_funcs = parse_address_list(args.target_funcs)
+    if not source_funcs:
+        source_funcs = BinDiffEngine.discover_function_candidates(
+            source_data, args.source_base, endian=args.endian, limit=args.max_functions
+        )
+    if not target_funcs:
+        target_funcs = BinDiffEngine.discover_function_candidates(
+            target_data, args.target_base, endian=args.endian, limit=args.max_functions
+        )
+
+    bin_report = BinDiffEngine.diff_binaries(
+        data_a=source_data,
+        base_a=args.source_base,
+        funcs_a=source_funcs,
+        data_b=target_data,
+        base_b=args.target_base,
+        funcs_b=target_funcs,
+        arch=args.arch,
+        threshold=args.threshold,
+    )
+    print(bin_report.summary())
+
+    porter = CrossRegionPorter()
+    ported_patch, port_report = porter.port_patch(
+        source_data=source_data,
+        target_data=target_data,
+        patch_data=patch_data,
+        function_matches=bin_report.matches,
+        source_base=args.source_base,
+        target_base=args.target_base,
+    )
+    with open(args.output, "wb") as file_handle:
+        file_handle.write(ported_patch)
+    print(port_report.summary())
+    print(f"[✓] Translated patch saved to '{args.output}' ({len(ported_patch)} bytes)!")
+
 def cmd_inject_elf(args):
     print(f"[*] Linking and injecting ELF payload '{args.payload_elf}' into '{args.target_bin}'...")
     from miorom.link.injector import ElfInjector
@@ -396,6 +451,7 @@ def cmd_inject_elf(args):
 
 
 def main():
+    argv = sys.argv
     parser = argparse.ArgumentParser(
         prog="miorom",
         description=f"MioROM: Modular ROM hacking & reverse engineering toolkit (v{__version__})"
@@ -547,7 +603,22 @@ def main():
     p_inj.add_argument("-a", "--arch", choices=["ppc", "arm", "thumb", "mips_le", "mips_be"], help="Architecture override")
     p_inj.add_argument("-m", "--hook-mode", choices=["trampoline", "call", "replace"], default="trampoline", help="Hook mode (default: trampoline)")
 
-    args = parser.parse_args()
+    # Port-Patch command (BinDiff-aware IPS migration)
+    p_port_patch = subparsers.add_parser("port-patch", help="Translate an IPS patch between regional binary versions")
+    p_port_patch.add_argument("--from", dest="from_file", required=True, help="Source-region binary (patch was made against this)")
+    p_port_patch.add_argument("--to", dest="to_file", required=True, help="Target-region binary")
+    p_port_patch.add_argument("--patch", required=True, help="Source-region IPS patch")
+    p_port_patch.add_argument("-o", "--output", required=True, help="Output translated IPS patch")
+    p_port_patch.add_argument("--source-base", type=lambda value: int(value, 0), default=0, help="Source function base address")
+    p_port_patch.add_argument("--target-base", type=lambda value: int(value, 0), default=0, help="Target function base address")
+    p_port_patch.add_argument("--source-funcs", help="Comma-separated source function addresses")
+    p_port_patch.add_argument("--target-funcs", help="Comma-separated target function addresses")
+    p_port_patch.add_argument("--endian", choices=["big", "little"], default="big", help="Pointer scan endian")
+    p_port_patch.add_argument("--max-functions", type=int, default=256, help="Maximum auto-discovered functions")
+    p_port_patch.add_argument("-a", "--arch", choices=["ppc", "arm", "thumb", "mips_le", "mips_be"], default="ppc", help="Lifter architecture")
+    p_port_patch.add_argument("--threshold", type=float, default=0.75, help="BinDiff match threshold")
+
+    args = parser.parse_args(argv[1:])
 
     if args.command == "split":
         cmd_split(args)
@@ -583,6 +654,8 @@ def main():
         cmd_cheat(args)
     elif args.command == "port-csv":
         cmd_port_csv(args)
+    elif args.command == "port-patch":
+        cmd_port_patch(args)
     elif args.command == "inject-elf":
         cmd_inject_elf(args)
     else:

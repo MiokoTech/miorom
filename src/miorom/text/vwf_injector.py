@@ -7,6 +7,7 @@ into proportional variable-width renderers by compiling glyph width lookup table
 and synthesizing assembly trampoline hooks (ARM, MIPS, 65816).
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 import struct
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
@@ -15,7 +16,7 @@ from miorom.text.vwf import GlyphWidthTable
 
 
 @dataclass
-class VWFHookReport:
+class VWFHookReport(MioRomResult):
     """Report on generated VWF width table and trampoline hook."""
     arch: str
     table_size: int

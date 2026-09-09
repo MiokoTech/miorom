@@ -1,3 +1,4 @@
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Set, Union
@@ -25,7 +26,7 @@ class IROp(Enum):
 
 
 @dataclass
-class IRVar:
+class IRVar(MioRomResult):
     name: str
     version: int = 0
     var_type: str = "int"
@@ -39,7 +40,7 @@ class IRVar:
 
 
 @dataclass
-class IRInstruction:
+class IRInstruction(MioRomResult):
     op: IROp
     dst: Optional[Union[IRVar, str]] = None
     args: List[Union[IRVar, str, int]] = field(default_factory=list)
@@ -57,7 +58,7 @@ class IRInstruction:
 
 
 @dataclass
-class IRBlock:
+class IRBlock(MioRomResult):
     label: str
     address: int
     instructions: List[IRInstruction] = field(default_factory=list)
@@ -69,7 +70,7 @@ class IRBlock:
 
 
 @dataclass
-class IRFunction:
+class IRFunction(MioRomResult):
     name: str
     entry_address: int
     blocks: Dict[str, IRBlock] = field(default_factory=dict)

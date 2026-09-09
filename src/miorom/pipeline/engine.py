@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import json
+from miorom.errors import ParseError
 import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Type
@@ -13,6 +16,16 @@ from miorom.platforms.md import fix_md_checksum
 from miorom.platforms.n64 import fix_n64_checksum
 from miorom.platforms.snes import SNESRom
 from miorom.platforms.wii import U8Archive
+
+
+class PipelineHook:
+    """Callback protocol for pipeline lifecycle events."""
+
+    def before_step(self, step: "PipelineStep", context: PipelineContext) -> None:
+        return None
+
+    def after_step(self, step: "PipelineStep", context: PipelineContext, success: bool) -> None:
+        return None
 
 
 class PipelineContext:
@@ -239,7 +252,7 @@ class FixChecksumStep(PipelineStep):
             snes.fix_checksum()
             fixed = snes.to_bytes()
         else:
-            raise ValueError(f"Unsupported platform for checksum fix: {self.platform}")
+            raise ParseError(f"Unsupported platform for checksum fix: {self.platform}")
 
         with open(src, "wb") as f:
             f.write(fixed)
@@ -317,15 +330,35 @@ class PipelineRecipe:
     def __init__(self, name: str = "default_recipe", steps: Optional[List[PipelineStep]] = None):
         self.name = name
         self.steps: List[PipelineStep] = steps or []
+        self.hooks: List[PipelineHook] = []
 
     def add_step(self, step: PipelineStep) -> "PipelineRecipe":
         self.steps.append(step)
         return self
 
+    def register_step_type(self, name: str, step_cls: Type[PipelineStep]) -> None:
+        """Register a custom step type for recipe deserialization."""
+        if not name:
+            raise ParseError("Pipeline step type name cannot be empty")
+        if not issubclass(step_cls, PipelineStep):
+            raise TypeError("step_cls must inherit from PipelineStep")
+        STEP_REGISTRY[name] = step_cls
+
+    def add_hook(self, hook: PipelineHook) -> "PipelineRecipe":
+        self.hooks.append(hook)
+        return self
+
     def execute(self, initial_context: Optional[Dict[str, Any]] = None) -> PipelineContext:
         context = PipelineContext(initial_context)
         for idx, step in enumerate(self.steps):
-            success = step.run(context)
+            for hook in self.hooks:
+                hook.before_step(step, context)
+            success = False
+            try:
+                success = step.run(context)
+            finally:
+                for hook in self.hooks:
+                    hook.after_step(step, context, success)
             if not success:
                 raise RuntimeError(f"Pipeline step #{idx + 1} ({step.step_type}) failed.")
         return context
@@ -350,7 +383,7 @@ class PipelineRecipe:
             if step_cls:
                 steps.append(step_cls.from_dict(s))
             else:
-                raise ValueError(f"Unknown pipeline step type: '{stype}'")
+                raise ParseError(f"Unknown pipeline step type: '{stype}'")
         return cls(name=name, steps=steps)
 
     @classmethod

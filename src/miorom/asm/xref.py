@@ -7,6 +7,7 @@ direct branches, and pointer references to uncover which code routines access
 specific text lines, graphics, or script blocks.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from enum import Enum
 import struct
@@ -26,7 +27,7 @@ class XRefType(Enum):
 
 
 @dataclass
-class XRef:
+class XRef(MioRomResult):
     """Represents a single cross-reference link."""
     source_address: int                  # Code or data address where reference originates
     target_address: int                  # Destination address being referenced
@@ -42,7 +43,7 @@ class XRef:
 
 
 @dataclass
-class CallerGraph:
+class CallerGraph(MioRomResult):
     """Call graph structure representing caller/callee relationships."""
     functions: Set[int] = field(default_factory=set)
     callers_of: Dict[int, Set[int]] = field(default_factory=dict)

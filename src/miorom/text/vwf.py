@@ -1,4 +1,5 @@
 """
+from miorom.errors import ParseError
 miorom.text.vwf
 ~~~~~~~~~~~~~~~
 Variable Width Font (VWF) metrics engine and glyph width table manager.
@@ -6,6 +7,7 @@ Handles pixel-precise text measurement, proportional line wrapping, and
 in-place width table editing for ROM hacking translations.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -13,7 +15,7 @@ from miorom.text.charmap import CharMap
 
 
 @dataclass
-class VWFMetrics:
+class VWFMetrics(MioRomResult):
     """Configurable metrics for variable width rendering."""
     space_width: int = 4
     tracking: int = 1  # Inter-character spacing in pixels
@@ -58,7 +60,7 @@ class GlyphWidthTable:
             elif entry_size == 2:
                 w = data[pos] | (data[pos + 1] << 8)
             else:
-                raise ValueError("Entry size must be 1 or 2 bytes.")
+                raise ParseError("Entry size must be 1 or 2 bytes.")
             widths.append(w)
         return cls(widths, charmap=charmap, base_index=base_index)
 
@@ -153,3 +155,46 @@ class GlyphWidthTable:
         """Patches the width table directly into a binary ROM buffer in-place."""
         raw = self.to_binary(entry_size=entry_size)
         buffer[offset : offset + len(raw)] = raw
+
+
+@dataclass
+class TextboxCollisionReport(MioRomResult):
+    overflowed: bool
+    line_count: int
+    max_line_width: int
+    allowed_width: int
+    allowed_lines: int
+
+
+class VWFMetricsInspector:
+    """
+    Kerning-aware text measurement and textbox collision validator.
+    """
+
+    def __init__(self, width_table: GlyphWidthTable, kerning_pairs: Optional[dict[tuple[str, str], int]] = None):
+        self.width_table = width_table
+        self.kerning_pairs: dict[tuple[str, str], int] = kerning_pairs or {}
+
+    def set_kerning(self, first: str, second: str, adjustment: int):
+        self.kerning_pairs[(first, second)] = adjustment
+
+    def measure_text(self, text: str) -> int:
+        total = 0
+        for i, ch in enumerate(text):
+            total += self.width_table.get_width(ch)
+            if i < len(text) - 1:
+                pair = (ch, text[i + 1])
+                total += self.kerning_pairs.get(pair, 0)
+        return total
+
+    def inspect(self, text: str, max_width_px: int, max_lines: int = 3) -> TextboxCollisionReport:
+        lines = self.width_table.wrap_text(text, max_width_px)
+        max_w = max((self.measure_text(l) for l in lines), default=0)
+        overflow = len(lines) > max_lines or max_w > max_width_px
+        return TextboxCollisionReport(
+            overflowed=overflow,
+            line_count=len(lines),
+            max_line_width=max_w,
+            allowed_width=max_width_px,
+            allowed_lines=max_lines,
+        )

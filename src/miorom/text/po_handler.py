@@ -1,3 +1,4 @@
+from miorom.result import MioRomResult
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -51,7 +52,7 @@ def _format_po_field(field_name: str, text: str) -> List[str]:
 
 
 @dataclass
-class PoEntry:
+class PoEntry(MioRomResult):
     """Represents a single gettext PO translation unit."""
     msgid: str
     msgstr: str = ""

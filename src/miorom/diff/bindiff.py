@@ -3,12 +3,15 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
 
+from miorom.result import MioRomResult
+
 from miorom.asm.disasm import UniversalDisassembler
 from miorom.script.lifter import BinaryLifter
 
 
+from miorom.errors import ParseError
 @dataclass
-class FunctionFingerprint:
+class FunctionFingerprint(MioRomResult):
     address: int
     name: str
     block_count: int
@@ -20,7 +23,7 @@ class FunctionFingerprint:
 
 
 @dataclass
-class FunctionMatch:
+class FunctionMatch(MioRomResult):
     func_a_address: int
     func_b_address: int
     similarity: float
@@ -35,7 +38,7 @@ class FunctionMatch:
 
 
 @dataclass
-class BinDiffReport:
+class BinDiffReport(MioRomResult):
     total_funcs_a: int
     total_funcs_b: int
     matches: List[FunctionMatch] = field(default_factory=list)
@@ -74,6 +77,39 @@ class BinDiffEngine:
     Control Flow Graph (CFG) Isomorphism and Function Similarity Diffing Engine.
     Matches corresponding functions across different game versions or regions.
     """
+
+    @classmethod
+    def discover_function_candidates(
+        cls,
+        data: bytes,
+        base_address: int,
+        pointer_size: int = 4,
+        endian: str = ">",
+        limit: int = 256,
+    ) -> List[int]:
+        """
+        Discover likely function starts from internal pointer tables.
+
+        This is intentionally conservative: candidates are merely inputs to
+        CFG fingerprinting, and BinDiff still rejects low-quality matches.
+        """
+        if pointer_size not in (4, 8):
+            raise ParseError("pointer_size must be 4 or 8")
+        if limit <= 0:
+            return []
+
+        end_address = base_address + len(data)
+        candidates: Set[int] = set()
+        import struct
+
+        for offset in range(0, len(data) - pointer_size + 1, pointer_size):
+            value = int.from_bytes(data[offset:offset + pointer_size], "big" if endian == ">" else "little")
+            if value < base_address or value >= end_address or value % 4:
+                continue
+            candidates.add(value)
+            if len(candidates) >= limit:
+                break
+        return sorted(candidates)
 
     @classmethod
     def fingerprint_function(

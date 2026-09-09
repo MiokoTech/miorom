@@ -9,7 +9,7 @@ to prevent disassemblers from corrupting jump table data.
 
 import struct
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from miorom.asm.disasm import UniversalDisassembler, DisasmInstruction
 from miorom.asm.disambiguator import CodeDataDisambiguator, ByteClassification

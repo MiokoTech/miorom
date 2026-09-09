@@ -1,3 +1,4 @@
+from miorom.result import MioRomResult
 import math
 from collections import Counter
 from dataclasses import dataclass
@@ -5,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 
 
 @dataclass
-class LZSSConfig:
+class LZSSConfig(MioRomResult):
     """Parameters defining an LZSS / LZ77 compression variant."""
     window_size: int = 4096
     distance_bits: int = 12

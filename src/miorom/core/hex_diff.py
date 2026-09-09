@@ -7,6 +7,10 @@ to let reverse engineers visually verify binary writes and patches before commit
 """
 
 from typing import List, Optional
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 
 class HexDiffHighlighter:
@@ -90,4 +94,4 @@ class HexDiffHighlighter:
         use_color: bool = True,
     ) -> None:
         """Prints the formatted hex diff to standard output."""
-        print(cls.format_diff(original, modified, offset, size, use_color=use_color))
+        logger.info(cls.format_diff(original, modified, offset, size, use_color=use_color))

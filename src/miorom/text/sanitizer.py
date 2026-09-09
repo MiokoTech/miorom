@@ -7,15 +7,16 @@ Ensures translated dialogue lines preserve essential game variables ([NAME],
 text engine crashes or garbage character rendering at runtime.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 import re
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from miorom.text.po_handler import PoHandler, PoEntry
 
 
 @dataclass
-class TagValidationResult:
+class TagValidationResult(MioRomResult):
     """Result of control tag integrity check on a translated string."""
     is_valid: bool
     missing_tags: List[str] = field(default_factory=list)

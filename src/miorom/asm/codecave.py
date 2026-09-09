@@ -1,9 +1,11 @@
+from miorom.result import MioRomResult
 from dataclasses import dataclass
 from typing import List, Optional
 
 
+from miorom.errors import RelocationError
 @dataclass
-class CodeCave:
+class CodeCave(MioRomResult):
     offset: int
     size: int
     filler_byte: int
@@ -71,7 +73,7 @@ class CodeCaveFinder:
             start_offset=start_offset,
         )
         if not caves:
-            raise ValueError(f"No code cave of size {len(payload)} bytes found.")
+            raise RelocationError(f"No code cave of size {len(payload)} bytes found.")
 
         target_cave = caves[0]
         offset = target_cave.offset

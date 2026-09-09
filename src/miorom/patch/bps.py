@@ -1,6 +1,9 @@
 import struct
 import zlib
 from io import BytesIO
+from typing import Dict, List
+from miorom.errors import PatchError
+from miorom.patch.hunks import PatchHunk, merge_patches
 
 
 def _encode_vlq(val: int) -> bytes:
@@ -44,20 +47,20 @@ class BpsPatcher:
     def apply(cls, source: bytes, patch: bytes) -> bytes:
         """Apply a BPS patch to source binary data with CRC32 verification."""
         if not patch.startswith(cls.MAGIC):
-            raise ValueError("Invalid BPS patch: missing 'BPS1' header")
+            raise PatchError("Invalid BPS patch: missing 'BPS1' header")
 
         # Verify patch CRC32 (last 4 bytes)
         expected_patch_crc = struct.unpack("<I", patch[-4:])[0]
         actual_patch_crc = zlib.crc32(patch[:-4]) & 0xFFFFFFFF
         if actual_patch_crc != expected_patch_crc:
-            raise ValueError("Corrupted BPS patch: patch CRC32 mismatch")
+            raise PatchError("Corrupted BPS patch: patch CRC32 mismatch")
 
         expected_source_crc = struct.unpack("<I", patch[-12:-8])[0]
         expected_target_crc = struct.unpack("<I", patch[-8:-4])[0]
 
         actual_source_crc = zlib.crc32(source) & 0xFFFFFFFF
         if actual_source_crc != expected_source_crc:
-            raise ValueError(
+            raise PatchError(
                 f"Source checksum mismatch! Expected: {hex(expected_source_crc)}, got: {hex(actual_source_crc)}"
             )
 
@@ -107,9 +110,26 @@ class BpsPatcher:
 
         actual_target_crc = zlib.crc32(target) & 0xFFFFFFFF
         if actual_target_crc != expected_target_crc:
-            raise ValueError("Target checksum mismatch after BPS patching")
+            raise PatchError("Target checksum mismatch after BPS patching")
 
         return bytes(target)
+
+    @classmethod
+    def parse(cls, patch: bytes, source: bytes) -> List[PatchHunk]:
+        """Decode a BPS patch to concrete writes using its own source image."""
+        output = bytearray(cls.apply(source, patch))
+        source_bytes = source
+        source_len = len(source_bytes)
+        hunks: List[PatchHunk] = []
+        for index, (source_byte, output_byte) in enumerate(zip(source_bytes, output)):
+            if source_byte != output_byte:
+                hunks.append(PatchHunk(index, bytes([output_byte])))
+        if len(output) > source_len:
+            start = source_len
+            for index, byte in enumerate(output[source_len:]):
+                if byte:
+                    hunks.append(PatchHunk(start + index, bytes([byte])))
+        return merge_patches(hunks)
 
     @classmethod
     def create(cls, source: bytes, target: bytes, metadata: str = "") -> bytes:
@@ -133,7 +153,7 @@ class BpsPatcher:
                    source[output_offset + same_len] == target[output_offset + same_len]):
                 same_len += 1
 
-            if same_len > 4 or (same_len > 0 and output_offset + same_len == target_len):
+            if same_len >= 4 or (same_len > 0 and output_offset + same_len == target_len):
                 # Action 0: SourceRead
                 data = ((same_len - 1) << 2) | 0
                 out.extend(_encode_vlq(data))
@@ -146,13 +166,13 @@ class BpsPatcher:
                 # Lookahead to see if next bytes match source
                 if (output_offset < source_len and
                     source[output_offset] == target[output_offset]):
-                    # Check next 4 bytes
                     matching = 0
-                    while (output_offset + matching < target_len and
+                    while (matching < 4 and
+                           output_offset + matching < target_len and
                            output_offset + matching < source_len and
                            source[output_offset + matching] == target[output_offset + matching]):
                         matching += 1
-                    if matching >= 4:
+                    if matching == 4:
                         break
                 diff_bytes.append(target[output_offset])
                 output_offset += 1

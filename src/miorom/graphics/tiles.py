@@ -1,4 +1,5 @@
 from typing import List, Tuple, Optional
+from miorom.errors import ParseError
 
 
 class Tile:
@@ -7,7 +8,7 @@ class Tile:
     def __init__(self, pixels: Optional[List[int]] = None):
         if pixels is not None:
             if len(pixels) != 64:
-                raise ValueError("Tile pixels must be exactly 64 elements (8x8).")
+                raise ParseError("Tile pixels must be exactly 64 elements (8x8).")
             self.pixels = list(pixels)
         else:
             self.pixels = [0] * 64
@@ -93,7 +94,7 @@ def decode_tile(data: bytes, bpp: int = 4, planar: bool = False) -> Tile:
         # 8bpp linear: 64 bytes per tile (1 byte per pixel)
         pixels = list(data[:64])
     else:
-        raise ValueError(f"Unsupported bit depth: {bpp}bpp")
+        raise ParseError(f"Unsupported bit depth: {bpp}bpp")
 
     return Tile(pixels)
 
@@ -157,7 +158,7 @@ def encode_tile(tile: Tile, bpp: int = 4, planar: bool = False) -> bytes:
         for val in tile.pixels:
             out.append(val & 0xFF)
     else:
-        raise ValueError(f"Unsupported bit depth: {bpp}bpp")
+        raise ParseError(f"Unsupported bit depth: {bpp}bpp")
 
     return bytes(out)
 
@@ -166,7 +167,7 @@ def decode_tileset(data: bytes, bpp: int = 4, planar: bool = False) -> List[Tile
     tile_sizes = {1: 8, 2: 16, 4: 32, 8: 64}
     size = tile_sizes.get(bpp)
     if not size:
-        raise ValueError(f"Unsupported bpp: {bpp}")
+        raise ParseError(f"Unsupported bpp: {bpp}")
 
     tiles = []
     for i in range(0, len(data) - size + 1, size):

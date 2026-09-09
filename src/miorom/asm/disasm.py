@@ -1,10 +1,12 @@
+from miorom.result import MioRomResult
 import struct
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Union
 
 
+from miorom.errors import UnsupportedFormatError
 @dataclass
-class DisasmInstruction:
+class DisasmInstruction(MioRomResult):
     address: int
     raw_bytes: bytes
     mnemonic: str
@@ -115,8 +117,12 @@ class UniversalDisassembler:
             return cls._disasm_thumb(address, raw_bytes, end_char)
         elif "mips" in arch_norm or arch_norm in ("psx", "n64", "psp"):
             return cls._disasm_mips(address, raw_bytes, end_char)
+        elif arch_norm in ("sm83", "gb", "gbc", "gameboy"):
+            return cls._disasm_sm83(address, raw_bytes)
+        elif arch_norm in ("m68k", "68000", "md", "genesis", "megadrive"):
+            return cls._disasm_m68k(address, raw_bytes)
         else:
-            raise ValueError(f"Unsupported architecture: '{arch}'")
+            raise UnsupportedFormatError(f"Unsupported architecture: '{arch}'")
 
     @classmethod
     def _disasm_ppc(cls, address: int, data: bytes) -> DisasmInstruction:
@@ -456,7 +462,25 @@ class UniversalDisassembler:
         if instr == 0:
             return DisasmInstruction(address, raw, "nop")
 
+        MIPS_REGS = (
+            "$zero", "$at", "$v0", "$v1", "$a0", "$a1", "$a2", "$a3",
+            "$t0", "$t1", "$t2", "$t3", "$t4", "$t5", "$t6", "$t7",
+            "$s0", "$s1", "$s2", "$s3", "$s4", "$s5", "$s6", "$s7",
+            "$t8", "$t9", "$k0", "$k1", "$gp", "$sp", "$fp", "$ra",
+        )
+
         opcode = (instr >> 26) & 0x3F
+        rs = (instr >> 21) & 0x1F
+        rt = (instr >> 16) & 0x1F
+        rd = (instr >> 11) & 0x1F
+        sa = (instr >> 6) & 0x1F
+        funct = instr & 0x3F
+        imm16 = instr & 0xFFFF
+        simm16 = struct.unpack(">h", struct.pack(">H", imm16))[0]
+
+        r_rs = MIPS_REGS[rs]
+        r_rt = MIPS_REGS[rt]
+        r_rd = MIPS_REGS[rd]
 
         # J / JAL
         if opcode in (2, 3):
@@ -472,35 +496,245 @@ class UniversalDisassembler:
                 is_call=is_jal,
             )
 
-        # JR / JALR (opcode 0, funct 8 / 9)
+        # SPECIAL (opcode 0)
         if opcode == 0:
-            funct = instr & 0x3F
-            rs = (instr >> 21) & 0x1F
-            if funct == 8:  # jr
-                is_ret = (rs == 31)  # $ra is $31
+            if funct == 0:
+                if rd == 0 and rt == 0 and sa == 0:
+                    return DisasmInstruction(address, raw, "nop")
+                return DisasmInstruction(address, raw, "sll", [r_rd, r_rt, str(sa)])
+            elif funct == 2:
+                return DisasmInstruction(address, raw, "srl", [r_rd, r_rt, str(sa)])
+            elif funct == 3:
+                return DisasmInstruction(address, raw, "sra", [r_rd, r_rt, str(sa)])
+            elif funct == 4:
+                return DisasmInstruction(address, raw, "sllv", [r_rd, r_rt, r_rs])
+            elif funct == 6:
+                return DisasmInstruction(address, raw, "srlv", [r_rd, r_rt, r_rs])
+            elif funct == 7:
+                return DisasmInstruction(address, raw, "srav", [r_rd, r_rt, r_rs])
+            elif funct == 8:  # jr
                 return DisasmInstruction(
                     address=address,
                     raw_bytes=raw,
                     mnemonic="jr",
-                    operands=[f"${rs}" if rs != 31 else "$ra"],
+                    operands=[r_rs],
                     is_branch=True,
-                    is_return=is_ret,
+                    is_return=(rs == 31),
                 )
+            elif funct == 9:  # jalr
+                return DisasmInstruction(
+                    address=address,
+                    raw_bytes=raw,
+                    mnemonic="jalr",
+                    operands=[r_rd, r_rs] if rd != 31 else [r_rs],
+                    is_branch=True,
+                    is_call=True,
+                )
+            elif funct == 12:
+                return DisasmInstruction(address, raw, "syscall")
+            elif funct == 13:
+                return DisasmInstruction(address, raw, "break")
+            elif funct == 16:
+                return DisasmInstruction(address, raw, "mfhi", [r_rd])
+            elif funct == 17:
+                return DisasmInstruction(address, raw, "mthi", [r_rs])
+            elif funct == 18:
+                return DisasmInstruction(address, raw, "mflo", [r_rd])
+            elif funct == 19:
+                return DisasmInstruction(address, raw, "mtlo", [r_rs])
+            elif funct == 24:
+                return DisasmInstruction(address, raw, "mult", [r_rs, r_rt])
+            elif funct == 25:
+                return DisasmInstruction(address, raw, "multu", [r_rs, r_rt])
+            elif funct == 26:
+                return DisasmInstruction(address, raw, "div", [r_rs, r_rt])
+            elif funct == 27:
+                return DisasmInstruction(address, raw, "divu", [r_rs, r_rt])
+            elif funct == 32:
+                return DisasmInstruction(address, raw, "add", [r_rd, r_rs, r_rt])
+            elif funct == 33:
+                if rs == 0:
+                    return DisasmInstruction(address, raw, "move", [r_rd, r_rt])
+                return DisasmInstruction(address, raw, "addu", [r_rd, r_rs, r_rt])
+            elif funct == 34:
+                return DisasmInstruction(address, raw, "sub", [r_rd, r_rs, r_rt])
+            elif funct == 35:
+                return DisasmInstruction(address, raw, "subu", [r_rd, r_rs, r_rt])
+            elif funct == 36:
+                return DisasmInstruction(address, raw, "and", [r_rd, r_rs, r_rt])
+            elif funct == 37:
+                if rt == 0:
+                    return DisasmInstruction(address, raw, "move", [r_rd, r_rs])
+                return DisasmInstruction(address, raw, "or", [r_rd, r_rs, r_rt])
+            elif funct == 38:
+                return DisasmInstruction(address, raw, "xor", [r_rd, r_rs, r_rt])
+            elif funct == 39:
+                return DisasmInstruction(address, raw, "nor", [r_rd, r_rs, r_rt])
+            elif funct == 42:
+                return DisasmInstruction(address, raw, "slt", [r_rd, r_rs, r_rt])
+            elif funct == 43:
+                return DisasmInstruction(address, raw, "sltu", [r_rd, r_rs, r_rt])
+
+        # REGIMM branches (opcode 1)
+        if opcode == 1:
+            target = (address + 4 + (simm16 << 2)) & 0xFFFFFFFF
+            if rt == 0:
+                return DisasmInstruction(address, raw, "bltz", [r_rs, f"0x{target:08X}"], target_address=target, is_branch=True, is_conditional=True)
+            elif rt == 1:
+                return DisasmInstruction(address, raw, "bgez", [r_rs, f"0x{target:08X}"], target_address=target, is_branch=True, is_conditional=True)
+            elif rt == 16:
+                return DisasmInstruction(address, raw, "bltzal", [r_rs, f"0x{target:08X}"], target_address=target, is_branch=True, is_call=True, is_conditional=True)
+            elif rt == 17:
+                return DisasmInstruction(address, raw, "bgezal", [r_rs, f"0x{target:08X}"], target_address=target, is_branch=True, is_call=True, is_conditional=True)
+
+        # Conditional branches
+        if opcode in (4, 5, 6, 7):
+            target = (address + 4 + (simm16 << 2)) & 0xFFFFFFFF
+            if opcode == 4:
+                if rt == 0 and rs == 0:
+                    return DisasmInstruction(address, raw, "b", [f"0x{target:08X}"], target_address=target, is_branch=True, is_conditional=False)
+                elif rt == 0:
+                    return DisasmInstruction(address, raw, "beqz", [r_rs, f"0x{target:08X}"], target_address=target, is_branch=True, is_conditional=True)
+                return DisasmInstruction(address, raw, "beq", [r_rs, r_rt, f"0x{target:08X}"], target_address=target, is_branch=True, is_conditional=True)
+            elif opcode == 5:
+                if rt == 0:
+                    return DisasmInstruction(address, raw, "bnez", [r_rs, f"0x{target:08X}"], target_address=target, is_branch=True, is_conditional=True)
+                return DisasmInstruction(address, raw, "bne", [r_rs, r_rt, f"0x{target:08X}"], target_address=target, is_branch=True, is_conditional=True)
+            elif opcode == 6:
+                return DisasmInstruction(address, raw, "blez", [r_rs, f"0x{target:08X}"], target_address=target, is_branch=True, is_conditional=True)
+            elif opcode == 7:
+                return DisasmInstruction(address, raw, "bgtz", [r_rs, f"0x{target:08X}"], target_address=target, is_branch=True, is_conditional=True)
+
+        # Immediate arithmetic & logic
+        if opcode == 8:
+            return DisasmInstruction(address, raw, "addi", [r_rt, r_rs, str(simm16)])
+        if opcode == 9:
+            if rs == 0:
+                return DisasmInstruction(address, raw, "li", [r_rt, str(simm16)])
+            return DisasmInstruction(address, raw, "addiu", [r_rt, r_rs, str(simm16)])
+        if opcode == 10:
+            return DisasmInstruction(address, raw, "slti", [r_rt, r_rs, str(simm16)])
+        if opcode == 11:
+            return DisasmInstruction(address, raw, "sltiu", [r_rt, r_rs, str(simm16)])
+        if opcode == 12:
+            return DisasmInstruction(address, raw, "andi", [r_rt, r_rs, f"0x{imm16:04X}"])
+        if opcode == 13:
+            return DisasmInstruction(address, raw, "ori", [r_rt, r_rs, f"0x{imm16:04X}"])
+        if opcode == 14:
+            return DisasmInstruction(address, raw, "xori", [r_rt, r_rs, f"0x{imm16:04X}"])
 
         # LUI (opcode 15)
         if opcode == 15:
-            rt = (instr >> 16) & 0x1F
-            imm = instr & 0xFFFF
-            return DisasmInstruction(address, raw, "lui", [f"${rt}", f"0x{imm:04X}"])
+            return DisasmInstruction(address, raw, "lui", [r_rt, f"0x{imm16:04X}"])
 
-        # ADDIU (opcode 9)
-        if opcode == 9:
-            rs = (instr >> 21) & 0x1F
-            rt = (instr >> 16) & 0x1F
-            simm = struct.unpack(">h", struct.pack(">H", instr & 0xFFFF))[0]
-            return DisasmInstruction(address, raw, "addiu", [f"${rt}", f"${rs}", str(simm)])
+        # COP1 (opcode 17, Floating Point Operations)
+        if opcode == 17:
+            fmt_code = rs
+            fs = (instr >> 11) & 0x1F
+            fd = (instr >> 6) & 0x1F
+            r_fs = f"$f{fs}"
+            r_ft = f"$f{rt}"
+            r_fd = f"$f{fd}"
+            if fmt_code == 0:  # mfc1
+                return DisasmInstruction(address, raw, "mfc1", [r_rt, r_fs])
+            elif fmt_code == 4:  # mtc1
+                return DisasmInstruction(address, raw, "mtc1", [r_rt, r_fs])
+            elif fmt_code == 8:  # bc1t / bc1f
+                target = (address + 4 + (simm16 << 2)) & 0xFFFFFFFF
+                is_true = bool(rt & 1)
+                mn = "bc1t" if is_true else "bc1f"
+                return DisasmInstruction(address, raw, mn, [f"0x{target:08X}"], target_address=target, is_branch=True, is_conditional=True)
+            elif fmt_code in (16, 17):  # single (.s) or double (.d)
+                suffix = ".s" if fmt_code == 16 else ".d"
+                cop1_ops = {
+                    0: "add", 1: "sub", 2: "mul", 3: "div", 5: "abs", 6: "mov",
+                    7: "neg", 32: "cvt.s", 33: "cvt.d", 36: "cvt.w"
+                }
+                if funct in cop1_ops:
+                    mn = f"{cop1_ops[funct]}{suffix}"
+                    ops = [r_fd, r_fs, r_ft] if funct in (0, 1, 2, 3) else [r_fd, r_fs]
+                    return DisasmInstruction(address, raw, mn, ops)
+                elif 48 <= funct <= 63:  # c.cond.fmt
+                    cond_names = {
+                        48: "c.f", 50: "c.eq", 52: "c.olt", 54: "c.ole",
+                        60: "c.lt", 62: "c.le"
+                    }
+                    mn = f"{cond_names.get(funct, f'c.{funct}')}{suffix}"
+                    return DisasmInstruction(address, raw, mn, [r_fs, r_ft])
+
+        # Load / Store instructions
+        load_store = {
+            32: "lb", 33: "lh", 34: "lwl", 35: "lw", 36: "lbu", 37: "lhu", 38: "lwr",
+            40: "sb", 41: "sh", 42: "swl", 43: "sw", 46: "swr",
+            49: "lwc1", 53: "ldc1", 57: "swc1", 61: "sdc1"
+        }
+        if opcode in load_store:
+            mn = load_store[opcode]
+            rt_name = f"$f{rt}" if mn.endswith("c1") else r_rt
+            return DisasmInstruction(address, raw, mn, [rt_name, f"{simm16}({r_rs})"])
 
         return DisasmInstruction(address, raw, ".word", [f"0x{instr:08X}"])
+
+    @classmethod
+    def _disasm_sm83(cls, address: int, data: bytes) -> DisasmInstruction:
+        if not data:
+            return DisasmInstruction(address, b"", ".byte", [])
+        b0 = data[0]
+        if b0 == 0x00:
+            return DisasmInstruction(address, bytes([b0]), "nop")
+        elif b0 == 0xC9:
+            return DisasmInstruction(address, bytes([b0]), "ret", is_return=True, is_branch=True)
+        elif b0 == 0xC3 and len(data) >= 3:
+            target = data[1] | (data[2] << 8)
+            return DisasmInstruction(address, data[:3], "jp", [f"0x{target:04X}"], target_address=target, is_branch=True)
+        elif b0 == 0xCD and len(data) >= 3:
+            target = data[1] | (data[2] << 8)
+            return DisasmInstruction(address, data[:3], "call", [f"0x{target:04X}"], target_address=target, is_branch=True, is_call=True)
+        elif b0 == 0x18 and len(data) >= 2:
+            rel = struct.unpack("b", bytes([data[1]]))[0]
+            target = (address + 2 + rel) & 0xFFFF
+            return DisasmInstruction(address, data[:2], "jr", [f"0x{target:04X}"], target_address=target, is_branch=True)
+        elif 0x40 <= b0 <= 0x7F:
+            regs = ["b", "c", "d", "e", "h", "l", "[hl]", "a"]
+            rd = regs[(b0 >> 3) & 0x07]
+            rs = regs[b0 & 0x07]
+            return DisasmInstruction(address, bytes([b0]), "ld", [rd, rs])
+        elif b0 == 0x3E and len(data) >= 2:
+            return DisasmInstruction(address, data[:2], "ld", ["a", f"0x{data[1]:02X}"])
+        elif b0 in (0xC5, 0xD5, 0xE5, 0xF5):
+            r = {0xC5: "bc", 0xD5: "de", 0xE5: "hl", 0xF5: "af"}[b0]
+            return DisasmInstruction(address, bytes([b0]), "push", [r])
+        elif b0 in (0xC1, 0xD1, 0xE1, 0xF1):
+            r = {0xC1: "bc", 0xD1: "de", 0xE1: "hl", 0xF1: "af"}[b0]
+            return DisasmInstruction(address, bytes([b0]), "pop", [r])
+        return DisasmInstruction(address, data[:1], ".byte", [f"0x{b0:02X}"])
+
+    @classmethod
+    def _disasm_m68k(cls, address: int, data: bytes) -> DisasmInstruction:
+        if len(data) < 2:
+            return DisasmInstruction(address, data, ".byte", [f"0x{b:02X}" for b in data])
+        w0 = struct.unpack(">H", data[:2])[0]
+        if w0 == 0x4E71:
+            return DisasmInstruction(address, data[:2], "nop")
+        elif w0 == 0x4E75:
+            return DisasmInstruction(address, data[:2], "rts", is_return=True, is_branch=True)
+        elif (w0 >> 12) == 0x06 and len(data) >= 2:
+            cond = (w0 >> 8) & 0x0F
+            disp = struct.unpack("b", bytes([w0 & 0xFF]))[0]
+            target = address + 2 + disp
+            if cond == 0:
+                return DisasmInstruction(address, data[:2], "bra", [f"0x{target:08X}"], target_address=target, is_branch=True)
+            elif cond == 1:
+                return DisasmInstruction(address, data[:2], "bsr", [f"0x{target:08X}"], target_address=target, is_branch=True, is_call=True)
+            else:
+                cond_names = {2: "bhi", 3: "bls", 4: "bcc", 5: "bcs", 6: "bne", 7: "beq", 12: "bge", 13: "blt", 14: "bgt", 15: "ble"}
+                mn = cond_names.get(cond, f"b{cond:X}")
+                return DisasmInstruction(address, data[:2], mn, [f"0x{target:08X}"], target_address=target, is_branch=True, is_conditional=True)
+        elif (w0 >> 12) == 0x07:
+            reg = (w0 >> 9) & 0x07
+            data_val = struct.unpack("b", bytes([w0 & 0xFF]))[0]
+            return DisasmInstruction(address, data[:2], "moveq", [f"#{data_val}", f"d{reg}"])
+        return DisasmInstruction(address, data[:2], ".word", [f"0x{w0:04X}"])
 
     @classmethod
     def _disassemble_impl(
@@ -516,19 +750,26 @@ class UniversalDisassembler:
         """
         instructions: List[DisasmInstruction] = []
         offset = 0
-        step = 2 if arch.lower() == "thumb" else 4
+        arch_l = arch.lower()
+        if arch_l in ("thumb", "arm_thumb", "m68k", "68000", "md", "genesis", "megadrive"):
+            step = 2
+        elif arch_l in ("sm83", "gb", "gbc", "gameboy"):
+            step = 1
+        else:
+            step = 4
 
-        while offset + step <= len(data):
+        while offset < len(data):
             if max_instructions and len(instructions) >= max_instructions:
                 break
+            chunk_len = min(4, len(data) - offset)
             ins = cls.disassemble_instruction(
                 address=base_address + offset,
-                raw_bytes=data[offset : offset + step],
+                raw_bytes=data[offset : offset + chunk_len],
                 arch=arch,
                 endian=endian,
             )
             instructions.append(ins)
-            offset += step
+            offset += len(ins.raw_bytes) if ins.raw_bytes else step
 
         return instructions
 

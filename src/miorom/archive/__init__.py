@@ -13,6 +13,7 @@ from miorom.archive.cascading import (
     CascadingRepackReport,
 )
 from miorom.archive.master_table import MasterTableArchive
+from miorom.archive.dma import DmaTableEntryStruct, DmaFileEntry, DmaTableArchive
 
 __all__ = [
     "ArchiveEntry",
@@ -32,5 +33,7 @@ __all__ = [
     "CascadingContainerRepacker",
     "ContainerEntry",
     "CascadingRepackReport",
+    "DmaTableEntryStruct",
+    "DmaFileEntry",
+    "DmaTableArchive",
 ]
-

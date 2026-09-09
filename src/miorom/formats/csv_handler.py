@@ -1,10 +1,12 @@
+from miorom.result import MioRomResult
 import csv
+import os
 from typing import List, Dict, Optional, Any, Union
 from dataclasses import dataclass
 
 
 @dataclass
-class TranslationRow:
+class TranslationRow(MioRomResult):
     index: int
     offset: int
     original: str
@@ -46,6 +48,9 @@ class CsvHandler:
         out_headers = headers if headers is not None else (
             cls.DEFAULT_HEADERS if include_context else cls.DEFAULT_HEADERS[:4]
         )
+        parent_dir = os.path.dirname(filepath)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
         with open(filepath, "w", encoding=encoding, newline="") as f:
             writer = csv.writer(f, delimiter=delimiter, quoting=csv.QUOTE_MINIMAL)
             writer.writerow(out_headers)
@@ -139,6 +144,9 @@ class CsvHandler:
         encoding: str = "utf-8-sig",
     ):
         """Export clean 2-column CSV (ID, Text) without offsets or technical headers."""
+        parent_dir = os.path.dirname(filepath)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
         with open(filepath, "w", encoding=encoding, newline="") as f:
             writer = csv.writer(f, delimiter=delimiter, quoting=csv.QUOTE_MINIMAL)
             writer.writerow(["ID", "Text"])

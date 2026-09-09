@@ -8,13 +8,15 @@ Solves the classic ROM hacking problem where string and data addresses are
 split across paired load instructions (e.g. lis/addi in PowerPC, lui/addiu in MIPS).
 """
 
+from miorom.errors import UnsupportedFormatError
+from miorom.result import MioRomResult
 import struct
 from dataclasses import dataclass
 from typing import Any, List, Optional, Tuple, Union
 
 
 @dataclass
-class CodePointer:
+class CodePointer(MioRomResult):
     """Represents a pointer embedded inside CPU instructions."""
     arch: str  # "powerpc", "mips", "arm"
     target_address: int
@@ -203,7 +205,7 @@ class MIPSInstructionScanner:
 
 
 @dataclass
-class ARMLiteralPointer:
+class ARMLiteralPointer(MioRomResult):
     """Represents a pointer loaded via PC-relative literal pool (LDR Rd, [PC, #imm])."""
     insn_offset: int
     insn_address: int
@@ -225,7 +227,7 @@ class ARMLiteralPointer:
 
 
 @dataclass
-class ARMMovPairPointer:
+class ARMMovPairPointer(MioRomResult):
     """Represents a 32-bit immediate loaded via paired movw / movt instructions (ARMv7)."""
     movw_offset: int
     movt_offset: int
@@ -501,7 +503,7 @@ class UniversalInstructionScanner:
                 endian=end,
             )
         else:
-            raise ValueError(f"Unsupported architecture: '{arch}'. Choose 'arm', 'thumb', 'ppc', or 'mips'.")
+            raise UnsupportedFormatError(f"Unsupported architecture: '{arch}'. Choose 'arm', 'thumb', 'ppc', or 'mips'.")
 
     @classmethod
     def find_xrefs(
@@ -544,5 +546,3 @@ class UniversalInstructionScanner:
                 elif hasattr(p, "insn_address"):
                     addrs.append(p.insn_address)
             return sorted(set(addrs))
-
-

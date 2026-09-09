@@ -1,11 +1,13 @@
+from miorom.result import MioRomResult
 import struct
+from miorom.errors import ParseError
 from dataclasses import dataclass
 from typing import List, Tuple, Optional, Dict
 from miorom.graphics.tiles import Tile
 
 
 @dataclass
-class TilemapEntry:
+class TilemapEntry(MioRomResult):
     tile_index: int
     flip_x: bool = False
     flip_y: bool = False
@@ -42,7 +44,7 @@ class TilemapEntry:
                 val |= 1 << 15
             return val
         else:
-            raise ValueError(f"Unknown tilemap format: {fmt}")
+            raise ParseError(f"Unknown tilemap format: {fmt}")
 
     @classmethod
     def from_u16(cls, val: int, fmt: str = "gba") -> "TilemapEntry":
@@ -60,7 +62,7 @@ class TilemapEntry:
             flip_y = bool(val & (1 << 15))
             return cls(tile_index=tile_idx, flip_x=flip_x, flip_y=flip_y, palette_bank=pal, priority=priority)
         else:
-            raise ValueError(f"Unknown tilemap format: {fmt}")
+            raise ParseError(f"Unknown tilemap format: {fmt}")
 
 
 class Tilemap:

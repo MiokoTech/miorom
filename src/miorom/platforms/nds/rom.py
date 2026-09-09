@@ -1,9 +1,12 @@
+from miorom.result import MioRomResult
 import os
-import struct
+from miorom.errors import ParseError
 from dataclasses import dataclass
+from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U8, U16, U32
 from typing import List, Optional, Tuple, Dict, Any, Union
 
 
+from miorom.errors import ParseError, RelocationError
 BANNER_LANGUAGES = {
     0: "Japanese",
     1: "English",
@@ -15,7 +18,7 @@ BANNER_LANGUAGES = {
 
 
 @dataclass
-class NDSFileEntry:
+class NDSFileEntry(MioRomResult):
     id: int
     start_offset: int
     end_offset: int
@@ -23,7 +26,7 @@ class NDSFileEntry:
 
 
 @dataclass
-class NDSOverlayEntry:
+class NDSOverlayEntry(MioRomResult):
     id: int
     ram_address: int
     ram_size: int
@@ -39,7 +42,7 @@ class NDSOverlayEntry:
 
 
 @dataclass
-class NDSHeader:
+class NDSHeader(MioRomResult):
     game_title: str
     game_code: str
     maker_code: str
@@ -63,6 +66,60 @@ class NDSHeader:
     arm7_overlay_size: int = 0
     header_crc: int = 0
 
+class NDSHeaderStruct(BinaryStruct):
+    _endian = "<"
+    game_title = FixedString(12)
+    game_code = FixedString(4)
+    maker_code = FixedString(2)
+    unit_code = U8()
+    _reserved_0x13 = RawBytes(13)
+    arm9_offset = U32()
+    arm9_entry_address = U32()
+    arm9_ram_address = U32()
+    arm9_size = U32()
+    arm7_offset = U32()
+    arm7_entry_address = U32()
+    arm7_ram_address = U32()
+    arm7_size = U32()
+    fnt_offset = U32()
+    fnt_size = U32()
+    fat_offset = U32()
+    fat_size = U32()
+    arm9_overlay_offset = U32()
+    arm9_overlay_size = U32()
+    arm7_overlay_offset = U32()
+    arm7_overlay_size = U32()
+    _reserved_0x60 = RawBytes(8)
+    banner_offset = U32()
+    _reserved_0x6C = RawBytes(0xF2)
+    header_crc = U16()
+
+class NDSFatEntryStruct(BinaryStruct):
+    _endian = "<"
+    start_offset = U32()
+    end_offset = U32()
+
+class NDSOverlayEntryStruct(BinaryStruct):
+    _endian = "<"
+    id = U32()
+    ram_address = U32()
+    ram_size = U32()
+    bss_size = U32()
+    sinit_init = U32()
+    sinit_init_end = U32()
+    file_id = U32()
+    flags = U32()
+
+class NDSFntDirectoryEntryStruct(BinaryStruct):
+    _endian = "<"
+    first_entry_offset = U32()
+    first_file_id = U16()
+    parent_directory_id = U16()
+
+class NDSHeaderCrcStruct(BinaryStruct):
+    _endian = "<"
+    checksum = U16()
+
 
 class NDSRom:
     """
@@ -73,7 +130,7 @@ class NDSRom:
     def __init__(self, data: bytes):
         self.data = bytearray(data) if isinstance(data, (bytearray, bytes)) else bytearray(data)
         if len(data) < 0x200:
-            raise ValueError("Data too small to be an NDS ROM.")
+            raise ParseError("Data too small to be an NDS ROM.")
 
         self._fnt_cache: Optional[Dict[str, int]] = None
         self._parse_header()
@@ -84,81 +141,55 @@ class NDSRom:
             return cls(f.read())
 
     def _parse_header(self):
-        d = self.data
-        title = d[0:12].rstrip(b"\x00").decode("ascii", errors="replace")
-        game_code = d[12:16].decode("ascii", errors="replace")
-        maker_code = d[16:18].decode("ascii", errors="replace")
-        unit_code = d[18]
-
-        arm9_offset = struct.unpack_from("<I", d, 0x20)[0]
-        arm9_entry = struct.unpack_from("<I", d, 0x24)[0]
-        arm9_ram_addr = struct.unpack_from("<I", d, 0x28)[0]
-        arm9_size = struct.unpack_from("<I", d, 0x2C)[0]
-
-        arm7_offset = struct.unpack_from("<I", d, 0x30)[0]
-        arm7_entry = struct.unpack_from("<I", d, 0x34)[0]
-        arm7_ram_addr = struct.unpack_from("<I", d, 0x38)[0]
-        arm7_size = struct.unpack_from("<I", d, 0x3C)[0]
-
-        fnt_offset = struct.unpack_from("<I", d, 0x40)[0]
-        fnt_size = struct.unpack_from("<I", d, 0x44)[0]
-        fat_offset = struct.unpack_from("<I", d, 0x48)[0]
-        fat_size = struct.unpack_from("<I", d, 0x4C)[0]
-        banner_offset = struct.unpack_from("<I", d, 0x68)[0]
-
-        arm9_overlay_offset = struct.unpack_from("<I", d, 0x50)[0]
-        arm9_overlay_size = struct.unpack_from("<I", d, 0x54)[0]
-        arm7_overlay_offset = struct.unpack_from("<I", d, 0x58)[0]
-        arm7_overlay_size = struct.unpack_from("<I", d, 0x5C)[0]
-        header_crc = struct.unpack_from("<H", d, 0x15E)[0] if len(d) >= 0x160 else 0
+        parsed = NDSHeaderStruct.from_bytes(self.data, offset=0)
 
         self.header = NDSHeader(
-            game_title=title,
-            game_code=game_code,
-            maker_code=maker_code,
-            unit_code=unit_code,
-            arm9_offset=arm9_offset,
-            arm9_entry_address=arm9_entry,
-            arm9_ram_address=arm9_ram_addr,
-            arm9_size=arm9_size,
-            arm7_offset=arm7_offset,
-            arm7_entry_address=arm7_entry,
-            arm7_ram_address=arm7_ram_addr,
-            arm7_size=arm7_size,
-            fnt_offset=fnt_offset,
-            fnt_size=fnt_size,
-            fat_offset=fat_offset,
-            fat_size=fat_size,
-            banner_offset=banner_offset,
-            arm9_overlay_offset=arm9_overlay_offset,
-            arm9_overlay_size=arm9_overlay_size,
-            arm7_overlay_offset=arm7_overlay_offset,
-            arm7_overlay_size=arm7_overlay_size,
-            header_crc=header_crc,
+            game_title=parsed.game_title,
+            game_code=parsed.game_code,
+            maker_code=parsed.maker_code,
+            unit_code=parsed.unit_code,
+            arm9_offset=parsed.arm9_offset,
+            arm9_entry_address=parsed.arm9_entry_address,
+            arm9_ram_address=parsed.arm9_ram_address,
+            arm9_size=parsed.arm9_size,
+            arm7_offset=parsed.arm7_offset,
+            arm7_entry_address=parsed.arm7_entry_address,
+            arm7_ram_address=parsed.arm7_ram_address,
+            arm7_size=parsed.arm7_size,
+            fnt_offset=parsed.fnt_offset,
+            fnt_size=parsed.fnt_size,
+            fat_offset=parsed.fat_offset,
+            fat_size=parsed.fat_size,
+            banner_offset=parsed.banner_offset,
+            arm9_overlay_offset=parsed.arm9_overlay_offset,
+            arm9_overlay_size=parsed.arm9_overlay_size,
+            arm7_overlay_offset=parsed.arm7_overlay_offset,
+            arm7_overlay_size=parsed.arm7_overlay_size,
+            header_crc=parsed.header_crc,
         )
 
         # Backwards-compatible aliases
-        self.title = title
-        self.game_code = game_code
-        self.maker_code = maker_code
-        self.unit_code = unit_code
-        self.arm9_offset = arm9_offset
-        self.arm9_entry = arm9_entry
-        self.arm9_ram_addr = arm9_ram_addr
-        self.arm9_size = arm9_size
-        self.arm7_offset = arm7_offset
-        self.arm7_entry = arm7_entry
-        self.arm7_ram_addr = arm7_ram_addr
-        self.arm7_size = arm7_size
-        self.fnt_offset = fnt_offset
-        self.fnt_size = fnt_size
-        self.fat_offset = fat_offset
-        self.fat_size = fat_size
-        self.banner_offset = banner_offset
-        self.arm9_overlay_offset = arm9_overlay_offset
-        self.arm9_overlay_size = arm9_overlay_size
-        self.arm7_overlay_offset = arm7_overlay_offset
-        self.arm7_overlay_size = arm7_overlay_size
+        self.title = parsed.game_title
+        self.game_code = parsed.game_code
+        self.maker_code = parsed.maker_code
+        self.unit_code = parsed.unit_code
+        self.arm9_offset = parsed.arm9_offset
+        self.arm9_entry = parsed.arm9_entry_address
+        self.arm9_ram_addr = parsed.arm9_ram_address
+        self.arm9_size = parsed.arm9_size
+        self.arm7_offset = parsed.arm7_offset
+        self.arm7_entry = parsed.arm7_entry_address
+        self.arm7_ram_addr = parsed.arm7_ram_address
+        self.arm7_size = parsed.arm7_size
+        self.fnt_offset = parsed.fnt_offset
+        self.fnt_size = parsed.fnt_size
+        self.fat_offset = parsed.fat_offset
+        self.fat_size = parsed.fat_size
+        self.banner_offset = parsed.banner_offset
+        self.arm9_overlay_offset = parsed.arm9_overlay_offset
+        self.arm9_overlay_size = parsed.arm9_overlay_size
+        self.arm7_overlay_offset = parsed.arm7_overlay_offset
+        self.arm7_overlay_size = parsed.arm7_overlay_size
 
     def get_arm9_binary(self) -> bytes:
         return self.data[self.arm9_offset : self.arm9_offset + self.arm9_size]
@@ -203,7 +234,9 @@ class NDSRom:
         count = self.fat_size // 8
         for i in range(count):
             off = self.fat_offset + (i * 8)
-            start, end = struct.unpack_from("<II", self.data, off)
+            entry = NDSFatEntryStruct.from_bytes(self.data, offset=off)
+            start = entry.start_offset
+            end = entry.end_offset
             entries.append(NDSFileEntry(
                 id=i,
                 start_offset=start,
@@ -212,13 +245,24 @@ class NDSRom:
             ))
         return entries
 
-    def get_file(self, file_id: int) -> bytes:
-        """Extracts a file by its FAT ID."""
+    def get_file(self, file_id_or_path: Union[int, str]) -> bytes:
+        """Extracts a file by its FAT ID or FNT path."""
+        if isinstance(file_id_or_path, str):
+            fnt = self.resolve_fnt()
+            norm = file_id_or_path.lstrip("/").replace("\\", "/")
+            if norm not in fnt:
+                raise FileNotFoundError(f"File '{norm}' not found in NDS FNT.")
+            file_id = fnt[norm]
+        else:
+            file_id = file_id_or_path
+
         off = self.fat_offset + (file_id * 8)
         if off + 8 > len(self.data):
             raise IndexError(f"File ID {file_id} out of FAT range.")
 
-        start, end = struct.unpack_from("<II", self.data, off)
+        entry = NDSFatEntryStruct.from_bytes(self.data, offset=off)
+        start = entry.start_offset
+        end = entry.end_offset
         return bytes(self.data[start:end])
 
     def resolve_fnt(self) -> Dict[str, int]:
@@ -238,7 +282,9 @@ class NDSRom:
             dir_entry_off = fnt_off + (dir_idx * 8)
             if dir_entry_off + 8 > len(d):
                 return {}
-            sub_off, cur_file_id, _ = struct.unpack_from("<IHH", d, dir_entry_off)
+            directory_entry = NDSFntDirectoryEntryStruct.from_bytes(d, offset=dir_entry_off)
+            sub_off = directory_entry.first_entry_offset
+            cur_file_id = directory_entry.first_file_id
             pos = fnt_off + sub_off
             mapping: Dict[str, int] = {}
             while pos < len(d):
@@ -255,7 +301,7 @@ class NDSRom:
                 if is_dir:
                     if pos + 2 > len(d):
                         break
-                    sub_dir_id = struct.unpack_from("<H", d, pos)[0]
+                    sub_dir_id = U16().unpack(d, pos, "<")[0]
                     pos += 2
                     sub_map = walk_dir(sub_dir_id - 0xF000, f"{prefix}{name}/")
                     mapping.update(sub_map)
@@ -293,7 +339,9 @@ class NDSRom:
         if off + 8 > len(self.data):
             raise IndexError(f"File ID {target_id} out of FAT bounds.")
 
-        cur_start, cur_end = struct.unpack_from("<II", self.data, off)
+        cur_entry = NDSFatEntryStruct.from_bytes(self.data, offset=off)
+        cur_start = cur_entry.start_offset
+        cur_end = cur_entry.end_offset
         old_size = cur_end - cur_start
         delta = len(new_data) - old_size
 
@@ -311,7 +359,10 @@ class NDSRom:
             self.data[cur_start : cur_start + len(new_data)] = new_data
 
         # Update FAT entry for target
-        struct.pack_into("<II", self.data, off, cur_start, cur_start + len(new_data))
+        self.data[off:off + NDSFatEntryStruct.sizeof()] = NDSFatEntryStruct(
+            start_offset=cur_start,
+            end_offset=cur_start + len(new_data),
+        ).to_bytes()
 
         # Shift all downstream FAT entries
         file_count = self.fat_size // 8
@@ -319,9 +370,12 @@ class NDSRom:
             if i == target_id:
                 continue
             entry_off = self.fat_offset + (i * 8)
-            s, e = struct.unpack_from("<II", self.data, entry_off)
-            if s >= cur_end:
-                struct.pack_into("<II", self.data, entry_off, s + delta, e + delta)
+            entry = NDSFatEntryStruct.from_bytes(self.data, offset=entry_off)
+            if entry.start_offset >= cur_end:
+                self.data[entry_off:entry_off + NDSFatEntryStruct.sizeof()] = NDSFatEntryStruct(
+                    start_offset=entry.start_offset + delta,
+                    end_offset=entry.end_offset + delta,
+                ).to_bytes()
 
         if len(self.data) >= 0x160:
             self.fix_header_checksum()
@@ -371,7 +425,10 @@ class NDSRom:
             self.data.extend(b"\x00" * pad_after)
 
         # Update FAT entry
-        struct.pack_into("<II", self.data, fat_entry_off, new_start, new_end)
+        self.data[fat_entry_off:fat_entry_off + 8] = NDSFatEntryStruct(
+            start_offset=new_start,
+            end_offset=new_end,
+        ).to_bytes()
 
         # Recalculate and update header checksum
         if len(self.data) >= 0x160:
@@ -393,7 +450,7 @@ class NDSRom:
             if self.arm7_ram_addr <= ram_addr < self.arm7_ram_addr + self.arm7_size:
                 return self.arm7_offset + (ram_addr - self.arm7_ram_addr)
 
-        raise ValueError(
+        raise ParseError(
             f"RAM address 0x{ram_addr:08X} does not map to loaded ARM9 "
             f"[0x{self.arm9_ram_addr:08X}..0x{self.arm9_ram_addr + self.arm9_size:08X}) or ARM7."
         )
@@ -406,7 +463,7 @@ class NDSRom:
             return self.arm9_ram_addr + (file_off - self.arm9_offset)
         if self.arm7_offset <= file_off < self.arm7_offset + self.arm7_size:
             return self.arm7_ram_addr + (file_off - self.arm7_offset)
-        raise ValueError(
+        raise ParseError(
             f"File offset 0x{file_off:08X} is outside ARM9 "
             f"[0x{self.arm9_offset:08X}..0x{self.arm9_offset + self.arm9_size:08X}) and ARM7."
         )
@@ -415,7 +472,7 @@ class NDSRom:
         """Reads length bytes from ARM9 memory at ram_addr directly from ROM."""
         file_off = self.ram_to_file_offset(ram_addr, processor="arm9")
         if file_off + length > self.arm9_offset + self.arm9_size:
-            raise ValueError("Read exceeds ARM9 binary bounds.")
+            raise RelocationError("Read exceeds ARM9 binary bounds.")
         return bytes(self.data[file_off : file_off + length])
 
     def patch_arm9(self, ram_addr: int, patch_data: Union[bytes, bytearray, int]) -> int:
@@ -425,13 +482,13 @@ class NDSRom:
         Returns the physical file offset that was modified.
         """
         if isinstance(patch_data, int):
-            raw = struct.pack("<I", patch_data)
+            raw = U32().pack(patch_data, endian="<")
         else:
             raw = bytes(patch_data)
 
         file_off = self.ram_to_file_offset(ram_addr, processor="arm9")
         if file_off + len(raw) > self.arm9_offset + self.arm9_size:
-            raise ValueError(f"Patch at 0x{ram_addr:08X} exceeds ARM9 binary bounds.")
+            raise RelocationError(f"Patch at 0x{ram_addr:08X} exceeds ARM9 binary bounds.")
 
         self.data[file_off : file_off + len(raw)] = raw
         if len(self.data) >= 0x160:
@@ -450,7 +507,7 @@ class NDSRom:
             table_off = self.arm7_overlay_offset
             table_size = self.arm7_overlay_size
         else:
-            raise ValueError("Processor must be 'arm9' or 'arm7'")
+            raise RelocationError("Processor must be 'arm9' or 'arm7'")
 
         if table_off == 0 or table_size == 0 or table_off + table_size > len(self.data):
             return []
@@ -461,25 +518,16 @@ class NDSRom:
 
         for i in range(count):
             off = table_off + (i * entry_size)
-            (
-                ov_id,
-                ram_addr,
-                ram_sz,
-                bss_sz,
-                sinit_init,
-                sinit_end,
-                file_id,
-                flags,
-            ) = struct.unpack_from("<IIIIIIII", self.data, off)
+            parsed = NDSOverlayEntryStruct.from_bytes(self.data, offset=off)
             entries.append(NDSOverlayEntry(
-                id=ov_id,
-                ram_address=ram_addr,
-                ram_size=ram_sz,
-                bss_size=bss_sz,
-                sinit_init=sinit_init,
-                sinit_init_end=sinit_end,
-                file_id=file_id,
-                flags=flags,
+                id=parsed.id,
+                ram_address=parsed.ram_address,
+                ram_size=parsed.ram_size,
+                bss_size=parsed.bss_size,
+                sinit_init=parsed.sinit_init,
+                sinit_init_end=parsed.sinit_init_end,
+                file_id=parsed.file_id,
+                flags=parsed.flags,
             ))
         return entries
 
@@ -503,7 +551,7 @@ class NDSRom:
         """Calculates and writes the valid CRC-16 at offset 0x15E."""
         crc = self.calculate_header_checksum()
         if len(self.data) >= 0x160:
-            struct.pack_into("<H", self.data, 0x15E, crc)
+            self.data[0x15E:0x160] = NDSHeaderCrcStruct(checksum=crc).to_bytes()
         return crc
 
     def to_bytes(self) -> bytes:
@@ -533,7 +581,7 @@ def calculate_nds_checksum(header_bytes: bytes) -> int:
 def verify_nds_checksum(rom_data: bytes) -> bool:
     if len(rom_data) < 0x160:
         return False
-    expected = struct.unpack_from("<H", rom_data, 0x15E)[0]
+    expected = NDSHeaderCrcStruct.from_bytes(rom_data, offset=0x15E).checksum
     calc = calculate_nds_checksum(rom_data[:0x15E])
     return expected == calc
 
@@ -541,9 +589,9 @@ def verify_nds_checksum(rom_data: bytes) -> bool:
 def fix_nds_checksum(rom_data: Union[bytes, bytearray]) -> bytearray:
     buf = bytearray(rom_data)
     if len(buf) < 0x160:
-        raise ValueError("NDS ROM data too short for header checksum.")
+        raise ParseError("NDS ROM data too short for header checksum.")
     crc = calculate_nds_checksum(buf[:0x15E])
-    struct.pack_into("<H", buf, 0x15E, crc)
+    buf[0x15E:0x160] = NDSHeaderCrcStruct(checksum=crc).to_bytes()
     return buf
 
 
@@ -620,7 +668,10 @@ def extract_rom(rom_path: str, extract_dir: str, work_dir: str = "") -> None:
         ov_dir = os.path.join(extract_dir, "overlay")
         os.makedirs(ov_dir, exist_ok=True)
         for i in range(len(rom.arm9OverlayTable) // 0x20):
-            file_id = struct.unpack_from("<I", rom.arm9OverlayTable, i * 0x20)[0]
+            file_id = NDSOverlayEntryStruct.from_bytes(
+                rom.arm9OverlayTable,
+                offset=i * NDSOverlayEntryStruct.sizeof(),
+            ).id
             ov_path = os.path.join(ov_dir, f"overlay_{i:04d}.bin")
             with open(ov_path, "wb") as f:
                 f.write(rom.files[file_id])
@@ -693,7 +744,10 @@ def repack_rom(rom_in: str, rom_out: str, work_dir: str, patch_file: str = "") -
         num_overlays = len(rom.arm9OverlayTable) // 0x20
         overlay_dir = os.path.join(work_dir, "overlay")
         for i in range(num_overlays):
-            file_id = struct.unpack_from("<I", rom.arm9OverlayTable, i * 0x20)[0]
+            file_id = NDSOverlayEntryStruct.from_bytes(
+                rom.arm9OverlayTable,
+                offset=i * NDSOverlayEntryStruct.sizeof(),
+            ).id
             ov_name = os.path.join(overlay_dir, f"overlay_{i:04d}.bin")
             if os.path.isfile(ov_name):
                 with open(ov_name, "rb") as f_ov:
@@ -710,6 +764,3 @@ def repack_rom(rom_in: str, rom_out: str, work_dir: str, patch_file: str = "") -
 # Descriptive aliases
 extract_nds_rom = extract_rom
 repack_nds_rom = repack_rom
-
-
-

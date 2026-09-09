@@ -6,19 +6,23 @@ Automates migrating translations, string pools, and pointer tables between
 different regional releases of a game (e.g. Japanese -> USA -> European PAL).
 """
 
+from miorom.errors import RelocationError
+from miorom.result import MioRomResult
 import os
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Union
 
 from miorom.core.scanner import StringScanner, PointerScanner
+from miorom.diff.bindiff import FunctionMatch
 from miorom.diff.mapper import BinaryDiffMapper, MatchedBlock
 from miorom.formats.csv_handler import CsvHandler, TranslationRow
 from miorom.helper.string_pool import StringPoolBuilder
 from miorom.helper.relocator import BinaryRelocator
+from miorom.patch.ips import IpsPatcher
 
 
 @dataclass
-class PortReport:
+class PortReport(MioRomResult):
     """Detailed summary report of cross-region migration."""
     strategy: str
     total_source_strings: int = 0
@@ -65,6 +69,19 @@ class CrossRegionPorter:
 
     def __init__(self, diff_mapper: Optional[BinaryDiffMapper] = None):
         self.diff_mapper = diff_mapper
+
+    @staticmethod
+    def function_offset_map(
+        function_matches: List[FunctionMatch],
+        source_base: int = 0,
+        target_base: int = 0,
+    ) -> List[Tuple[int, int]]:
+        """Convert virtual function matches into ordered file-offset anchors."""
+        anchors = [
+            (match.func_a_address - source_base, match.func_b_address - target_base)
+            for match in function_matches
+        ]
+        return sorted(anchor for anchor in anchors if anchor[0] >= 0 and anchor[1] >= 0)
 
     # ------------------------------------------------------------------
     # CSV-Level Cross-Region Migration
@@ -132,7 +149,7 @@ class CrossRegionPorter:
 
         elif strategy.lower() == "offset":
             if not self.diff_mapper:
-                raise ValueError("BinaryDiffMapper must be provided to use 'offset' correlation strategy.")
+                raise RelocationError("BinaryDiffMapper must be provided to use 'offset' correlation strategy.")
 
             # Create target lookup by offset
             tgt_by_offset: Dict[int, TranslationRow] = {r.offset: r for r in tgt_rows}
@@ -178,7 +195,7 @@ class CrossRegionPorter:
                     ))
 
         else:
-            raise ValueError(f"Unknown strategy: '{strategy}'. Choose from: 'index', 'offset'.")
+            raise RelocationError(f"Unknown strategy: '{strategy}'. Choose from: 'index', 'offset'.")
 
         if output_csv:
             CsvHandler.export_csv(output_csv, ported)
@@ -266,3 +283,70 @@ class CrossRegionPorter:
         reloc.replace_range(target_pool_offset, len(new_pool_bytes), new_pool_bytes)
 
         return reloc.to_bytes(), report
+
+    def port_patch(
+        self,
+        source_data: Union[bytes, bytearray],
+        target_data: Union[bytes, bytearray],
+        patch_data: bytes,
+        function_matches: Optional[List[FunctionMatch]] = None,
+        source_base: int = 0,
+        target_base: int = 0,
+        fallback_tolerance: int = 64,
+    ) -> Tuple[bytes, PortReport]:
+        """
+        Translate an IPS patch from source region to target region.
+
+        FunctionMatch anchors are primary; BinaryDiffMapper is only a fallback for
+        records outside a matched function neighborhood.
+        """
+        src_buf = bytes(source_data)
+        tgt_buf = bytearray(target_data)
+        anchors = []
+        if function_matches:
+            anchors = self.function_offset_map(function_matches, source_base, target_base)
+
+        if not anchors:
+            if not self.diff_mapper:
+                self.diff_mapper = BinaryDiffMapper(src_buf, bytes(tgt_buf))
+            if not self.diff_mapper.matches:
+                self.diff_mapper.find_matching_blocks()
+
+        records = IpsPatcher.iter_records(patch_data)
+        warnings: List[str] = []
+        migrated_count = 0
+        skipped_count = 0
+
+        for source_offset, payload in records:
+            target_offset: Optional[int] = None
+            for index, (source_anchor, target_anchor) in enumerate(anchors):
+                next_anchor = anchors[index + 1][0] if index + 1 < len(anchors) else len(src_buf)
+                if source_anchor <= source_offset < next_anchor:
+                    target_offset = target_anchor + (source_offset - source_anchor)
+                    break
+
+            if target_offset is None and self.diff_mapper:
+                mapped = self.diff_mapper.correlate_offset(source_offset)
+                if mapped is not None and abs(mapped - source_offset) <= fallback_tolerance:
+                    target_offset = mapped
+
+            if target_offset is None or target_offset < 0:
+                skipped_count += 1
+                warnings.append(f"IPS record at 0x{source_offset:08X} has no safe function mapping.")
+                continue
+
+            if target_offset + len(payload) > len(tgt_buf):
+                tgt_buf.extend(b"\x00" * (target_offset + len(payload) - len(tgt_buf)))
+            tgt_buf[target_offset:target_offset + len(payload)] = payload
+            migrated_count += 1
+
+        output_patch = IpsPatcher.create(bytes(target_data), bytes(tgt_buf))
+        report = PortReport(
+            strategy="function_anchors" if function_matches else "binary_mapper",
+            total_source_strings=len(records),
+            total_target_strings=len(records),
+            migrated_strings=migrated_count,
+            unmatched_strings=skipped_count,
+            warnings=warnings,
+        )
+        return output_patch, report

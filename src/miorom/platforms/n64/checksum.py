@@ -1,7 +1,21 @@
 import hashlib
-import struct
 from enum import Enum
+from miorom.core.schema import BinaryStruct, U32
 from typing import Optional, Tuple
+
+
+class N64EntryPointStruct(BinaryStruct):
+    _endian = ">"
+    entrypoint = U32()
+
+
+class N64CrcStruct(BinaryStruct):
+    _endian = ">"
+    crc1 = U32()
+    crc2 = U32()
+
+
+N64Word = U32(endian=">")
 
 
 class N64CIC(Enum):
@@ -69,7 +83,11 @@ def calculate_n64_checksum(
     if cic is None:
         cic = detect_cic(rom_bytes) or N64CIC.CIC_6102_7101
 
-    entrypoint = struct.unpack_from(">I", rom_bytes, 8)[0] if len(rom_bytes) >= 12 else 0x80000400
+    entrypoint = (
+        N64EntryPointStruct.from_bytes(rom_bytes, offset=8).entrypoint
+        if len(rom_bytes) >= N64EntryPointStruct.sizeof() + 8
+        else 0x80000400
+    )
     bytes_to_check = 0x100000  # 1 MiB standard
     if cic == N64CIC.CIC_5101 and entrypoint == 0x80000400:
         bytes_to_check = 0x3FE000
@@ -90,12 +108,12 @@ def calculate_n64_checksum(
     a2 = v0
     t4 = v0
 
-    words_count = bytes_to_check // 4
-    words = struct.unpack_from(f">{words_count}I", rom_bytes, 0x1000)
-
     is_6105 = (cic == N64CIC.CIC_6105_7105)
 
-    for i, word in enumerate(words):
+    words_count = bytes_to_check // N64Word.get_size()
+    for i in range(words_count):
+        offset = 0x1000 + i * N64Word.get_size()
+        word = N64Word.unpack(rom_bytes, offset, ">")[0]
         a1 = (a3 + word) & 0xFFFFFFFF
         if a1 < a3:
             t2 = (t2 + 1) & 0xFFFFFFFF
@@ -115,7 +133,7 @@ def calculate_n64_checksum(
         if is_6105:
             temp = (i & 0x3F) | 0x80
             disp_offset = (temp + 0x154) * 4
-            t7 = struct.unpack_from(">I", rom_bytes, disp_offset)[0]
+            t7 = N64Word.unpack(rom_bytes, disp_offset, ">")[0]
             t4 = (t4 + (word ^ t7)) & 0xFFFFFFFF
         else:
             t4 = (t4 + (word ^ s0)) & 0xFFFFFFFF
@@ -142,7 +160,8 @@ def verify_n64_checksum(
     """
     if len(rom_bytes) < 0x18:
         return False
-    expected_crc1, expected_crc2 = struct.unpack_from(">II", rom_bytes, 0x10)
+    crc = N64CrcStruct.from_bytes(rom_bytes, offset=0x10)
+    expected_crc1, expected_crc2 = crc.crc1, crc.crc2
     actual_crc1, actual_crc2 = calculate_n64_checksum(rom_bytes, cic)
     return (expected_crc1 == actual_crc1) and (expected_crc2 == actual_crc2)
 
@@ -150,12 +169,16 @@ def verify_n64_checksum(
 def fix_n64_checksum(
     rom_bytes: bytes,
     cic: Optional[N64CIC] = None,
+    preserve_database_crc: bool = False,
 ) -> bytes:
     """
     Recalculate the N64 header checksum and patch CRC1 & CRC2 at offsets 0x10..0x18.
+    If preserve_database_crc=True, leaves header CRC intact to maintain emulator metadata.
     Returns the patched ROM bytes.
     """
+    if preserve_database_crc:
+        return rom_bytes
     crc1, crc2 = calculate_n64_checksum(rom_bytes, cic)
     ba = bytearray(rom_bytes)
-    struct.pack_into(">II", ba, 0x10, crc1, crc2)
+    ba[0x10:0x18] = N64CrcStruct(crc1=crc1, crc2=crc2).to_bytes()
     return bytes(ba)

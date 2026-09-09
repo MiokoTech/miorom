@@ -8,6 +8,7 @@ or expands EOF and rewrites all pointing references (PointerTables, literal pool
 and custom pointer arrays).
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 import struct
@@ -17,7 +18,7 @@ from miorom.core.pointer import PointerTable, PointerEntry
 
 
 @dataclass
-class RelocatablePointer:
+class RelocatablePointer(MioRomResult):
     """
     Defines a location in the buffer where a pointer value is stored.
     """
@@ -30,7 +31,7 @@ class RelocatablePointer:
 
 
 @dataclass
-class RelocationRecord:
+class RelocationRecord(MioRomResult):
     """Detailed result of a single item relocation."""
     item_id: Any
     old_offset: int
@@ -42,7 +43,7 @@ class RelocationRecord:
 
 
 @dataclass
-class RelocationSummary:
+class RelocationSummary(MioRomResult):
     """Summary of a batch relocation operation."""
     total_items: int
     in_place_count: int

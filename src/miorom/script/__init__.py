@@ -43,8 +43,18 @@ from miorom.script.vm_profiler import (
 from miorom.script.repacker import SmartScriptRepacker, ScriptRepackReport
 from miorom.script.paging_weaver import SmartScriptPagingWeaver, PagingWeaveConfig
 from miorom.script.splicer import BytecodeStreamSplicer, SpliceTarget
+from miorom.script.branch import (
+    BytecodeBranchScanner,
+    RelativeBranch,
+    SwitchTable,
+    SwitchCase,
+)
 
 __all__ = [
+    "BytecodeBranchScanner",
+    "RelativeBranch",
+    "SwitchTable",
+    "SwitchCase",
     "BytecodeEngine",
     "DisassembledScript",
     "Instruction",

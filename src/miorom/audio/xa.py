@@ -1,3 +1,4 @@
+from miorom.result import MioRomResult
 import struct
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
@@ -8,7 +9,7 @@ FILTER_K2 = (0, 0, -52, -55, -60)
 
 
 @dataclass
-class CdXaChannelState:
+class CdXaChannelState(MioRomResult):
     prev1: int = 0
     prev2: int = 0
 

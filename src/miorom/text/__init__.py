@@ -10,7 +10,7 @@ from miorom.text.po_handler import PoHandler, PoEntry
 from miorom.text.pixel_wrapper import FontMetrics, PixelWordWrapper
 from miorom.text.charmap_miner import CharMapMiner, MinedCharMapResult
 from miorom.text.relative_search import RelativeSearcher, RelativeMatch
-from miorom.text.vwf import GlyphWidthTable, VWFMetrics
+from miorom.text.vwf import GlyphWidthTable, VWFMetrics, VWFMetricsInspector, TextboxCollisionReport
 from miorom.text.dte_miner import DTEMiner, DTEToken
 from miorom.text.pipeline import StringTablePipeline, ExtractedString
 from miorom.text.paginator import SmartAutoPaginator, PaginationConfig
@@ -25,6 +25,7 @@ from miorom.text.metrics_measurer import (
 )
 from miorom.text.tag_validator import TagSyntaxValidator, TagValidationReport
 from miorom.text.template import GameTextTemplate
+from miorom.text.tokenizer import ControlCodeDef, ControlCodeSchema, ControlCodeTokenizer
 
 __all__ = [
     "TagManager",
@@ -35,6 +36,8 @@ __all__ = [
     "RelativeMatch",
     "GlyphWidthTable",
     "VWFMetrics",
+    "VWFMetricsInspector",
+    "TextboxCollisionReport",
     "DTEMiner",
     "DTEToken",
     "WordWrapper",
@@ -69,4 +72,7 @@ __all__ = [
     "TagSyntaxValidator",
     "TagValidationReport",
     "GameTextTemplate",
+    "ControlCodeDef",
+    "ControlCodeSchema",
+    "ControlCodeTokenizer",
 ]

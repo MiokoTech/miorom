@@ -2,6 +2,7 @@ import struct
 from typing import Dict, List, Optional, Tuple
 
 
+from miorom.errors import ParseError
 class SDATFileEntry:
     def __init__(self, index: int, offset: int, size: int, data: bytes):
         self.index = index
@@ -20,10 +21,10 @@ class SDATContainer:
 
     def __init__(self, data: bytes):
         if len(data) < 64:
-            raise ValueError("Data too small for SDAT header (minimum 64 bytes).")
+            raise ParseError("Data too small for SDAT header (minimum 64 bytes).")
 
         if data[:4] != self.MAGIC:
-            raise ValueError(f"Invalid SDAT magic: {data[:4]!r}")
+            raise ParseError(f"Invalid SDAT magic: {data[:4]!r}")
 
         self.data = bytearray(data)
         self.file_size = struct.unpack_from("<I", self.data, 8)[0]

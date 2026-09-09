@@ -1,4 +1,6 @@
+from miorom.result import MioRomResult
 import struct
+from miorom.errors import ParseError
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -20,7 +22,7 @@ EM_ARM = 40
 
 
 @dataclass
-class ElfSection:
+class ElfSection(MioRomResult):
     name: str
     sh_type: int
     sh_flags: int
@@ -35,7 +37,7 @@ class ElfSection:
 
 
 @dataclass
-class ElfSymbol:
+class ElfSymbol(MioRomResult):
     name: str
     st_value: int
     st_size: int
@@ -50,7 +52,7 @@ class ElfSymbol:
 
 
 @dataclass
-class ElfRelocation:
+class ElfRelocation(MioRomResult):
     r_offset: int
     r_info: int
     r_addend: int = 0
@@ -69,11 +71,11 @@ class Elf32File:
     def __init__(self, data: bytes):
         self.raw_data = data
         if len(data) < 52 or data[:4] != b"\x7fELF":
-            raise ValueError("Invalid ELF32 file: missing magic header '\\x7fELF'")
+            raise ParseError("Invalid ELF32 file: missing magic header '\\x7fELF'")
 
         self.ei_class = data[4]  # 1 = 32-bit, 2 = 64-bit
         if self.ei_class != 1:
-            raise ValueError("Only 32-bit ELF files (ELF32) are supported.")
+            raise ParseError("Only 32-bit ELF files (ELF32) are supported.")
 
         self.ei_data = data[5]   # 1 = Little-endian, 2 = Big-endian
         self.endian = "<" if self.ei_data == 1 else ">"

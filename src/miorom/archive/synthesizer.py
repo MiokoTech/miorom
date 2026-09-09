@@ -1,3 +1,4 @@
+from miorom.result import MioRomResult
 import math
 import struct
 from collections import Counter
@@ -5,8 +6,10 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 
+from miorom.errors import ParseError
+
 @dataclass
-class SynthesizedEntry:
+class SynthesizedEntry(MioRomResult):
     index: int
     offset: int
     size: int
@@ -16,7 +19,7 @@ class SynthesizedEntry:
 
 
 @dataclass
-class ArchiveLayout:
+class ArchiveLayout(MioRomResult):
     magic: bytes
     magic_ascii: str
     file_count: int
@@ -58,7 +61,7 @@ class ArchiveSynthesizer:
     def analyze(cls, data: bytes) -> ArchiveLayout:
         total_len = len(data)
         if total_len < 16:
-            raise ValueError(f"Data size {total_len} is too small to be a container archive.")
+            raise ParseError(f"Data size {total_len} is too small to be a container archive.")
 
         # 1. Detect magic (first 4 bytes)
         magic = data[:4]

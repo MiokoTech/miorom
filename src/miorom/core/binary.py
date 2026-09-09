@@ -1,3 +1,5 @@
+import mmap
+import os
 import struct
 from contextlib import contextmanager
 from io import BytesIO
@@ -7,16 +9,58 @@ from typing import Union, Optional, BinaryIO
 class BinaryReader:
     """A fluent, endian-aware binary reader for ROM hacking and reverse engineering."""
 
-    def __init__(self, stream: Union[bytes, bytearray, BinaryIO], endian: str = ">"):
+    def __init__(self, stream: Union[bytes, bytearray, memoryview, BinaryIO], endian: str = ">"):
         """
         Initialize BinaryReader.
         endian: '>' for Big Endian, '<' for Little Endian.
         """
         if isinstance(stream, (bytes, bytearray)):
             self.stream = BytesIO(stream)
+        elif isinstance(stream, memoryview):
+            self.stream = BytesIO(bytes(stream))
         else:
             self.stream = stream
         self.endian = endian
+        self._owned_file: Optional[BinaryIO] = None
+
+    @classmethod
+    def open_file(
+        cls,
+        path: Union[str, os.PathLike],
+        endian: str = ">",
+        use_mmap: Optional[bool] = None,
+        mmap_min_size: int = 100 * 1024 * 1024,
+    ) -> "BinaryReader":
+        file_obj = open(path, "rb")
+        try:
+            file_obj.seek(0, os.SEEK_END)
+            size = file_obj.tell()
+            should_mmap = size >= mmap_min_size if use_mmap is None else use_mmap
+            file_obj.seek(0)
+            if should_mmap:
+                mapped = mmap.mmap(file_obj.fileno(), 0, access=mmap.ACCESS_READ)
+                reader = cls(mapped, endian=endian)
+            else:
+                reader = cls(file_obj, endian=endian)
+        except Exception:
+            file_obj.close()
+            raise
+        reader._owned_file = file_obj
+        return reader
+
+    def close(self) -> None:
+        close_method = getattr(self.stream, "close", None)
+        if close_method:
+            close_method()
+        if self._owned_file is not None:
+            self._owned_file.close()
+            self._owned_file = None
+
+    def __enter__(self) -> "BinaryReader":
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()
 
     def set_endian(self, endian: str) -> "BinaryReader":
         self.endian = endian
@@ -95,15 +139,20 @@ class BinaryReader:
                     raw = raw[:idx]
             return raw.decode(encoding, errors="replace")
 
+        if not null_terminated:
+            return self.stream.read().decode(encoding, errors="replace")
+
         # Null-terminated variable length
         raw = bytearray()
         char_size = 2 if "utf-16" in encoding.lower() or "ucs-2" in encoding.lower() else 1
         term = b"\x00" * char_size
 
         while True:
-            chunk = self.read_bytes(char_size)
+            chunk = self.stream.read(char_size)
             if chunk == term:
                 break
+            if len(chunk) < char_size:
+                raise EOFError(f"Requested {char_size} bytes, got {len(chunk)} at offset {self.tell()}")
             raw.extend(chunk)
 
         return raw.decode(encoding, errors="replace")

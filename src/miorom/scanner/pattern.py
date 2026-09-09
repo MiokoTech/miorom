@@ -1,4 +1,5 @@
 """
+from miorom.errors import ParseError
 miorom.scanner.pattern
 ~~~~~~~~~~~~~~~~~~~~~~
 Universal Array-of-Bytes (AOB) pattern scanner and signature engine.
@@ -7,14 +8,15 @@ Provides fast multi-byte search, sliding-window chunked file scanning, and
 wildcard-preserving binary patching.
 """
 
+from miorom.result import MioRomResult
 import os
 import re
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
+from typing import Iterator, List, Optional, Tuple, Union
 
 
 @dataclass
-class PatternMatch:
+class PatternMatch(MioRomResult):
     """Represents a matched signature pattern in binary data."""
     offset: int
     address: int
@@ -47,7 +49,7 @@ class CompiledPattern:
     def _compile(cls, pattern_str: str) -> Tuple[bytes, bytes, re.Pattern]:
         tokens = pattern_str.split()
         if not tokens:
-            raise ValueError("Pattern string cannot be empty.")
+            raise ParseError("Pattern string cannot be empty.")
 
         regex_parts: List[bytes] = []
         pattern_bytes_list: List[int] = []
@@ -61,7 +63,7 @@ class CompiledPattern:
             else:
                 val = int(token, 16)
                 if not (0 <= val <= 0xFF):
-                    raise ValueError(f"Invalid byte literal in pattern: '{token}'")
+                    raise ParseError(f"Invalid byte literal in pattern: '{token}'")
                 regex_parts.append(re.escape(bytes([val])))
                 pattern_bytes_list.append(val)
                 mask_bytes_list.append(0xFF)
@@ -120,10 +122,21 @@ class AOBPatternScanner:
         """
         Finds all occurrences of pattern in buffer.
         """
+        return list(cls.iter_matches(buffer, pattern, start=start, base_address=base_address, max_matches=max_matches))
+
+    @classmethod
+    def iter_matches(
+        cls,
+        buffer: Union[bytes, bytearray, memoryview],
+        pattern: Union[str, CompiledPattern],
+        start: int = 0,
+        base_address: int = 0,
+        max_matches: Optional[int] = None,
+    ) -> Iterator[PatternMatch]:
+        """Yield pattern matches progressively so callers can stop early."""
         compiled = cls.compile(pattern)
         buf_bytes = bytes(buffer) if not isinstance(buffer, (bytes, bytearray, memoryview)) else buffer
-        matches: List[PatternMatch] = []
-
+        yielded = 0
         pos = start
         while pos < len(buf_bytes):
             m = compiled.regex.search(buf_bytes, pos)
@@ -131,17 +144,16 @@ class AOBPatternScanner:
                 break
             match_start = m.start()
             matched_data = bytes(m.group(0))
-            matches.append(PatternMatch(
+            yield PatternMatch(
                 offset=match_start,
                 address=base_address + match_start,
                 size=len(matched_data),
                 data=matched_data,
-            ))
-            if max_matches is not None and len(matches) >= max_matches:
+            )
+            yielded += 1
+            if max_matches is not None and yielded >= max_matches:
                 break
             pos = match_start + 1
-
-        return matches
 
     @classmethod
     def scan_file(
@@ -154,52 +166,58 @@ class AOBPatternScanner:
         """
         Scans a large file on disk in chunks, properly detecting patterns that span chunk boundaries.
         """
-        compiled = cls.compile(pattern)
-        pat_len = compiled.size
-        overlap = pat_len - 1
-        matches: List[PatternMatch] = []
-
         if not os.path.isfile(filepath):
             raise FileNotFoundError(f"File not found: {filepath}")
 
-        with open(filepath, "rb") as f:
+        return list(cls.iter_file(filepath, pattern, base_address=base_address, chunk_size=chunk_size))
+
+    @classmethod
+    def iter_file(
+        cls,
+        filepath: str,
+        pattern: Union[str, CompiledPattern],
+        base_address: int = 0,
+        chunk_size: int = 65536,
+    ) -> Iterator[PatternMatch]:
+        """Stream matches from a large file while keeping boundary overlap correct."""
+        compiled = cls.compile(pattern)
+        pat_len = compiled.size
+        overlap = pat_len - 1
+        last_offset: Optional[int] = None
+
+        with open(filepath, "rb") as file_obj:
             carry = b""
             current_file_offset = 0
 
             while True:
-                chunk = f.read(chunk_size)
+                chunk = file_obj.read(chunk_size)
                 if not chunk:
                     break
 
                 search_buf = carry + chunk
                 search_base_offset = current_file_offset - len(carry)
-
                 pos = 0
-                while pos < len(search_buf):
-                    m = compiled.regex.search(search_buf, pos)
-                    if m is None:
-                        break
-                    match_in_buf = m.start()
-                    abs_offset = search_base_offset + match_in_buf
 
-                    # Avoid recording duplicate matches that were already captured in the previous chunk
-                    if not matches or matches[-1].offset != abs_offset:
-                        matches.append(PatternMatch(
+                while pos < len(search_buf):
+                    match = compiled.regex.search(search_buf, pos)
+                    if match is None:
+                        break
+
+                    match_in_buf = match.start()
+                    abs_offset = search_base_offset + match_in_buf
+                    if last_offset is None or last_offset != abs_offset:
+                        last_offset = abs_offset
+                        yield PatternMatch(
                             offset=abs_offset,
                             address=base_address + abs_offset,
                             size=pat_len,
-                            data=bytes(m.group(0)),
-                        ))
+                            data=bytes(match.group(0)),
+                        )
 
                     pos = match_in_buf + 1
 
                 current_file_offset += len(chunk)
-                if overlap > 0:
-                    carry = search_buf[-overlap:]
-                else:
-                    carry = b""
-
-        return matches
+                carry = search_buf[-overlap:] if overlap > 0 else b""
 
     @classmethod
     def replace(
@@ -222,7 +240,7 @@ class AOBPatternScanner:
         if isinstance(replacement, str):
             rep_tokens = replacement.strip().split()
             if len(rep_tokens) != pat_len:
-                raise ValueError(
+                raise ParseError(
                     f"Replacement token count ({len(rep_tokens)}) must match pattern length ({pat_len})"
                 )
             rep_bytes: List[int] = []
@@ -237,7 +255,7 @@ class AOBPatternScanner:
                     rep_mask.append(True)
         else:
             if len(replacement) != pat_len:
-                raise ValueError(
+                raise ParseError(
                     f"Replacement byte length ({len(replacement)}) must match pattern length ({pat_len})"
                 )
             rep_bytes = list(replacement)

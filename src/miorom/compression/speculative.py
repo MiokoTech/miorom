@@ -7,6 +7,7 @@ formats (LZ10, LZ11, RLE, Yaz0, Huffman) and headerless Deflate/zlib streams.
 Tracks exact compressed byte consumption and validates output via Shannon entropy.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 import math
 import struct
@@ -36,7 +37,7 @@ def calculate_entropy(data: bytes) -> float:
 
 
 @dataclass
-class SpeculativeStream:
+class SpeculativeStream(MioRomResult):
     """Represents an extracted compressed stream with exact byte consumption."""
     offset: int
     format: str

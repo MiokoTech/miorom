@@ -7,6 +7,7 @@ enables dictionary compression to fit expanded text into constrained memory, and
 expands DTE tables into standard CharMap encodings.
 """
 
+from miorom.result import MioRomResult
 from collections import Counter
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
@@ -15,7 +16,7 @@ from miorom.text.charmap import CharMap
 
 
 @dataclass
-class DTEToken:
+class DTEToken(MioRomResult):
     """Represents a Dual-Tile Encoding token mapping."""
     token_byte: bytes
     expansion: str

@@ -1,10 +1,11 @@
+from miorom.result import MioRomResult
 import difflib
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Any
 
 
 @dataclass
-class AlignedString:
+class AlignedString(MioRomResult):
     index_a: Optional[int]
     string_a: Optional[str]
     pointer_a: Optional[int]

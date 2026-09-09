@@ -1,4 +1,5 @@
 """
+from miorom.errors import ParseError
 miorom.graphics.tilesheet
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 Palette-Aware Tile Sheet Visualizer & Pure-Python BMP Transcoder.
@@ -190,7 +191,7 @@ class TileSheet:
             data = bytes(bmp_data_or_path)
 
         if len(data) < 54 or data[:2] != b"BM":
-            raise ValueError("Invalid BMP header: magic 'BM' not found")
+            raise ParseError("Invalid BMP header: magic 'BM' not found")
 
         offset_bits = struct.unpack_from("<I", data, 10)[0]
         bi_size = struct.unpack_from("<I", data, 14)[0]
@@ -200,9 +201,9 @@ class TileSheet:
         compression = struct.unpack_from("<I", data, 30)[0]
 
         if compression != 0:
-            raise ValueError(f"Compressed BMP (compression={compression}) is not supported")
+            raise ParseError(f"Compressed BMP (compression={compression}) is not supported")
         if bit_count not in (24, 32):
-            raise ValueError(f"Unsupported BMP bit depth: {bit_count}bpp (only 24/32 supported)")
+            raise ParseError(f"Unsupported BMP bit depth: {bit_count}bpp (only 24/32 supported)")
 
         is_top_down = h_signed < 0
         h = abs(h_signed)

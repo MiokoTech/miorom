@@ -1,4 +1,5 @@
 """
+from miorom.errors import RelocationError
 miorom.text.relative_search
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Relative text search engine for discovering unknown character tables (.tbl / CharMap).
@@ -6,6 +7,7 @@ Finds text in binary ROM dumps where characters have custom byte mappings with f
 Supports 1-byte and 2-byte (endian-aware) relative searching and automated .tbl generation.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
 import struct
@@ -14,7 +16,7 @@ from miorom.text.charmap import CharMap
 
 
 @dataclass
-class RelativeMatch:
+class RelativeMatch(MioRomResult):
     """Represents a discovered text occurrence via relative search."""
     offset: int
     length: int
@@ -90,7 +92,7 @@ class RelativeSearcher:
         Performs 1-byte relative search on data.
         """
         if len(query) < 2:
-            raise ValueError("Relative search query must have at least 2 characters.")
+            raise RelocationError("Relative search query must have at least 2 characters.")
 
         matches: List[RelativeMatch] = []
         q_len = len(query)
@@ -145,7 +147,7 @@ class RelativeSearcher:
         Performs 2-byte relative search on data (common in Japanese 16-bit text).
         """
         if len(query) < 2:
-            raise ValueError("Relative search query must have at least 2 characters.")
+            raise RelocationError("Relative search query must have at least 2 characters.")
 
         matches: List[RelativeMatch] = []
         q_len = len(query)
@@ -206,4 +208,4 @@ class RelativeSearcher:
         elif mode == "2byte_le":
             return cls.search_2byte(data, query, endian="<", max_matches=max_matches)
         else:
-            raise ValueError(f"Unknown relative search mode: '{mode}'")
+            raise RelocationError(f"Unknown relative search mode: '{mode}'")

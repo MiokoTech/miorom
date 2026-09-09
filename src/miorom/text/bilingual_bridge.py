@@ -8,6 +8,7 @@ ControlTagSanitizer for syntax linting and SlotToHeapPointerizer for seamless
 arbitrary text expansion.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 import json
 import struct
@@ -18,7 +19,7 @@ from miorom.text.sanitizer import ControlTagSanitizer
 
 
 @dataclass
-class BridgeImportReport:
+class BridgeImportReport(MioRomResult):
     """Summary of translation import and binary repack."""
     total_strings: int
     translated_strings: int

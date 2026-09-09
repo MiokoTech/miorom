@@ -1,10 +1,48 @@
-import struct
+from miorom.result import MioRomResult
+from miorom.errors import ParseError
 from dataclasses import dataclass
+from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U16, U32, U8
 from typing import List, Optional, Tuple, Dict
 
 
+class ISOBothU32Struct(BinaryStruct):
+    _endian = "<"
+    little = U32()
+    big = U32(endian=">")
+
+
+class ISOPvdStruct(BinaryStruct):
+    _endian = "<"
+    magic = RawBytes(6)
+    _reserved_0x06 = RawBytes(34)
+    volume_id = FixedString(32)
+    _reserved_0x48 = RawBytes(8)
+    volume_space_size = ISOBothU32Struct()
+    _reserved_0x58 = RawBytes(40)
+    logical_block_size = U16()
+    logical_block_size_big = U16(endian=">")
+    _reserved_0x84 = RawBytes(24)
+    root_directory = RawBytes(34)
+    _reserved_0xEA = RawBytes(658)
+
+
+class ISODirectoryRecordStruct(BinaryStruct):
+    _endian = "<"
+    length = U8()
+    extended_attribute_length = U8()
+    lba = ISOBothU32Struct()
+    size = ISOBothU32Struct()
+    recording_datetime = RawBytes(7)
+    file_flags = U8()
+    file_unit_size = U8()
+    interleave_gap = U8()
+    volume_sequence_number = U16()
+    volume_sequence_number_big = U16(endian=">")
+    name_length = U8()
+
+
 @dataclass
-class ISOFileEntry:
+class ISOFileEntry(MioRomResult):
     path: str
     lba: int
     size: int
@@ -27,12 +65,12 @@ class ISO9660:
     def __init__(self, data: bytes):
         self.data = bytearray(data)
         if len(self.data) < 17 * self.SECTOR_SIZE:
-            raise ValueError("Data too small to be a valid ISO9660 image.")
+            raise ParseError("Data too small to be a valid ISO9660 image.")
 
         # Check Primary Volume Descriptor at sector 16
         pvd_offset = 16 * self.SECTOR_SIZE
         if self.data[pvd_offset : pvd_offset + 6] != b"\x01CD001":
-            raise ValueError("Invalid ISO9660 Primary Volume Descriptor magic.")
+            raise ParseError("Invalid ISO9660 Primary Volume Descriptor magic.")
 
         self.pvd_offset = pvd_offset
         self.entries: List[ISOFileEntry] = []
@@ -45,15 +83,15 @@ class ISO9660:
 
     @property
     def volume_id(self) -> str:
-        raw = self.data[self.pvd_offset + 40 : self.pvd_offset + 72]
-        return raw.decode("ascii", errors="replace").strip()
+        return ISOPvdStruct.from_bytes(self.data, offset=self.pvd_offset).volume_id.strip()
 
     def _parse_tree(self):
         self.entries = []
         # Root directory record is at PVD offset 156
         root_rec = self.pvd_offset + 156
-        root_lba = struct.unpack_from("<I", self.data, root_rec + 2)[0]
-        root_size = struct.unpack_from("<I", self.data, root_rec + 10)[0]
+        root_record = ISODirectoryRecordStruct.from_bytes(self.data, offset=root_rec)
+        root_lba = root_record.lba.little
+        root_size = root_record.size.little
 
         self._read_directory(root_lba, root_size, "")
 
@@ -75,11 +113,11 @@ class ISO9660:
                 pos = next_sector_pos
                 continue
 
-            entry_lba = struct.unpack_from("<I", self.data, rec_offset + 2)[0]
-            entry_size = struct.unpack_from("<I", self.data, rec_offset + 10)[0]
-            flags = self.data[rec_offset + 25]
-            is_dir = bool(flags & 0x02)
-            name_len = self.data[rec_offset + 32]
+            record = ISODirectoryRecordStruct.from_bytes(self.data, offset=rec_offset)
+            entry_lba = record.lba.little
+            entry_size = record.size.little
+            is_dir = bool(record.file_flags & 0x02)
+            name_len = record.name_length
             raw_name = self.data[rec_offset + 33 : rec_offset + 33 + name_len]
 
             pos += rec_len
@@ -156,8 +194,10 @@ class ISO9660:
 
             # Update volume space size in PVD (offset 80: uint32 LE + uint32 BE)
             new_total_sectors = len(self.data) // self.SECTOR_SIZE
-            struct.pack_into("<I", self.data, self.pvd_offset + 80, new_total_sectors)
-            struct.pack_into(">I", self.data, self.pvd_offset + 84, new_total_sectors)
+            self.data[self.pvd_offset + 80 : self.pvd_offset + 88] = ISOBothU32Struct(
+                little=new_total_sectors,
+                big=new_total_sectors,
+            ).to_bytes()
         else:
             # In-place overwrite
             start = target_lba * self.SECTOR_SIZE
@@ -172,10 +212,14 @@ class ISO9660:
         # Offset +6: LBA BE (uint32)
         # Offset +10: Size LE (uint32)
         # Offset +14: Size BE (uint32)
-        struct.pack_into("<I", self.data, entry.record_offset + 2, target_lba)
-        struct.pack_into(">I", self.data, entry.record_offset + 6, target_lba)
-        struct.pack_into("<I", self.data, entry.record_offset + 10, new_len)
-        struct.pack_into(">I", self.data, entry.record_offset + 14, new_len)
+        self.data[entry.record_offset + 2 : entry.record_offset + 10] = ISOBothU32Struct(
+            little=target_lba,
+            big=target_lba,
+        ).to_bytes()
+        self.data[entry.record_offset + 10 : entry.record_offset + 18] = ISOBothU32Struct(
+            little=new_len,
+            big=new_len,
+        ).to_bytes()
 
         # Update cached entry
         entry.lba = target_lba

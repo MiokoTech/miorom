@@ -1,4 +1,6 @@
+from miorom.result import MioRomResult
 import re
+from miorom.errors import ParseError
 import shlex
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Any, Union
@@ -15,7 +17,7 @@ from miorom.script.opcode import (
 
 
 @dataclass
-class Instruction:
+class Instruction(MioRomResult):
     offset: int
     opcode_id: int
     name: str
@@ -248,7 +250,7 @@ class BytecodeEngine:
 
             op_name = tokens[0].upper()
             if op_name not in self.opcodes_by_name:
-                raise ValueError(f"Unknown opcode name: '{op_name}'")
+                raise ParseError(f"Unknown opcode name: '{op_name}'")
 
             defn = self.opcodes_by_name[op_name]
             raw_args = tokens[1:]

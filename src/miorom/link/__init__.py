@@ -17,7 +17,7 @@ from miorom.link.elf import (
     SHT_REL,
     SHT_RELA,
 )
-from miorom.link.relocator import ElfRelocator, ElfLinkResult
+from miorom.link.relocator import ElfRelocator, ElfLinkResult, CompoundRelocationLinker
 from miorom.link.dol import DolBinary, DolSection
 from miorom.link.injector import ElfInjector, InjectionReport
 from miorom.link.heap import MioRomHeap, HeapStats, MemBlock
@@ -29,6 +29,7 @@ __all__ = [
     "ElfRelocation",
     "ElfRelocator",
     "ElfLinkResult",
+    "CompoundRelocationLinker",
     "ElfInjector",
     "InjectionReport",
     "DolBinary",

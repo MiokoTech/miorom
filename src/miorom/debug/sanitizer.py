@@ -6,6 +6,7 @@ Shadow memory bounds checker for detecting out-of-bounds reads/writes, buffer ov
 in translated dialogue strings, use-after-free, and dangling pointer dereferences.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Tuple
@@ -26,7 +27,7 @@ class ShadowTag(str, Enum):
 
 
 @dataclass
-class SanitizerViolation:
+class SanitizerViolation(MioRomResult):
     address: int
     size: int
     access_type: AccessType
@@ -47,7 +48,7 @@ class MemorySanitizerError(Exception):
 
 
 @dataclass
-class SanitizerReport:
+class SanitizerReport(MioRomResult):
     total_checks: int
     violations: List[SanitizerViolation] = field(default_factory=list)
 

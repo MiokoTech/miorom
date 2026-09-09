@@ -6,13 +6,14 @@ Carves contiguous text sequences (null-terminated and Pascal-length prefixed)
 from arbitrary binary ROM buffers with encoding verification and printable filtering.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass
 import struct
 from typing import List, Optional, Tuple
 
 
 @dataclass
-class CarvedString:
+class CarvedString(MioRomResult):
     """Represents a discovered string inside a binary buffer."""
     offset: int
     text: str

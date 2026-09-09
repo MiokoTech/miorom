@@ -4,15 +4,28 @@ miorom.patch.patch_writer
 Fluent Binary Patch Writer & Precision Emitter Primitive.
 Provides chainable methods for applying in-memory patches, struct writes,
 and assembly NOPs with automatic cursor and modification tracking.
+
+Transactional usage (v0.13+):
+    rom = bytearray(open("arm9.bin", "rb").read())
+
+    with PatchWriter(rom) as w:          # commits only on clean exit
+        w.seek_to(0x14000).write_str("Translated text")
+        w.write_u32_at(...)              # any exception rolls the buffer back
+
+    with PatchWriter(rom, staged=True) as w:
+        ...                              # journal mode: nothing touches the
+                                         # buffer until commit; w.journal()
+                                         # exposes pending writes pre-commit.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 import struct
-from typing import List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 
 @dataclass
-class PatchRecord:
+class PatchRecord(MioRomResult):
     """Record of a single contiguous write in the buffer."""
     offset: int
     data: bytes
@@ -21,6 +34,14 @@ class PatchRecord:
 class PatchWriter:
     """
     Fluent binary patch builder and IPS generator.
+
+    Immediate mode (default): every write mutates the backing buffer at once.
+    When used as a context manager, a snapshot is taken on __enter__ and
+    restored on any exception (rollback), so a partially applied patch never
+    escapes the ``with`` block.
+
+    Staged mode (``staged=True``): writes accumulate in an internal journal
+    and the buffer stays untouched until the context exits cleanly.
     """
 
     def __init__(
@@ -28,12 +49,73 @@ class PatchWriter:
         buffer: bytearray,
         base_address: int = 0,
         endian: str = "<",
+        staged: bool = False,
     ):
         self.buffer = buffer
         self.base_address = base_address
         self.default_endian = endian
         self._cursor: int = 0
         self._records: List[PatchRecord] = []
+        self._staged = staged
+        self._snapshot: Optional[bytearray] = None
+        self._in_context = False
+
+    # ------------------------------------------------------------------
+    # Transaction support
+    # ------------------------------------------------------------------
+
+    def __enter__(self) -> "PatchWriter":
+        self._snapshot = bytearray(self.buffer)
+        self._in_context = True
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        try:
+            if exc_type is None:
+                self.commit()
+            else:
+                self.rollback()
+        finally:
+            self._snapshot = None
+            self._in_context = False
+        return False  # never swallow exceptions
+
+    def commit(self) -> "PatchWriter":
+        """Apply staged journal writes to the buffer (staged mode)."""
+        if self._staged:
+            for rec in self._records:
+                end = rec.offset + len(rec.data)
+                self._ensure_capacity(end)
+                self.buffer[rec.offset : end] = rec.data
+            self._staged = False
+        return self
+
+    def rollback(self) -> "PatchWriter":
+        """
+        Discard pending writes.
+
+        Staged mode: clears the journal; buffer was never touched.
+        Immediate mode inside a context: restores the __enter__ snapshot.
+        """
+        if self._staged:
+            self._records.clear()
+        elif self._snapshot is not None:
+            self.buffer[:] = self._snapshot
+        return self
+
+    def journal(self) -> List[Dict[str, Any]]:
+        """
+        Returns the pending write journal as plain dicts:
+        ``{"offset": int, "data": bytes, "size": int}``.
+        """
+        return [
+            {"offset": r.offset, "data": r.data, "size": len(r.data)}
+            for r in self._records
+        ]
+
+    # ------------------------------------------------------------------
+    # Cursor control
+    # ------------------------------------------------------------------
 
     @property
     def cursor(self) -> int:
@@ -63,6 +145,10 @@ class PatchWriter:
             self.write_bytes(bytes([pad_byte] * pad_len))
         return self
 
+    # ------------------------------------------------------------------
+    # Write primitives
+    # ------------------------------------------------------------------
+
     def _ensure_capacity(self, needed_size: int) -> None:
         """Grows buffer if write exceeds current length."""
         if needed_size > len(self.buffer):
@@ -74,8 +160,9 @@ class PatchWriter:
         if not b:
             return self
         end = self._cursor + len(b)
-        self._ensure_capacity(end)
-        self.buffer[self._cursor : end] = b
+        if not self._staged:
+            self._ensure_capacity(end)
+            self.buffer[self._cursor : end] = b
         self._records.append(PatchRecord(offset=self._cursor, data=b))
         self._cursor = end
         return self
@@ -118,6 +205,10 @@ class PatchWriter:
     def write_mips_nop(self, count: int = 1) -> "PatchWriter":
         """Writes MIPS NOP (0x00000000) instructions."""
         return self.write_bytes(b"\x00\x00\x00\x00" * count)
+
+    # ------------------------------------------------------------------
+    # Export
+    # ------------------------------------------------------------------
 
     def generate_ips(self) -> bytes:
         """

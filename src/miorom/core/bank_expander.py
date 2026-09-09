@@ -1,8 +1,10 @@
+from miorom.result import MioRomResult
 import struct
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 
+from miorom.errors import ParseError, RelocationError
 class RomExpander:
     """
     ROM Capacity Expander for Retro Systems.
@@ -99,7 +101,7 @@ class RomExpander:
 
 
 @dataclass
-class AllocatedItem:
+class AllocatedItem(MioRomResult):
     key: Any
     bank: int
     offset_in_bank: int
@@ -142,7 +144,7 @@ class FarPointerRelocator:
         for key, data in items:
             item_len = len(data)
             if item_len > self.bank_size:
-                raise ValueError(
+                raise ParseError(
                     f"Item '{key}' with size {item_len} bytes exceeds maximum bank size {self.bank_size}."
                 )
 
@@ -190,7 +192,7 @@ class FarPointerRelocator:
             return struct.pack("<BH", bank & 0xFF, ram_addr & 0xFFFF)
 
         else:
-            raise ValueError(f"Unknown pointer format: '{self.pointer_format}'")
+            raise RelocationError(f"Unknown pointer format: '{self.pointer_format}'")
 
     def build_bank_buffers(
         self,

@@ -8,6 +8,7 @@ two-pass re-assembly with automatic jump target recalculation and external
 pointer table rewriting.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 import struct
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
@@ -17,7 +18,7 @@ from miorom.text.po_handler import PoHandler, PoEntry
 
 
 @dataclass
-class ScriptRepackReport:
+class ScriptRepackReport(MioRomResult):
     """Report on script repacking and text expansion."""
     original_size: int
     new_size: int

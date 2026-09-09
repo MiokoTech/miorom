@@ -1,6 +1,8 @@
+from miorom.result import MioRomResult
 import os
-import struct
+from miorom.errors import ParseError
 from dataclasses import dataclass, field
+from miorom.core.schema import BinaryStruct, U32, U16
 from typing import List, Optional, Tuple, Dict, Any
 
 
@@ -19,8 +21,38 @@ TPL_FORMAT_NAMES = {
 }
 
 
+class TPLHeaderStruct(BinaryStruct):
+    _endian = ">"
+    magic = U32()
+    num_images = U32()
+    table_offset = U32()
+
+
+class TPLImageTableEntryStruct(BinaryStruct):
+    _endian = ">"
+    image_header_offset = U32()
+    palette_header_offset = U32()
+
+
+class TPLImageHeaderStruct(BinaryStruct):
+    _endian = ">"
+    height = U16()
+    width = U16()
+    format_id = U32()
+    data_offset = U32()
+    wrap_s = U32()
+    wrap_t = U32()
+    min_filter = U32()
+    mag_filter = U32()
+
+
+class TPLColorStruct(BinaryStruct):
+    _endian = ">"
+    value = U16()
+
+
 @dataclass
-class TPLImage:
+class TPLImage(MioRomResult):
     index: int
     width: int
     height: int
@@ -62,42 +94,45 @@ class TPLFile:
 
     @classmethod
     def from_bytes(cls, data: bytes) -> "TPLFile":
-        if len(data) < 12:
-            raise ValueError("Data too short for TPL header.")
+        if len(data) < TPLHeaderStruct.sizeof():
+            raise ParseError("Data too short for TPL header.")
 
-        magic, num_images, table_offset = struct.unpack(">III", data[:12])
-        if magic != cls.MAGIC:
-            raise ValueError(f"Invalid TPL magic: expected 0x0020AF30, got {hex(magic)}")
+        header = TPLHeaderStruct.from_bytes(data, offset=0)
+        if header.magic != cls.MAGIC:
+            raise ParseError(f"Invalid TPL magic: expected 0x0020AF30, got {hex(header.magic)}")
 
         images: List[TPLImage] = []
 
-        for i in range(num_images):
-            entry_offset = table_offset + (i * 8)
-            img_hdr_off, pal_hdr_off = struct.unpack(">II", data[entry_offset:entry_offset+8])
+        for i in range(header.num_images):
+            entry_offset = header.table_offset + i * TPLImageTableEntryStruct.sizeof()
+            entry = TPLImageTableEntryStruct.from_bytes(data, offset=entry_offset)
 
-            if img_hdr_off == 0:
+            if entry.image_header_offset == 0:
                 continue
 
             # Read 36-byte Image Header
-            h, w, fmt_id, data_off, wrap_s, wrap_t, min_filt, mag_filt = struct.unpack(
-                ">HHIIIIII", data[img_hdr_off:img_hdr_off+28]
-            )
+            image_header = TPLImageHeaderStruct.from_bytes(data, offset=entry.image_header_offset)
 
             # Calculate raw texture data size
-            data_size = cls._calculate_texture_size(w, h, fmt_id)
-            raw_bytes = data[data_off:data_off + data_size] if data_off + data_size <= len(data) else data[data_off:]
+            data_size = cls._calculate_texture_size(
+                image_header.width,
+                image_header.height,
+                image_header.format_id,
+            )
+            data_offset = image_header.data_offset
+            raw_bytes = data[data_offset:data_offset + data_size] if data_offset + data_size <= len(data) else data[data_offset:]
 
             images.append(TPLImage(
                 index=i,
-                width=w,
-                height=h,
-                format_id=fmt_id,
-                data_offset=data_off,
-                wrap_s=wrap_s,
-                wrap_t=wrap_t,
-                min_filter=min_filt,
-                mag_filter=mag_filt,
-                palette_header_offset=pal_hdr_off,
+                width=image_header.width,
+                height=image_header.height,
+                format_id=image_header.format_id,
+                data_offset=image_header.data_offset,
+                wrap_s=image_header.wrap_s,
+                wrap_t=image_header.wrap_t,
+                min_filter=image_header.min_filter,
+                mag_filter=image_header.mag_filter,
+                palette_header_offset=entry.palette_header_offset,
                 raw_data=raw_bytes
             ))
 
@@ -156,7 +191,7 @@ class TPLFile:
                             x = tx * 4 + px
                             y = ty * 4 + py
                             if in_pos + 2 <= len(raw) and x < w and y < h:
-                                val = struct.unpack(">H", raw[in_pos:in_pos+2])[0]
+                                val = TPLColorStruct.from_bytes(raw, offset=in_pos).value
                                 if (val & 0x8000):
                                     # RGB555 format (no alpha)
                                     r = ((val >> 10) & 0x1F) * 255 // 31
@@ -189,7 +224,7 @@ class TPLFile:
                             x = tx * 4 + px
                             y = ty * 4 + py
                             if in_pos + 2 <= len(raw) and x < w and y < h:
-                                val = struct.unpack(">H", raw[in_pos:in_pos+2])[0]
+                                val = TPLColorStruct.from_bytes(raw, offset=in_pos).value
                                 r = ((val >> 11) & 0x1F) * 255 // 31
                                 g = ((val >> 5) & 0x3F) * 255 // 63
                                 b = (val & 0x1F) * 255 // 31

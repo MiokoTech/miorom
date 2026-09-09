@@ -1,6 +1,27 @@
-import struct
+from miorom.errors import ParseError
+from miorom.core.schema import BinaryStruct, U16, U32
 from typing import List, Optional, Tuple
 from miorom.graphics.palette import Color, Palette
+
+
+class TIMHeaderStruct(BinaryStruct):
+    _endian = "<"
+    magic = U32()
+    flag = U32()
+
+
+class TIMSectionHeaderStruct(BinaryStruct):
+    _endian = "<"
+    size = U32()
+    dx = U16()
+    dy = U16()
+    width = U16()
+    height = U16()
+
+
+class TIMColorStruct(BinaryStruct):
+    _endian = "<"
+    value = U16()
 
 
 class TIMImage:
@@ -12,47 +33,52 @@ class TIMImage:
     MAGIC = 0x10
 
     def __init__(self, data: bytes):
-        if len(data) < 8:
-            raise ValueError("Data too small for TIM header.")
+        if len(data) < TIMHeaderStruct.sizeof():
+            raise ParseError("Data too small for TIM header.")
 
-        magic, flag = struct.unpack_from("<II", data, 0)
-        if magic != self.MAGIC:
-            raise ValueError(f"Invalid TIM magic: {hex(magic)} (expected 0x10)")
+        header = TIMHeaderStruct.from_bytes(data, offset=0)
+        if header.magic != self.MAGIC:
+            raise ParseError(f"Invalid TIM magic: {hex(header.magic)} (expected 0x10)")
 
+        flag = header.flag
         self.bpp_mode = flag & 0x07
         self.bpp = {0: 4, 1: 8, 2: 16, 3: 24}.get(self.bpp_mode, 16)
         self.has_clut = bool(flag & 0x08)
 
-        pos = 8
+        pos = TIMHeaderStruct.sizeof()
         self.clut_palettes: List[Palette] = []
         self.clut_dx = 0
         self.clut_dy = 0
 
         if self.has_clut:
-            clut_size, self.clut_dx, self.clut_dy, clut_w, clut_h = struct.unpack_from(
-                "<IHHHH", data, pos
-            )
-            color_bytes = data[pos + 12 : pos + clut_size]
+            clut_header = TIMSectionHeaderStruct.from_bytes(data, offset=pos)
+            clut_size = clut_header.size
+            self.clut_dx = clut_header.dx
+            self.clut_dy = clut_header.dy
+            clut_w = clut_header.width
+            clut_h = clut_header.height
+            color_bytes = data[pos + TIMSectionHeaderStruct.sizeof() : pos + clut_size]
             pos += clut_size
 
-            # Each palette has clut_w colors (2 bytes each)
             for pal_i in range(clut_h):
                 pal_colors = []
                 for col_i in range(clut_w):
-                    c_off = (pal_i * clut_w + col_i) * 2
-                    if c_off + 2 <= len(color_bytes):
-                        c16 = struct.unpack_from("<H", color_bytes, c_off)[0]
-                        # BGR555 + STP bit
+                    c_off = (pal_i * clut_w + col_i) * TIMColorStruct.sizeof()
+                    if c_off + TIMColorStruct.sizeof() <= len(color_bytes):
+                        c16 = TIMColorStruct.from_bytes(color_bytes, offset=c_off).value
                         pal_colors.append(Color.from_bgr555(c16 & 0x7FFF))
                 self.clut_palettes.append(Palette(pal_colors))
 
-        # Image section
-        img_size, self.img_dx, self.img_dy, self.img_w_words, self.height = struct.unpack_from(
-            "<IHHHH", data, pos
+        img_header = TIMSectionHeaderStruct.from_bytes(data, offset=pos)
+        img_size = img_header.size
+        self.img_dx = img_header.dx
+        self.img_dy = img_header.dy
+        self.img_w_words = img_header.width
+        self.height = img_header.height
+        self.pixel_data = bytearray(
+            data[pos + TIMSectionHeaderStruct.sizeof() : pos + img_size]
         )
-        self.pixel_data = bytearray(data[pos + 12 : pos + img_size])
 
-        # Calculate pixel width
         if self.bpp == 4:
             self.width = self.img_w_words * 4
         elif self.bpp == 8:
@@ -74,40 +100,36 @@ class TIMImage:
         if self.has_clut:
             flag |= 0x08
 
-        out = bytearray()
-        out.extend(struct.pack("<II", self.MAGIC, flag))
+        out = bytearray(TIMHeaderStruct(magic=self.MAGIC, flag=flag).to_bytes())
 
         if self.has_clut:
             clut_h = len(self.clut_palettes)
             clut_w = len(self.clut_palettes[0]) if clut_h > 0 else 0
-            clut_colors_len = clut_w * clut_h * 2
-            clut_total_size = 12 + clut_colors_len
+            clut_colors_len = clut_w * clut_h * TIMColorStruct.sizeof()
+            clut_total_size = TIMSectionHeaderStruct.sizeof() + clut_colors_len
 
             out.extend(
-                struct.pack(
-                    "<IHHHH",
-                    clut_total_size,
-                    self.clut_dx,
-                    self.clut_dy,
-                    clut_w,
-                    clut_h,
-                )
+                TIMSectionHeaderStruct(
+                    size=clut_total_size,
+                    dx=self.clut_dx,
+                    dy=self.clut_dy,
+                    width=clut_w,
+                    height=clut_h,
+                ).to_bytes()
             )
             for pal in self.clut_palettes:
                 for col in pal.colors:
-                    out.extend(struct.pack("<H", col.to_bgr555()))
+                    out.extend(TIMColorStruct(value=col.to_bgr555()).to_bytes())
 
-        # Image block
-        img_total_size = 12 + len(self.pixel_data)
+        img_total_size = TIMSectionHeaderStruct.sizeof() + len(self.pixel_data)
         out.extend(
-            struct.pack(
-                "<IHHHH",
-                img_total_size,
-                self.img_dx,
-                self.img_dy,
-                self.img_w_words,
-                self.height,
-            )
+            TIMSectionHeaderStruct(
+                size=img_total_size,
+                dx=self.img_dx,
+                dy=self.img_dy,
+                width=self.img_w_words,
+                height=self.height,
+            ).to_bytes()
         )
         out.extend(self.pixel_data)
         return bytes(out)

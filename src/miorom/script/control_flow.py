@@ -1,10 +1,11 @@
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple, Any
 from miorom.script.engine import DisassembledScript, Instruction
 
 
 @dataclass
-class BasicBlock:
+class BasicBlock(MioRomResult):
     start_addr: int
     end_addr: int
     instructions: List[Instruction] = field(default_factory=list)

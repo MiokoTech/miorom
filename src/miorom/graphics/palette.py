@@ -1,4 +1,5 @@
 import math
+from miorom.errors import ParseError
 import struct
 from dataclasses import dataclass
 from typing import List, Tuple, Union, Optional
@@ -92,7 +93,7 @@ class Palette:
     def match_color(self, color: Color, start_index: int = 0) -> int:
         """Finds closest color index in palette."""
         if not self.colors:
-            raise ValueError("Palette is empty")
+            raise ParseError("Palette is empty")
         best_idx = start_index
         best_dist = float("inf")
         for i in range(start_index, len(self.colors)):
@@ -103,3 +104,58 @@ class Palette:
                 if d == 0:
                     break
         return best_idx
+
+
+class FloydSteinbergDitherer:
+    """
+    Pure-Python Floyd-Steinberg error-diffusion dithering for palette color reduction.
+    Requires no external dependencies.
+    """
+
+    @classmethod
+    def dither(
+        cls,
+        pixels: list[list[tuple[int, int, int]]],
+        palette: Palette,
+    ) -> list[list[int]]:
+        """
+        Applies Floyd-Steinberg dithering across 2D RGB pixel matrix, returning 2D palette index matrix.
+        """
+        height = len(pixels)
+        if height == 0:
+            return []
+        width = len(pixels[0])
+
+        # Convert to float buffers
+        r_buf = [[float(pixels[y][x][0]) for x in range(width)] for y in range(height)]
+        g_buf = [[float(pixels[y][x][1]) for x in range(width)] for y in range(height)]
+        b_buf = [[float(pixels[y][x][2]) for x in range(width)] for y in range(height)]
+
+        result: list[list[int]] = [[0 for _ in range(width)] for _ in range(height)]
+
+        for y in range(height):
+            for x in range(width):
+                old_r = max(0.0, min(255.0, r_buf[y][x]))
+                old_g = max(0.0, min(255.0, g_buf[y][x]))
+                old_b = max(0.0, min(255.0, b_buf[y][x]))
+
+                best_idx = palette.match_color(Color(int(old_r), int(old_g), int(old_b)))
+                matched = palette[best_idx]
+                result[y][x] = best_idx
+
+                err_r = old_r - matched.r
+                err_g = old_g - matched.g
+                err_b = old_b - matched.b
+
+                def add_err(nx, ny, factor):
+                    if 0 <= nx < width and 0 <= ny < height:
+                        r_buf[ny][nx] += err_r * factor
+                        g_buf[ny][nx] += err_g * factor
+                        b_buf[ny][nx] += err_b * factor
+
+                add_err(x + 1, y, 7.0 / 16.0)
+                add_err(x - 1, y + 1, 3.0 / 16.0)
+                add_err(x, y + 1, 5.0 / 16.0)
+                add_err(x + 1, y + 1, 1.0 / 16.0)
+
+        return result

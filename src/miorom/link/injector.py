@@ -1,4 +1,6 @@
+from miorom.result import MioRomResult
 import json
+from miorom.errors import ParseError
 import os
 import re
 import struct
@@ -20,7 +22,7 @@ from miorom.link.relocator import ElfLinkResult, ElfRelocator
 
 
 @dataclass
-class InjectionReport:
+class InjectionReport(MioRomResult):
     """
     Detailed diagnostic report for an ELF payload injection.
     """
@@ -244,7 +246,7 @@ class ElfInjector:
         if hook_ram_addr is not None and hook_file_offset is None:
             hook_file_offset = ram_to_offset(hook_ram_addr)
             if hook_file_offset is None:
-                raise ValueError(
+                raise ParseError(
                     f"Could not translate hook RAM address 0x{hook_ram_addr:08X} to file offset. "
                     "Specify hook_file_offset or ram_base."
                 )
@@ -256,7 +258,7 @@ class ElfInjector:
 
         if hook_file_offset is not None and original_instr_bytes is None:
             if hook_file_offset + instr_size > len(target_buf):
-                raise ValueError(f"Hook file offset 0x{hook_file_offset:08X} is out of bounds.")
+                raise ParseError(f"Hook file offset 0x{hook_file_offset:08X} is out of bounds.")
             original_instr_bytes = bytes(target_buf[hook_file_offset : hook_file_offset + instr_size])
 
         # 9. Perform initial link to determine payload size
@@ -281,7 +283,7 @@ class ElfInjector:
                 if dol and append_dol_section:
                     pass  # Handled below
                 else:
-                    raise ValueError(f"Could not translate cave RAM 0x{cave_ram_addr:08X} to file offset.")
+                    raise ParseError(f"Could not translate cave RAM 0x{cave_ram_addr:08X} to file offset.")
 
         # If cave is still not located, auto-discover
         if cave_file_offset is None:
@@ -364,7 +366,7 @@ class ElfInjector:
                     j_instr = MIPSBranch.encode_j(hook_ram_addr, entry_point_ram, link=is_call, endian=elf_file.endian)
                     hook_bytes = j_instr + MIPSBranch.nop(endian=elf_file.endian)
                 else:
-                    raise ValueError(f"Unsupported arch for branch hook: {arch_norm}")
+                    raise ParseError(f"Unsupported arch for branch hook: {arch_norm}")
 
                 target_buf[hook_file_offset : hook_file_offset + len(hook_bytes)] = hook_bytes
                 hook_record = HookRecord(

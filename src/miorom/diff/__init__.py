@@ -10,6 +10,7 @@ from miorom.diff.bindiff import (
     FunctionFingerprint,
     FunctionMatch,
 )
+from miorom.diff.patch_auditor import PatchAuditor, AuditReport, PatchCollision
 
 __all__ = [
     "BinaryDiffMapper",
@@ -20,4 +21,7 @@ __all__ = [
     "BinDiffReport",
     "FunctionFingerprint",
     "FunctionMatch",
+    "PatchAuditor",
+    "AuditReport",
+    "PatchCollision",
 ]

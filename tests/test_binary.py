@@ -31,3 +31,20 @@ def test_binary_context_at():
     # Current position should be restored
     assert reader.tell() == 1
     assert reader.read_u8() == 0x01
+
+def test_binary_reader_open_file_with_mmap(tmp_path):
+    path = tmp_path / "rom.bin"
+    payload = b"\x12\x34\x56\x78payload"
+    path.write_bytes(payload)
+
+    with BinaryReader.open_file(path, endian=">", use_mmap=True) as reader:
+        assert reader.read_u32() == 0x12345678
+        assert reader.read_string(null_terminated=False) == "payload"
+
+def test_binary_reader_open_file_without_mmap(tmp_path):
+    path = tmp_path / "rom.bin"
+    path.write_bytes(b"\x78\x56\x34\x12AB")
+
+    with BinaryReader.open_file(path, endian="<", use_mmap=False) as reader:
+        assert reader.read_u32() == 0x12345678
+        assert reader.read_bytes(2) == b"AB"

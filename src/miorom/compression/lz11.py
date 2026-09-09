@@ -1,4 +1,5 @@
-import struct
+from miorom.errors import CompressionError
+from miorom.core.schema import BinaryStruct, U32
 
 
 class LZ11:
@@ -10,23 +11,26 @@ class LZ11:
 
     MAGIC = 0x11
 
+
     @classmethod
     def decompress(cls, data: bytes) -> bytes:
         """Decompress LZ11 compressed data."""
         if len(data) < 4:
-            raise ValueError("Data too short for LZ11 header")
+            raise CompressionError("Data too short for LZ11 header")
 
         magic = data[0]
         if magic != cls.MAGIC:
-            raise ValueError(f"Invalid LZ11 magic byte: expected 0x11, got {hex(magic)}")
+            raise CompressionError(f"Invalid LZ11 magic byte: expected 0x11, got {hex(magic)}")
 
         uncompressed_size = data[1] | (data[2] << 8) | (data[3] << 16)
         in_pos = 4
 
         if uncompressed_size == 0:
+            if len(data) == 4:
+                return b""
             if len(data) < 8:
-                raise ValueError("Data too short for extended LZ11 header")
-            uncompressed_size = struct.unpack("<I", data[4:8])[0]
+                raise CompressionError("Data too short for extended LZ11 header")
+            uncompressed_size = LZExtendedSizeStruct.from_bytes(data, offset=4).uncompressed_size
             in_pos = 8
 
         out = bytearray()
@@ -75,7 +79,7 @@ class LZ11:
                         disp = (((b1 & 0x0F) << 8) | b2) + 1
 
                     if disp > len(out):
-                        raise ValueError(f"LZ11 invalid displacement {disp} at pos {len(out)}")
+                        raise CompressionError(f"LZ11 invalid displacement {disp} at pos {len(out)}")
 
                     copy_pos = len(out) - disp
                     for _ in range(length):
@@ -105,7 +109,7 @@ class LZ11:
         else:
             out.append(cls.MAGIC)
             out.extend(b"\x00\x00\x00")
-            out.extend(struct.pack("<I", uncompressed_size))
+            out.extend(LZExtendedSizeStruct(uncompressed_size=uncompressed_size).to_bytes())
 
         in_pos = 0
         data_len = len(data)

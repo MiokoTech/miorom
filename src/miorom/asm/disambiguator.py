@@ -1,3 +1,4 @@
+from miorom.result import MioRomResult
 import struct
 from collections import deque
 from dataclasses import dataclass, field
@@ -17,7 +18,7 @@ class ByteClassification(Enum):
 
 
 @dataclass
-class ClassifiedRange:
+class ClassifiedRange(MioRomResult):
     start_address: int
     end_address: int
     classification: ByteClassification
@@ -32,7 +33,7 @@ class ClassifiedRange:
 
 
 @dataclass
-class DisambiguationReport:
+class DisambiguationReport(MioRomResult):
     total_bytes: int
     ranges: List[ClassifiedRange] = field(default_factory=list)
     stats: Dict[str, int] = field(default_factory=dict)

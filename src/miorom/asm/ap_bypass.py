@@ -6,6 +6,7 @@ Detects anti-tamper routines, checksum verification loops, and hardware sanity c
 and generates surgical patches to bypass integrity barriers on modified ROMs.
 """
 
+from miorom.result import MioRomResult
 import re
 import struct
 from dataclasses import dataclass, field
@@ -22,7 +23,7 @@ class APVectorType(str, Enum):
 
 
 @dataclass
-class APMatch:
+class APMatch(MioRomResult):
     offset: int
     vector_type: APVectorType
     arch: str
@@ -38,7 +39,7 @@ class APMatch:
 
 
 @dataclass
-class APBypassReport:
+class APBypassReport(MioRomResult):
     total_scanned: int
     matches: List[APMatch] = field(default_factory=list)
     patched_count: int = 0

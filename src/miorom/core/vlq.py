@@ -8,6 +8,8 @@ Encodes and decodes multi-byte compressed integers used across game engines
 
 from typing import Tuple
 
+from miorom.errors import ParseError
+
 
 class VariableLengthIntCodec:
     """
@@ -21,7 +23,7 @@ class VariableLengthIntCodec:
         Bit 7 is 1 for continuation bytes, and 0 for the last byte.
         """
         if value < 0:
-            raise ValueError("Standard VLQ requires non-negative integers")
+            raise ParseError("Standard VLQ requires non-negative integers")
         if value == 0:
             return bytes([0])
 
@@ -64,7 +66,7 @@ class VariableLengthIntCodec:
         buf = bytearray()
         if not signed:
             if value < 0:
-                raise ValueError("Unsigned LEB128 requires non-negative value")
+                raise ParseError("Unsigned LEB128 requires non-negative value")
             while True:
                 byte = value & 0x7F
                 value >>= 7

@@ -6,12 +6,13 @@ Matches functions, text tables, and binary blocks between different regional ver
 (e.g. Japanese vs. USA releases) to automate localization mapping.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 
 @dataclass
-class MatchedBlock:
+class MatchedBlock(MioRomResult):
     offset_a: int
     offset_b: int
     length: int

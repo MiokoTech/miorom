@@ -7,6 +7,7 @@ from disassembled bytecode scripts and Control Flow Graphs into human-readable
 Python and C pseudo-code.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -27,7 +28,7 @@ from miorom.script.ast import (
 
 
 @dataclass
-class ChoiceBranch:
+class ChoiceBranch(MioRomResult):
     """Represents a choice option in a branching dialog tree."""
     option_index: int
     text: str
@@ -35,7 +36,7 @@ class ChoiceBranch:
 
 
 @dataclass
-class ChoiceBlock:
+class ChoiceBlock(MioRomResult):
     """Represents a choice/selection menu construct found in a game script."""
     offset: int
     prompt: Optional[str]

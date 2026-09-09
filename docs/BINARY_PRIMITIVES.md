@@ -67,8 +67,14 @@ with open("patch.ips", "wb") as f:
 - Instruction padding: `nop`.
 
 #### MIPS (`AsmSnippet.mips`)
-- Register operations: `lui`, `addiu`.
-- Control flow: `jr_ra` (jump register with branch delay slot handling).
+- Register operations: `lui`, `addiu`, `li` (smart 32-bit constant emission), `move`, `addu`, `subu`, `ori`, `andi`, `sll`, `srl`.
+- Memory operations: `lw`, `sw`.
+- Control flow: `j`, `jal`, `jr_ra` (jump register with branch delay slot handling).
+- Instruction padding: `nop`.
+
+#### Game Boy SM83 (`AsmSnippet.sm83`)
+- Load / Register operations: `ld_rr`, `ld_imm`, `push`, `pop`.
+- Control flow: `call`, `jp`, `jr`, `ret`.
 - Instruction padding: `nop`.
 
 ### Example
@@ -85,8 +91,9 @@ arm_machine_code = arm.emit()
 
 # MIPS routine (PS1 / N64 / PS2)
 mips = AsmSnippet.mips(">")
-mips.lui("v0", 0x8004)
-mips.addiu("v0", "v0", 0x1A20)
+mips.li("a0", 0x80041A20)
+mips.lw("v0", "a0", 0)
+mips.sw("v0", "sp", 16)
 mips.jr_ra()
 mips_machine_code = mips.emit()
 ```

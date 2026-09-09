@@ -3,6 +3,7 @@ import struct
 from typing import List, Tuple, Dict, Callable, Optional, Sequence
 
 
+from miorom.errors import RelocationError
 class ByteOffsetMapper:
     """
     Computes exact byte-level offset relocation between original and modified data
@@ -26,7 +27,7 @@ class ByteOffsetMapper:
         Maps a byte offset from old_bytes to its exact corresponding offset in new_bytes.
         """
         if old_offset < 0:
-            raise ValueError(f"Offset cannot be negative: {old_offset}")
+            raise RelocationError(f"Offset cannot be negative: {old_offset}")
 
         for tag, i1, i2, j1, j2 in self.opcodes:
             if i1 <= old_offset < i2 or (i1 == i2 == old_offset):
@@ -153,7 +154,7 @@ class ByteOffsetMapper:
                 continue
             new_val = val + delta
             if not (0 <= new_val <= max_val):
-                raise ValueError(f"Value {new_val} overflows field size {field_size} at offset 0x{off:X}")
+                raise RelocationError(f"Value {new_val} overflows field size {field_size} at offset 0x{off:X}")
             struct.pack_into(fmt, new_data, off, new_val)
             results[off] = new_val
 

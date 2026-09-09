@@ -1,7 +1,22 @@
+from miorom.result import MioRomResult
 import os
-import struct
 from dataclasses import dataclass
+from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U8, U16, U32
 from typing import Optional, Tuple
+
+
+class MDChecksumStruct(BinaryStruct):
+    _endian = ">"
+    _prefix = RawBytes(0x018E)
+    checksum = U16()
+
+
+class MDSmdHeaderStruct(BinaryStruct):
+    _endian = "<"
+    block_count_low = U8()
+    block_count_high = U8()
+    _reserved = RawBytes(6)
+    magic = RawBytes(2)
 
 
 def is_smd(data: bytes) -> bool:
@@ -9,7 +24,10 @@ def is_smd(data: bytes) -> bool:
     if len(data) < 512:
         return False
     # SMD header has block count and magic bytes 0xAA 0xBB at offset 8, 9
-    return data[8] == 0xAA and data[9] == 0xBB and ((len(data) - 512) % 16384 == 0)
+    if len(data) < MDSmdHeaderStruct.sizeof():
+        return False
+    magic = MDSmdHeaderStruct.from_bytes(data).magic
+    return magic == b"\xAA\xBB" and ((len(data) - 512) % 16384 == 0)
 
 
 def deinterleave_smd(data: bytes) -> bytes:
@@ -76,15 +94,17 @@ def calculate_md_checksum(rom_bytes: bytes) -> int:
         return 0
     aligned_len = len(rom_bytes) - (len(rom_bytes) % 2)
     words_count = (aligned_len - 0x0200) // 2
-    words = struct.unpack_from(f">{words_count}H", rom_bytes, 0x0200)
-    return sum(words) & 0xFFFF
+    checksum = 0
+    for offset in range(0x0200, aligned_len, 2):
+        checksum += U16(default=0, endian=">").unpack(rom_bytes, offset, ">")[0]
+    return checksum & 0xFFFF
 
 
 def verify_md_checksum(rom_bytes: bytes) -> bool:
     """Verify ROM header checksum at offset 0x018E against calculated value."""
     if len(rom_bytes) < 0x0190:
         return False
-    expected = struct.unpack_from(">H", rom_bytes, 0x018E)[0]
+    expected = MDChecksumStruct.from_bytes(rom_bytes, offset=0).checksum
     actual = calculate_md_checksum(rom_bytes)
     return expected == actual
 
@@ -93,12 +113,29 @@ def fix_md_checksum(rom_bytes: bytes) -> bytes:
     """Recalculate Mega Drive checksum and patch offset 0x018E..0x0190."""
     checksum = calculate_md_checksum(rom_bytes)
     ba = bytearray(rom_bytes)
-    struct.pack_into(">H", ba, 0x018E, checksum)
+    ba[0x018E:0x0190] = MDChecksumStruct(checksum=checksum).to_bytes()[0x018E:]
     return bytes(ba)
 
 
+class MDHeaderStruct(BinaryStruct):
+    _endian = ">"
+    system_type = FixedString(16, pad=b" ")
+    copyright = FixedString(16, pad=b" ")
+    domestic_title = FixedString(48, encoding="shift-jis", pad=b" ")
+    overseas_title = FixedString(48, pad=b" ")
+    serial_number = FixedString(14, pad=b" ")
+    checksum = U16()
+    io_support = FixedString(16, pad=b" ")
+    rom_start = U32()
+    rom_end = U32()
+    ram_start = U32()
+    ram_end = U32()
+    _reserved_0xB0 = RawBytes(0x40)
+    region = FixedString(16, pad=b" ")
+
+
 @dataclass
-class MDHeader:
+class MDHeader(MioRomResult):
     system_type: str
     copyright: str
     domestic_title: str
@@ -115,53 +152,44 @@ class MDHeader:
 
     @classmethod
     def parse(cls, header_bytes: bytes) -> "MDHeader":
-        """Parse 256-byte Mega Drive header at offset 0x0100..0x0200."""
         if len(header_bytes) < 0x0100:
             header_bytes = header_bytes.ljust(0x0100, b"\x00")
-
-        system_type = header_bytes[0x00:0x10].decode("ascii", errors="replace").strip()
-        copyright_str = header_bytes[0x10:0x20].decode("ascii", errors="replace").strip()
-        domestic_title = header_bytes[0x20:0x50].decode("shift-jis", errors="replace").strip()
-        overseas_title = header_bytes[0x50:0x80].decode("ascii", errors="replace").strip()
-        serial_number = header_bytes[0x80:0x8E].decode("ascii", errors="replace").strip()
-        checksum = struct.unpack_from(">H", header_bytes, 0x8E)[0]
-        io_support = header_bytes[0x90:0xA0].decode("ascii", errors="replace").strip()
-
-        rom_start, rom_end, ram_start, ram_end = struct.unpack_from(">IIII", header_bytes, 0xA0)
-        sram_support = header_bytes[0xB0:0xB2] == b"RA"
-        region = header_bytes[0xF0:0x100].decode("ascii", errors="replace").strip()
-
+        parsed = MDHeaderStruct.from_bytes(header_bytes, offset=0)
         return cls(
-            system_type=system_type,
-            copyright=copyright_str,
-            domestic_title=domestic_title,
-            overseas_title=overseas_title,
-            serial_number=serial_number,
-            checksum=checksum,
-            io_support=io_support,
-            rom_start=rom_start,
-            rom_end=rom_end,
-            ram_start=ram_start,
-            ram_end=ram_end,
-            sram_support=sram_support,
-            region=region,
+            system_type=parsed.system_type.strip(),
+            copyright=parsed.copyright.strip(),
+            domestic_title=parsed.domestic_title.strip(),
+            overseas_title=parsed.overseas_title.strip(),
+            serial_number=parsed.serial_number.strip(),
+            checksum=parsed.checksum,
+            io_support=parsed.io_support.strip(),
+            rom_start=parsed.rom_start,
+            rom_end=parsed.rom_end,
+            ram_start=parsed.ram_start,
+            ram_end=parsed.ram_end,
+            sram_support=parsed._reserved_0xB0[:2] == b"RA",
+            region=parsed.region.strip(),
         )
 
     def pack(self) -> bytes:
-        """Serialize header into 256-byte buffer."""
-        out = bytearray(0x0100)
-        out[0x00:0x10] = self.system_type.encode("ascii", errors="replace")[:16].ljust(16, b" ")
-        out[0x10:0x20] = self.copyright.encode("ascii", errors="replace")[:16].ljust(16, b" ")
-        out[0x20:0x50] = self.domestic_title.encode("shift-jis", errors="replace")[:48].ljust(48, b" ")
-        out[0x50:0x80] = self.overseas_title.encode("ascii", errors="replace")[:48].ljust(48, b" ")
-        out[0x80:0x8E] = self.serial_number.encode("ascii", errors="replace")[:14].ljust(14, b" ")
-        struct.pack_into(">H", out, 0x8E, self.checksum)
-        out[0x90:0xA0] = self.io_support.encode("ascii", errors="replace")[:16].ljust(16, b" ")
-        struct.pack_into(">IIII", out, 0xA0, self.rom_start, self.rom_end, self.ram_start, self.ram_end)
+        reserved = bytearray(0x40)
         if self.sram_support:
-            out[0xB0:0xB2] = b"RA"
-        out[0xF0:0x100] = self.region.encode("ascii", errors="replace")[:16].ljust(16, b" ")
-        return bytes(out)
+            reserved[:2] = b"RA"
+        return MDHeaderStruct(
+            system_type=self.system_type,
+            copyright=self.copyright,
+            domestic_title=self.domestic_title,
+            overseas_title=self.overseas_title,
+            serial_number=self.serial_number,
+            checksum=self.checksum,
+            io_support=self.io_support,
+            rom_start=self.rom_start,
+            rom_end=self.rom_end,
+            ram_start=self.ram_start,
+            ram_end=self.ram_end,
+            _reserved_0xB0=bytes(reserved),
+            region=self.region,
+        ).to_bytes()
 
 
 class MDRom:
@@ -192,7 +220,7 @@ class MDRom:
         """Recalculate checksum, update header, and return new 16-bit checksum."""
         checksum = calculate_md_checksum(bytes(self.data))
         self.header.checksum = checksum
-        struct.pack_into(">H", self.data, 0x018E, checksum)
+        self.data[0x018E:0x0190] = MDChecksumStruct(checksum=checksum).to_bytes()[0x018E:]
         return checksum
 
     def to_bytes(self, smd_format: bool = False) -> bytes:

@@ -49,7 +49,8 @@ from miorom.asm.micro_patcher import (
     StackAllocPatcher,
     OpcodeTransmuter,
 )
-from miorom.asm.snippet import AsmSnippet, ArmSnippet, MipsSnippet
+from miorom.asm.snippet import AsmSnippet, ArmSnippet, MipsSnippet, SM83Snippet
+from miorom.asm.prologue_scanner import FunctionPrologueScanner, DiscoveredFunction
 
 __all__ = [
     "ARMBranch",
@@ -99,4 +100,7 @@ __all__ = [
     "AsmSnippet",
     "ArmSnippet",
     "MipsSnippet",
+    "SM83Snippet",
+    "FunctionPrologueScanner",
+    "DiscoveredFunction",
 ]

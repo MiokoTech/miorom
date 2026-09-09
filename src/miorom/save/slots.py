@@ -1,4 +1,5 @@
 import struct
+from miorom.errors import RelocationError
 from typing import Tuple, Optional
 
 
@@ -26,7 +27,7 @@ class DualSlotSave:
             save_counter: The counter value found in the active slot.
         """
         if len(data) < slot_size * 2:
-            raise ValueError(f"Save data too small for dual slots of {slot_size} bytes each.")
+            raise RelocationError(f"Save data too small for dual slots of {slot_size} bytes each.")
 
         slot_a = data[0:slot_size]
         slot_b = data[slot_size : slot_size * 2]

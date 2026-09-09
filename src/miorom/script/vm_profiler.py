@@ -7,6 +7,7 @@ argument lengths and operand byte sizes, and synthesizes structured opcode schem
 for BytecodeEngine and ScriptDecompiler.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from enum import Enum
 import struct
@@ -26,7 +27,7 @@ class OpcodeCategory(Enum):
 
 
 @dataclass
-class OpcodeSpec:
+class OpcodeSpec(MioRomResult):
     """Dissected specification for a single VM bytecode instruction."""
     opcode: int
     handler_address: int
@@ -38,7 +39,7 @@ class OpcodeSpec:
 
 
 @dataclass
-class VMSpecification:
+class VMSpecification(MioRomResult):
     """Complete specification of a reconstructed script VM bytecode grammar."""
     dispatch_address: int
     opcode_count: int
@@ -194,3 +195,40 @@ class VMBytecodeSynthesizer:
             vm_spec.opcodes[op_id] = spec
 
         return vm_spec
+
+    @classmethod
+    def detect_dispatcher_tables(
+        cls,
+        code: bytes,
+        base_address: int = 0,
+        min_opcodes: int = 8,
+        stride: int = 4,
+        endian: str = "<",
+    ) -> list[tuple[int, int]]:
+        """
+        Discovers candidate bytecode interpreter jump/dispatch tables: returns list of (table_offset, count).
+        """
+        fmt = f"{endian}I"
+        limit = len(code) - (min_opcodes * stride)
+        results: list[tuple[int, int]] = []
+        i = 0
+
+        while i <= limit:
+            count = 0
+            curr = i
+            while curr + stride <= len(code):
+                val = struct.unpack_from(fmt, code, curr)[0]
+                target_off = val - base_address
+                # Must target code outside the table itself within buffer bounds and non-zero
+                if val != 0 and 0 <= target_off < len(code) and not (i <= target_off < curr + stride):
+                    count += 1
+                    curr += stride
+                else:
+                    break
+            if count >= min_opcodes:
+                results.append((i, count))
+                i += count * stride
+            else:
+                i += stride
+
+        return results

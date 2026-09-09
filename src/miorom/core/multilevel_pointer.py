@@ -1,10 +1,12 @@
+from miorom.result import MioRomResult
 import struct
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Union
 
 
+from miorom.errors import ParseError, RelocationError
 @dataclass
-class TableLevel:
+class TableLevel(MioRomResult):
     """
     Defines a single level in a cascading pointer table hierarchy.
     """
@@ -33,7 +35,7 @@ class MultiLevelPointerTable:
         down the cascading levels and return the final resolved leaf offset.
         """
         if len(indices) != len(self.levels):
-            raise ValueError(
+            raise ParseError(
                 f"Index path length {len(indices)} does not match table levels {len(self.levels)}"
             )
 
@@ -44,7 +46,7 @@ class MultiLevelPointerTable:
             entry_file_offset = cur_table_offset + idx * lvl.stride
 
             if entry_file_offset + lvl.stride > len(data):
-                raise ValueError(
+                raise ParseError(
                     f"Level {lvl_idx} entry offset 0x{entry_file_offset:08X} is out of bounds."
                 )
 
@@ -89,7 +91,7 @@ class MultiLevelPointerTable:
         Update the pointer at the final level for the given index path.
         """
         if len(indices) != len(self.levels):
-            raise ValueError(f"Path length mismatch: {len(indices)} vs {len(self.levels)}")
+            raise RelocationError(f"Path length mismatch: {len(indices)} vs {len(self.levels)}")
 
         cur_table_offset = self.root_offset
 

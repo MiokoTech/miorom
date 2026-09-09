@@ -6,6 +6,7 @@ Tracks record entry counts, preserves pristine snapshots, provides entry bounds 
 and performs cascading downstream offset updates upon record resizing.
 """
 
+from miorom.errors import ParseError
 import struct
 from typing import List, Tuple, Optional, Union, Dict, Any
 
@@ -32,7 +33,7 @@ class MasterTableArchive:
         self.total_table_size = self.table_entries * self.record_size
 
         if len(self.data) < self.table_offset + self.total_table_size:
-            raise ValueError(
+            raise ParseError(
                 f"Data size {len(self.data)} too small for table size {self.total_table_size} "
                 f"at offset {self.table_offset}"
             )

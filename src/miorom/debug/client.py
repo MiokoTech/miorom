@@ -7,13 +7,17 @@ and test translations in real-time without recompiling the ISO.
 """
 
 import os
+
+from miorom.errors import ParseError
 import socket
 import struct
 from abc import ABC, abstractmethod
 from typing import Optional
 
+from miorom.debug.protocols import EmulatorClientProtocol
 
-class EmulatorClient(ABC):
+
+class EmulatorClient(ABC, EmulatorClientProtocol):
     """Abstract interface for communicating with a running emulator."""
 
     @abstractmethod
@@ -56,7 +60,7 @@ class DolphinMemoryMock(EmulatorClient):
     def _to_physical(self, address: int) -> int:
         if 0x80000000 <= address < 0x80000000 + self.MEM1_SIZE:
             return address - self.MEM1_BASE
-        raise ValueError(f"Address 0x{address:08X} out of Dolphin MEM1 bounds.")
+        raise ParseError(f"Address 0x{address:08X} out of Dolphin MEM1 bounds.")
 
     def read_bytes(self, address: int, size: int) -> bytes:
         phys = self._to_physical(address)

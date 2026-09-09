@@ -1,5 +1,5 @@
 from miorom.core.binary import BinaryReader, BinaryWriter
-from miorom.core.pointer import PointerTable, PointerEntry
+from miorom.core.pointer import PointerTable, PointerEntry, SegmentTable, SegmentedAddressResolver
 from miorom.core.scanner import (
     FoundString,
     TextBlock,
@@ -26,6 +26,16 @@ from miorom.core.schema import (
     FixedString,
     RawBytes,
     Array,
+    EnumField,
+    Bitfield,
+    BitfieldView,
+    If,
+    Padding,
+    Alignment,
+    Computed,
+    PascalString,
+    SentinelArray,
+    ChecksumField,
 )
 
 from miorom.core.multilevel_pointer import MultiLevelPointerTable, TableLevel
@@ -54,6 +64,8 @@ __all__ = [
     "BinaryWriter",
     "PointerTable",
     "PointerEntry",
+    "SegmentTable",
+    "SegmentedAddressResolver",
     "FoundString",
     "TextBlock",
     "CandidatePointerTable",
@@ -81,6 +93,16 @@ __all__ = [
     "FixedString",
     "RawBytes",
     "Array",
+    "EnumField",
+    "Bitfield",
+    "BitfieldView",
+    "If",
+    "Padding",
+    "Alignment",
+    "Computed",
+    "PascalString",
+    "SentinelArray",
+    "ChecksumField",
     "MultiLevelPointerTable",
     "TableLevel",
     "IntegrityReport",

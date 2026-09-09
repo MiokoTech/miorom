@@ -6,6 +6,7 @@ Combines format fingerprinting, entropy profiling, multi-encoding probing,
 pointer array detection, and actionable heuristic suggestions into a single report.
 """
 
+from miorom.result import MioRomResult
 import math
 import os
 import re
@@ -18,7 +19,7 @@ from miorom.scanner.deep import DeepScanner, BinaryFingerprint, calculate_entrop
 
 
 @dataclass
-class EncodingCandidate:
+class EncodingCandidate(MioRomResult):
     encoding: str
     confidence: float  # 0.0 to 1.0
     string_count: int
@@ -27,7 +28,7 @@ class EncodingCandidate:
 
 
 @dataclass
-class InspectionReport:
+class InspectionReport(MioRomResult):
     filepath: Optional[str]
     size: int
     overall_entropy: float

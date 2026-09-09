@@ -7,6 +7,7 @@ and validates whether translated, lengthened strings will overflow local buffers
 causing stack corruption or crashes during gameplay.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 import struct
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
@@ -15,7 +16,7 @@ from miorom.asm.disasm import UniversalDisassembler, DisasmInstruction
 
 
 @dataclass
-class BufferRiskReport:
+class BufferRiskReport(MioRomResult):
     """Report on runtime buffer safety for expanded text."""
     function_address: int
     detected_buffer_capacity: int

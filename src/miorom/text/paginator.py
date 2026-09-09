@@ -8,6 +8,7 @@ automatically splits overflowed paragraphs into multi-page dialogue boxes
 with custom control tags ([PAGE], [WAIT], etc.).
 """
 
+from miorom.result import MioRomResult
 import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Union
@@ -17,7 +18,7 @@ from miorom.text.po_handler import PoHandler, PoEntry
 
 
 @dataclass
-class PaginationConfig:
+class PaginationConfig(MioRomResult):
     """Configuration for textbox geometry and pagination tags."""
     max_width_px: int = 200                  # Maximum pixel width per line
     max_lines_per_page: int = 3             # Number of lines before advancing page

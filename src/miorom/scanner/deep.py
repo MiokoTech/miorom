@@ -1,12 +1,13 @@
+from miorom.result import MioRomResult
 import math
 import struct
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 
 @dataclass
-class BinaryFingerprint:
+class BinaryFingerprint(MioRomResult):
     """Represents an identified file format, container, or header inside binary data."""
     offset: int
     category: str  # "rom", "filesystem", "compression", "graphics", "audio", "archive", "code"
@@ -31,16 +32,21 @@ def calculate_entropy(data: bytes) -> float:
     return -sum((cnt / length) * math.log2(cnt / length) for cnt in counts.values())
 
 
-def calculate_block_entropy(data: bytes, block_size: int = 1024) -> List[Tuple[int, float]]:
+def iter_block_entropy(data: bytes, block_size: int = 1024) -> Iterator[Tuple[int, float]]:
     """
     Compute Shannon entropy across sliding/chunked blocks of the binary data.
-    Returns list of (offset, entropy).
+    Yields (offset, entropy) without materializing all entropy blocks.
     """
-    blocks = []
     for offset in range(0, len(data), block_size):
         chunk = data[offset:offset + block_size]
-        blocks.append((offset, calculate_entropy(chunk)))
-    return blocks
+        yield offset, calculate_entropy(chunk)
+
+
+def calculate_block_entropy(data: bytes, block_size: int = 1024) -> List[Tuple[int, float]]:
+    """
+    Compute Shannon entropy across blocks. Backward-compatible list helper.
+    """
+    return list(iter_block_entropy(data, block_size=block_size))
 
 
 class DeepScanner:
@@ -98,13 +104,20 @@ class DeepScanner:
         Identify high-entropy blocks likely containing compressed or encrypted data.
         Returns list of (start_offset, length, average_entropy).
         """
-        blocks = calculate_block_entropy(data, block_size=block_size)
-        high_entropy_regions = []
+        return list(self.iter_compressed_blocks(data, block_size=block_size, entropy_threshold=entropy_threshold))
+
+    def iter_compressed_blocks(
+        self,
+        data: bytes,
+        block_size: int = 1024,
+        entropy_threshold: float = 7.2,
+    ) -> Iterator[Tuple[int, int, float]]:
+        """Yield high-entropy regions as they are completed."""
         current_start = None
         current_len = 0
         entropy_sum = 0.0
 
-        for off, ent in blocks:
+        for off, ent in iter_block_entropy(data, block_size=block_size):
             if ent >= entropy_threshold:
                 if current_start is None:
                     current_start = off
@@ -116,20 +129,14 @@ class DeepScanner:
             else:
                 if current_start is not None:
                     num_blocks = current_len // block_size or 1
-                    high_entropy_regions.append(
-                        (current_start, current_len, entropy_sum / num_blocks)
-                    )
+                    yield (current_start, current_len, entropy_sum / num_blocks)
                     current_start = None
                     current_len = 0
                     entropy_sum = 0.0
 
         if current_start is not None:
             num_blocks = current_len // block_size or 1
-            high_entropy_regions.append(
-                (current_start, current_len, entropy_sum / num_blocks)
-            )
-
-        return high_entropy_regions
+            yield (current_start, current_len, entropy_sum / num_blocks)
 
     def _check_primary_rom_headers(self, data: bytes, out: List[BinaryFingerprint]):
         sz = len(data)
@@ -427,7 +434,7 @@ class DeepScanner:
 
 
 @dataclass
-class DeepScanReport:
+class DeepScanReport(MioRomResult):
     """Summary of deep binary analysis, detected formats, and entropy profile."""
     total_size: int
     overall_entropy: float

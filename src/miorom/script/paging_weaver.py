@@ -8,6 +8,7 @@ exceeds physical textbox limits, it automatically weaves VM control opcodes
 so long translations flow seamlessly across pages without manual script splitting.
 """
 
+from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
@@ -17,7 +18,7 @@ from miorom.text.vwf import GlyphWidthTable
 
 
 @dataclass
-class PagingWeaveConfig:
+class PagingWeaveConfig(MioRomResult):
     """Configuration for dialogue page weaving."""
     paginator: Optional[SmartAutoPaginator] = None
     message_opcode: str = "MESSAGE"
