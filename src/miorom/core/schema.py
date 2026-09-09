@@ -21,10 +21,10 @@ class SchemaField:
     def get_size(self, context: Any = None) -> int:
         raise NotImplementedError
 
-    def unpack(self, data: bytes, offset: int, endian: str, context: Any = None) -> Tuple[Any, int]:
+    def unpack(self, data: bytes, offset: int, endian: Optional[str] = None, context: Any = None) -> Tuple[Any, int]:
         raise NotImplementedError
 
-    def pack(self, value: Any, endian: str, context: Any = None) -> bytes:
+    def pack(self, value: Any, endian: Optional[str] = None, context: Any = None) -> bytes:
         raise NotImplementedError
 
 
@@ -37,13 +37,15 @@ class PrimitiveField(SchemaField):
     def get_size(self, context: Any = None) -> int:
         return self._size
 
-    def unpack(self, data: bytes, offset: int, endian: str, context: Any = None) -> Tuple[Any, int]:
-        fmt = (self.endian or endian) + self.format_char
+    def unpack(self, data: bytes, offset: int, endian: Optional[str] = None, context: Any = None) -> Tuple[Any, int]:
+        used_endian = self.endian or endian or "<"
+        fmt = used_endian + self.format_char
         val = struct.unpack_from(fmt, data, offset)[0]
         return val, self._size
 
-    def pack(self, value: Any, endian: str, context: Any = None) -> bytes:
-        fmt = (self.endian or endian) + self.format_char
+    def pack(self, value: Any, endian: Optional[str] = None, context: Any = None) -> bytes:
+        used_endian = self.endian or endian or "<"
+        fmt = used_endian + self.format_char
         return struct.pack(fmt, value if value is not None else self.default)
 
 
@@ -97,13 +99,13 @@ class FixedString(SchemaField):
     def get_size(self, context: Any = None) -> int:
         return self.length
 
-    def unpack(self, data: bytes, offset: int, endian: str, context: Any = None) -> Tuple[str, int]:
+    def unpack(self, data: bytes, offset: int, endian: Optional[str] = None, context: Any = None) -> Tuple[str, int]:
         raw = data[offset:offset + self.length]
         stripped = raw.rstrip(self.pad)
         text = stripped.decode(self.encoding, errors="replace")
         return text, self.length
 
-    def pack(self, value: Any, endian: str, context: Any = None) -> bytes:
+    def pack(self, value: Any, endian: Optional[str] = None, context: Any = None) -> bytes:
         if isinstance(value, (bytes, bytearray)):
             raw = bytes(value)
         else:
@@ -124,10 +126,10 @@ class RawBytes(SchemaField):
     def get_size(self, context: Any = None) -> int:
         return self.length
 
-    def unpack(self, data: bytes, offset: int, endian: str, context: Any = None) -> Tuple[bytes, int]:
+    def unpack(self, data: bytes, offset: int, endian: Optional[str] = None, context: Any = None) -> Tuple[bytes, int]:
         return data[offset:offset + self.length], self.length
 
-    def pack(self, value: Any, endian: str, context: Any = None) -> bytes:
+    def pack(self, value: Any, endian: Optional[str] = None, context: Any = None) -> bytes:
         val = bytes(value if value is not None else self.default)
         return val.ljust(self.length, b"\x00")[:self.length]
 
@@ -142,11 +144,11 @@ class SubStruct(SchemaField):
     def get_size(self, context: Any = None) -> int:
         return self.struct_cls.sizeof(context)
 
-    def unpack(self, data: bytes, offset: int, endian: str, context: Any = None) -> Tuple[Any, int]:
+    def unpack(self, data: bytes, offset: int, endian: Optional[str] = None, context: Any = None) -> Tuple[Any, int]:
         inst = self.struct_cls.from_bytes(data, offset=offset, endian=endian)
         return inst, self.struct_cls.sizeof(inst)
 
-    def pack(self, value: Any, endian: str, context: Any = None) -> bytes:
+    def pack(self, value: Any, endian: Optional[str] = None, context: Any = None) -> bytes:
         if isinstance(value, BinaryStruct):
             return value.to_bytes(endian=endian)
         elif isinstance(value, dict):
@@ -185,7 +187,7 @@ class Array(SchemaField):
             return cnt * self.item_type.sizeof(context)
         return 0
 
-    def unpack(self, data: bytes, offset: int, endian: str, context: Any = None) -> Tuple[List[Any], int]:
+    def unpack(self, data: bytes, offset: int, endian: Optional[str] = None, context: Any = None) -> Tuple[List[Any], int]:
         count = self._resolve_count(context)
         items = []
         curr_offset = offset
@@ -201,7 +203,7 @@ class Array(SchemaField):
 
         return items, curr_offset - offset
 
-    def pack(self, value: Any, endian: str, context: Any = None) -> bytes:
+    def pack(self, value: Any, endian: Optional[str] = None, context: Any = None) -> bytes:
         items = list(value) if value is not None else []
         out = bytearray()
         for item in items:
@@ -390,13 +392,13 @@ class PascalString(SchemaField):
     def get_size(self, context: Any = None) -> int:
         return self.length_type.get_size(context)
 
-    def unpack(self, data: bytes, offset: int, endian: str, context: Any = None) -> Tuple[str, int]:
+    def unpack(self, data: bytes, offset: int, endian: Optional[str] = None, context: Any = None) -> Tuple[str, int]:
         length, prefix_size = self.length_type.unpack(data, offset, endian, context)
         start = offset + prefix_size
         raw = data[start:start + length]
         return raw.decode(self.encoding, errors="replace"), prefix_size + length
 
-    def pack(self, value: Any, endian: str, context: Any = None) -> bytes:
+    def pack(self, value: Any, endian: Optional[str] = None, context: Any = None) -> bytes:
         raw = str(value if value is not None else self.default).encode(self.encoding, errors="replace")
         return self.length_type.pack(len(raw), endian, context) + raw
 
@@ -413,7 +415,7 @@ class SentinelArray(SchemaField):
     def get_size(self, context: Any = None) -> int:
         return 0
 
-    def unpack(self, data: bytes, offset: int, endian: str, context: Any = None) -> Tuple[List[Any], int]:
+    def unpack(self, data: bytes, offset: int, endian: Optional[str] = None, context: Any = None) -> Tuple[List[Any], int]:
         items: List[Any] = []
         curr_offset = offset
 
@@ -431,7 +433,7 @@ class SentinelArray(SchemaField):
             curr_offset += consumed
         return items, curr_offset - offset
 
-    def pack(self, value: Any, endian: str, context: Any = None) -> bytes:
+    def pack(self, value: Any, endian: Optional[str] = None, context: Any = None) -> bytes:
         out = bytearray()
         for item in list(value or []):
             if isinstance(self.item_type, SchemaField):
@@ -458,10 +460,10 @@ class ChecksumField(SchemaField):
     def get_size(self, context: Any = None) -> int:
         return self.size
 
-    def unpack(self, data: bytes, offset: int, endian: str, context: Any = None) -> Tuple[int, int]:
+    def unpack(self, data: bytes, offset: int, endian: Optional[str] = None, context: Any = None) -> Tuple[int, int]:
         return int.from_bytes(data[offset:offset + self.size], "little" if endian == "<" else "big"), self.size
 
-    def pack(self, value: Any, endian: str, context: Any = None) -> bytes:
+    def pack(self, value: Any, endian: Optional[str] = None, context: Any = None) -> bytes:
         prefix = b"" if context is None else bytes(getattr(context, "_packing_prefix", b""))
         checksum = self.algorithm(prefix)
         return int(checksum).to_bytes(self.size, "little" if endian == "<" else "big")
@@ -487,11 +489,11 @@ class EnumField(SchemaField):
     def get_size(self, context: Any = None) -> int:
         return self.base_field.get_size(context)
 
-    def unpack(self, data: bytes, offset: int, endian: str, context: Any = None) -> Tuple[Any, int]:
+    def unpack(self, data: bytes, offset: int, endian: Optional[str] = None, context: Any = None) -> Tuple[Any, int]:
         raw, consumed = self.base_field.unpack(data, offset, endian, context)
         return self.enum_type(raw), consumed
 
-    def pack(self, value: Any, endian: str, context: Any = None) -> bytes:
+    def pack(self, value: Any, endian: Optional[str] = None, context: Any = None) -> bytes:
         raw = value.value if isinstance(value, self.enum_type) else value
         return self.base_field.pack(raw, endian, context)
 
@@ -521,11 +523,11 @@ class Bitfield(SchemaField):
     def get_size(self, context: Any = None) -> int:
         return self.base_field.get_size(context)
 
-    def unpack(self, data: bytes, offset: int, endian: str, context: Any = None) -> Tuple[Any, int]:
+    def unpack(self, data: bytes, offset: int, endian: Optional[str] = None, context: Any = None) -> Tuple[Any, int]:
         raw, consumed = self.base_field.unpack(data, offset, endian, context)
         return BitfieldView(raw, self.flags), consumed
 
-    def pack(self, value: Any, endian: str, context: Any = None) -> bytes:
+    def pack(self, value: Any, endian: Optional[str] = None, context: Any = None) -> bytes:
         if isinstance(value, dict):
             value = sum(mask for name, mask in self.flags.items() if value.get(name, False))
         elif isinstance(value, BitfieldView):
@@ -599,12 +601,12 @@ class If(SchemaField):
     def get_size(self, context: Any = None) -> int:
         return self.field.get_size(context) if self._active(context) else 0
 
-    def unpack(self, data: bytes, offset: int, endian: str, context: Any = None) -> Tuple[Any, int]:
+    def unpack(self, data: bytes, offset: int, endian: Optional[str] = None, context: Any = None) -> Tuple[Any, int]:
         if not self._active(context):
             return self.default, 0
         return self.field.unpack(data, offset, endian, context)
 
-    def pack(self, value: Any, endian: str, context: Any = None) -> bytes:
+    def pack(self, value: Any, endian: Optional[str] = None, context: Any = None) -> bytes:
         if not self._active(context):
             return b""
         return self.field.pack(value, endian, context)
@@ -620,10 +622,10 @@ class Padding(SchemaField):
     def get_size(self, context: Any = None) -> int:
         return self.length
 
-    def unpack(self, data: bytes, offset: int, endian: str, context: Any = None) -> Tuple[bytes, int]:
+    def unpack(self, data: bytes, offset: int, endian: Optional[str] = None, context: Any = None) -> Tuple[bytes, int]:
         return data[offset:offset + self.length], self.length
 
-    def pack(self, value: Any, endian: str, context: Any = None) -> bytes:
+    def pack(self, value: Any, endian: Optional[str] = None, context: Any = None) -> bytes:
         return bytes(value if value is not None else b"").ljust(self.length, b"\x00")[:self.length]
 
 
@@ -637,12 +639,12 @@ class Alignment(SchemaField):
     def get_size(self, context: Any = None) -> int:
         return 0
 
-    def unpack(self, data: bytes, offset: int, endian: str, context: Any = None) -> Tuple[bytes, int]:
+    def unpack(self, data: bytes, offset: int, endian: Optional[str] = None, context: Any = None) -> Tuple[bytes, int]:
         start = 0 if context is None else getattr(context, "_current_offset", offset)
         padding = (self.boundary - (start % self.boundary)) % self.boundary
         return data[offset:offset + padding], padding
 
-    def pack(self, value: Any, endian: str, context: Any = None) -> bytes:
+    def pack(self, value: Any, endian: Optional[str] = None, context: Any = None) -> bytes:
         start = 0 if context is None else getattr(context, "_current_offset", 0)
         padding = (self.boundary - (start % self.boundary)) % self.boundary
         return bytes(value if value is not None else self.default).ljust(padding, b"\x00")[:padding]
@@ -658,8 +660,8 @@ class Computed(SchemaField):
     def get_size(self, context: Any = None) -> int:
         return 0
 
-    def unpack(self, data: bytes, offset: int, endian: str, context: Any = None) -> Tuple[Any, int]:
+    def unpack(self, data: bytes, offset: int, endian: Optional[str] = None, context: Any = None) -> Tuple[Any, int]:
         return self.calculate(context, data, offset), 0
 
-    def pack(self, value: Any, endian: str, context: Any = None) -> bytes:
+    def pack(self, value: Any, endian: Optional[str] = None, context: Any = None) -> bytes:
         return b""
