@@ -684,13 +684,27 @@ def extract_rom(rom_path: str, extract_dir: str, work_dir: str = "") -> None:
 def repack_rom(rom_in: str, rom_out: str, work_dir: str, patch_file: str = "") -> None:
     """
     Repacks a Nintendo DS ROM, replacing files found in the work directory.
-    Updates files in data/, ARM7/ARM9 binaries, banner, and overlay tables.
+    Updates files in root/ or data/, ARM7/ARM9 binaries, banner, and overlay tables.
     """
+    datafolder = os.path.join(work_dir, "root")
+    if not os.path.isdir(datafolder):
+        datafolder = os.path.join(work_dir, "data")
+    if not os.path.isdir(datafolder):
+        datafolder = work_dir
+
+    def _find_sys_file(name: str) -> Optional[str]:
+        p1 = os.path.join(work_dir, "sys", name)
+        if os.path.isfile(p1):
+            return p1
+        p2 = os.path.join(work_dir, name)
+        if os.path.isfile(p2):
+            return p2
+        return None
+
     try:
         import ndspy.rom
     except ImportError:
         rom = NDSRom.from_file(rom_in)
-        datafolder = os.path.join(work_dir, "data")
         if os.path.isdir(datafolder):
             for root, _, files in os.walk(datafolder):
                 for fname in files:
@@ -703,10 +717,10 @@ def repack_rom(rom_in: str, rom_out: str, work_dir: str, patch_file: str = "") -
                     except FileNotFoundError:
                         pass
         rom.save(rom_out)
+        _post_fix_checksum(rom_out)
         return
 
     rom = ndspy.rom.NintendoDSRom.fromFile(rom_in)
-    datafolder = os.path.join(work_dir, "data")
     if os.path.isdir(datafolder):
         for i, _ in enumerate(rom.files):
             filepath = rom.filenames.filenameOf(i)
@@ -717,32 +731,32 @@ def repack_rom(rom_in: str, rom_out: str, work_dir: str, patch_file: str = "") -
                         rom.files[i] = f.read()
 
     # System binaries
-    banner_p = os.path.join(work_dir, "banner.bin")
-    if os.path.isfile(banner_p):
+    banner_p = _find_sys_file("banner.bin")
+    if banner_p:
         with open(banner_p, "rb") as f:
             rom.iconBanner = f.read()
 
-    arm7_p = os.path.join(work_dir, "arm7.bin")
-    if os.path.isfile(arm7_p):
+    arm7_p = _find_sys_file("arm7.bin")
+    if arm7_p:
         with open(arm7_p, "rb") as f:
             rom.arm7 = f.read()
 
-    arm9_p = os.path.join(work_dir, "arm9.bin")
-    if os.path.isfile(arm9_p):
+    arm9_p = _find_sys_file("arm9.bin")
+    if arm9_p:
         with open(arm9_p, "rb") as f:
             rom.arm9 = f.read()
 
-    y7_p = os.path.join(work_dir, "y7.bin")
-    if os.path.isfile(y7_p):
+    y7_p = _find_sys_file("y7.bin")
+    if y7_p:
         with open(y7_p, "rb") as f:
             rom.arm7OverlayTable = f.read()
 
-    y9_p = os.path.join(work_dir, "y9.bin")
-    if os.path.isfile(y9_p):
+    y9_p = _find_sys_file("y9.bin")
+    if y9_p:
         with open(y9_p, "rb") as f:
             rom.arm9OverlayTable = f.read()
         num_overlays = len(rom.arm9OverlayTable) // 0x20
-        overlay_dir = os.path.join(work_dir, "overlay")
+        overlay_dir = os.path.join(work_dir, "sys", "overlay") if os.path.isdir(os.path.join(work_dir, "sys", "overlay")) else os.path.join(work_dir, "overlay")
         for i in range(num_overlays):
             file_id = NDSOverlayEntryStruct.from_bytes(
                 rom.arm9OverlayTable,
@@ -755,6 +769,16 @@ def repack_rom(rom_in: str, rom_out: str, work_dir: str, patch_file: str = "") -
 
     os.makedirs(os.path.dirname(os.path.abspath(rom_out)), exist_ok=True)
     rom.saveToFile(rom_out)
+    _post_fix_checksum(rom_out)
+
+
+def _post_fix_checksum(rom_out: str) -> None:
+    with open(rom_out, "rb") as f_chk:
+        rom_chk_bytes = f_chk.read()
+    if not verify_nds_checksum(rom_chk_bytes):
+        fixed = fix_nds_checksum(rom_chk_bytes)
+        with open(rom_out, "wb") as f_fix:
+            f_fix.write(fixed)
 
     if patch_file:
         from miorom.patch.xdelta import XdeltaPatcher
