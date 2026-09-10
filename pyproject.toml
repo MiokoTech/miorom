@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "miorom"
-version = "0.13.0"
+version = "0.13.1"
 description = "A Python library for ROM hacking and game reverse engineering"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -12,6 +12,14 @@ license = { text = "MIT" }
 authors = [
     { name = "MiokoTech", email = "miokotech@gmail.com" }
 ]
+
+[project.urls]
+Homepage = "https://github.com/MiokoTech/miorom"
+Documentation = "https://miokotech.github.io/miorom/"
+Repository = "https://github.com/MiokoTech/miorom.git"
+Changelog = "https://github.com/MiokoTech/miorom/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/MiokoTech/miorom/issues"
+
 keywords = [
     # Core Domain & Reverse Engineering
     "romhacking",
@@ -122,6 +130,9 @@ dev = [
     "pytest>=7.0",
     "hypothesis>=6.0",
     "pytest-benchmark>=4.0",
+]
+docs = [
+    "mkdocs-material[imaging]>=9.0",
 ]
 
 [project.scripts]

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+  {{ super() }}
+  {% if "navigation.footer" in features %}
+    {% if page.previous_page or page.next_page %}
+      {% if not (page.meta and page.meta.hide and "footer" in page.meta.hide) %}
+        <nav class="mio-page-nav" aria-label="{{ lang.t('footer') }}">
+          {% if page.previous_page %}
+            {% set dir_prev = lang.t("footer.previous") %}
+            <a href="{{ page.previous_page.url | url }}" class="mio-page-nav__link mio-page-nav__link--prev" rel="prev" aria-label="{{ dir_prev }}: {{ page.previous_page.title | e }}">
+              <div class="mio-page-nav__icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+              </div>
+              <div class="mio-page-nav__text">
+                <span class="mio-page-nav__dir">{{ dir_prev }}</span>
+                <span class="mio-page-nav__title">{{ page.previous_page.title }}</span>
+              </div>
+            </a>
+          {% endif %}
+          {% if page.next_page %}
+            {% set dir_next = lang.t("footer.next") %}
+            <a href="{{ page.next_page.url | url }}" class="mio-page-nav__link mio-page-nav__link--next" rel="next" aria-label="{{ dir_next }}: {{ page.next_page.title | e }}">
+              <div class="mio-page-nav__text">
+                <span class="mio-page-nav__dir">{{ dir_next }}</span>
+                <span class="mio-page-nav__title">{{ page.next_page.title }}</span>
+              </div>
+              <div class="mio-page-nav__icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+              </div>
+            </a>
+          {% endif %}
+        </nav>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  <footer class="md-footer">
+    <div class="md-footer-meta md-typeset">
+      <div class="md-footer-meta__inner md-grid">
+        {% include "partials/copyright.html" %}
+        {% if config.extra.social %}
+          {% include "partials/social.html" %}
+        {% endif %}
+      </div>
+    </div>
+  </footer>
+{% endblock %}

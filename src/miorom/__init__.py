@@ -3,8 +3,7 @@ MioROM: A Python library for ROM hacking and game reverse engineering.
 Designed as a modular building block for reverse engineering tools, unpackers, and custom ROM editors (similar to ndspy).
 """
 
-__version__ = "0.12.0"
-__version__ = "0.13.0"
+__version__ = "0.13.1"
 
 from miorom.errors import (
     MioromError,

@@ -1,0 +1,78 @@
+site_name: MioROM
+site_description: Modular Python framework & low-level primitive library for ROM hacking, game localization, and binary reverse engineering.
+site_author: MiokoTech
+site_url: https://miokotech.github.io/miorom/
+repo_url: https://github.com/MiokoTech/miorom
+repo_name: MiokoTech/miorom
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  language: en
+  font:
+    text: Space Grotesk
+    code: IBM Plex Mono
+  palette:
+    - scheme: slate
+      primary: slate
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: blue grey
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - navigation.footer
+
+extra_css:
+  - stylesheets/style.css
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Guides:
+      - Quickstart & Workflow: WORKFLOW_GUIDE.md
+      - Binary & Assembly Primitives: BINARY_PRIMITIVES.md
+      - Command Line Interface: CLI_REFERENCE.md
+      - Platform Specifications: PLATFORMS.md
+      - Adding Platforms (Plugins): PLUGIN_GUIDE.md
+  - Architecture:
+      - API Reference: API_REFERENCE.md
+      - Library Contracts: LIBRARY_CONTRACTS.md
+      - Security & Path Safety: SECURITY.md
+  - Releases:
+      - Changelog: CHANGELOG.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/MiokoTech/miorom
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/miorom/
+    - icon: fontawesome/brands/facebook
+      link: https://facebook.com/miokotech.2

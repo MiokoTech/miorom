@@ -46,12 +46,12 @@ class PatchWriter:
 
     def __init__(
         self,
-        buffer: bytearray,
+        buffer: Union[bytes, bytearray],
         base_address: int = 0,
         endian: str = "<",
         staged: bool = False,
     ):
-        self.buffer = buffer
+        self.buffer = bytearray(buffer) if not isinstance(buffer, bytearray) else buffer
         self.base_address = base_address
         self.default_endian = endian
         self._cursor: int = 0

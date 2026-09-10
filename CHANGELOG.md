@@ -2,6 +2,15 @@
 
 All notable changes to MioROM will be documented in this file.
 
+## [0.13.1] — 2026-09-10
+
+### Added
+- **Flexible Buffer Support in `PatchWriter` (`miorom.patch.patch_writer`)**:
+  - `PatchWriter.__init__` now accepts `Union[bytes, bytearray]`, automatically casting immutable `bytes` to a mutable `bytearray` when needed.
+- **Documentation Design with MkDocs Material**:
+  - Added documentations.
+
+
 ## [0.13.0] — 2026-09-10
 
 ### Added

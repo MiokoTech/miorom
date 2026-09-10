@@ -1,0 +1,848 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  --md-font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+  --md-code-font-family: 'IBM Plex Mono', 'Courier New', monospace;
+
+  --retro-amber: #f59e0b;
+  --retro-cyan: #06b6d4;
+  --retro-emerald: #10b981;
+  --retro-blue: #3b82f6;
+  --retro-pink: #ec4899;
+}
+
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: #f8fafc;
+  --md-default-fg-color: #0f172a;
+  --md-default-fg-color--light: #334155;
+  --md-default-fg-color--lighter: #64748b;
+  --md-primary-fg-color: #0f172a;
+  --md-accent-fg-color: #0284c7;
+
+  --md-code-bg-color: #0f172a;
+  --md-code-fg-color: #f1f5f9;
+
+  --md-footer-bg-color: #f1f5f9;
+  --md-footer-bg-color--dark: #e2e8f0;
+  --md-footer-fg-color: #334155;
+  --md-footer-fg-color--light: #64748b;
+  --md-footer-fg-color--lighter: #94a3b8;
+}
+
+[data-md-color-scheme="default"] .md-header {
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #e2e8f0;
+  color: #0f172a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+[data-md-color-scheme="default"] .md-header__title,
+[data-md-color-scheme="default"] .md-header__button {
+  color: #0f172a !important;
+}
+
+[data-md-color-scheme="default"] .retro-hero {
+  background: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+
+[data-md-color-scheme="default"] .retro-hero .title {
+  color: #0f172a !important;
+}
+
+[data-md-color-scheme="default"] .retro-hero .subtitle {
+  color: #0284c7 !important;
+}
+
+[data-md-color-scheme="default"] .retro-hero .stats {
+  border-top-color: #cbd5e1;
+  color: #475569;
+}
+
+[data-md-color-scheme="default"] .retro-hero .stats span strong {
+  color: #0f172a;
+}
+
+/* Inline code in Light Mode */
+[data-md-color-scheme="default"] .md-typeset :not(pre) > code {
+  background-color: #e2e8f0 !important;
+  color: #0369a1 !important;
+  border: 1px solid #cbd5e1;
+  font-size: 0.82em !important;
+  font-weight: 600;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #0c1017;
+  --md-default-fg-color: #f1f5f9;
+  --md-default-fg-color--light: #cbd5e1;
+  --md-default-fg-color--lighter: #94a3b8;
+  --md-primary-fg-color: #0c1017;
+  --md-accent-fg-color: #38bdf8;
+
+  --md-code-bg-color: #0f172a;
+  --md-code-fg-color: #f8fafc;
+
+  /* Footer Colors in Dark Mode */
+  --md-footer-bg-color: #080c12;
+  --md-footer-bg-color--dark: #05080c;
+  --md-footer-fg-color: #94a3b8;
+  --md-footer-fg-color--light: #64748b;
+  --md-footer-fg-color--lighter: #475569;
+}
+
+[data-md-color-scheme="slate"] .md-header {
+  background-color: rgba(12, 16, 23, 0.95) !important;
+  border-bottom: 1px solid #1e293b;
+  backdrop-filter: blur(8px);
+}
+
+/* Inline code in Dark Mode */
+[data-md-color-scheme="slate"] .md-typeset :not(pre) > code {
+  background-color: #1e293b !important;
+  color: #38bdf8 !important;
+  border: 1px solid #334155;
+  font-size: 0.82em !important;
+  font-weight: 600;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+
+/* --------------------------------------------------------------------------
+   3. Syntax Highlighting & Code Blocks
+   -------------------------------------------------------------------------- */
+.highlight {
+  position: relative;
+  margin: 1.25em 0;
+  border-radius: 8px;
+}
+
+.highlight span.filename {
+  font-family: 'IBM Plex Mono', monospace !important;
+  font-size: 0.74rem !important;
+  font-weight: 600 !important;
+  padding: 7px 14px !important;
+  background: #111827 !important;
+  color: #94a3b8 !important;
+  border: 1px solid #1e293b !important;
+  border-bottom: none !important;
+  border-top-left-radius: 8px !important;
+  border-top-right-radius: 8px !important;
+  display: flex !important;
+  align-items: center !important;
+  letter-spacing: 0.02em;
+}
+
+[data-md-color-scheme="default"] .highlight span.filename {
+  background: #e2e8f0 !important;
+  color: #334155 !important;
+  border-color: #cbd5e1 !important;
+}
+
+.md-typeset pre > code {
+  font-family: 'IBM Plex Mono', monospace !important;
+  font-size: 0.78rem !important;
+  line-height: 1.55 !important;
+  color: #f8fafc !important;
+  background-color: #0c121c !important;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  padding: 14px 16px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  letter-spacing: -0.005em;
+}
+
+.highlight span.filename + pre > code {
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
+
+[data-md-color-scheme="default"] .md-typeset pre > code {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  border-color: #cbd5e1;
+}
+
+.highlight .k, .highlight .kd, .highlight .kn, .highlight .kr { color: #f472b6 !important; font-weight: 600; }
+.highlight .s, .highlight .s1, .highlight .s2, .highlight .se { color: #34d399 !important; }
+.highlight .m, .highlight .mi, .highlight .mh, .highlight .mf { color: #fbbf24 !important; font-weight: 500; }
+.highlight .nf, .highlight .fm { color: #60a5fa !important; font-weight: 600; }
+.highlight .nc, .highlight .nn { color: #a78bfa !important; font-weight: 600; }
+.highlight .c, .highlight .c1, .highlight .cm { color: #94a3b8 !important; font-style: italic; }
+.highlight .o, .highlight .ow { color: #38bdf8 !important; }
+.highlight .nb, .highlight .bp { color: #22d3ee !important; }
+
+/* --------------------------------------------------------------------------
+   4. Sleek Modern Copy Button (Material 9.x + Legacy)
+   -------------------------------------------------------------------------- */
+:root {
+  /* Minimal double-sheet copy icon (Lucide style) */
+  --md-code-copy-icon: url('data:image/svg+xml;charset=utf-8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"%3E%3Crect width="13" height="13" x="9" y="9" rx="2" ry="2"/%3E%3Cpath d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/%3E%3C/svg%3E');
+  --md-clipboard-icon: url('data:image/svg+xml;charset=utf-8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"%3E%3Crect width="13" height="13" x="9" y="9" rx="2" ry="2"/%3E%3Cpath d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/%3E%3C/svg%3E');
+
+  /* Crisp checkmark icon when copied */
+  --md-code-copied-icon: url('data:image/svg+xml;charset=utf-8,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"%3E%3Cpolyline points="20 6 9 17 4 12"/%3E%3C/svg%3E');
+}
+
+/* Nav container for code action buttons */
+.md-code__nav {
+  position: absolute !important;
+  top: 8px !important;
+  right: 8px !important;
+  display: flex !important;
+  gap: 4px !important;
+  padding: 0 !important;
+  background-color: transparent !important;
+  border-radius: 6px !important;
+  z-index: 2 !important;
+  opacity: 0 !important;
+  transform: translateY(2px) !important;
+  transition: opacity 0.18s ease, transform 0.18s ease !important;
+}
+
+/* Fallback for .md-clipboard if rendered directly */
+.md-clipboard {
+  position: absolute !important;
+  top: 8px !important;
+  right: 8px !important;
+  opacity: 0 !important;
+  transform: translateY(2px) !important;
+  transition: opacity 0.18s ease, transform 0.18s ease !important;
+}
+
+/* Show on code block hover or focus */
+.highlight:hover .md-code__nav,
+.highlight:focus-within .md-code__nav,
+.highlight:hover .md-clipboard,
+.highlight:focus-within .md-clipboard {
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+}
+
+/* Always visible on touch screens */
+@media (hover: none) {
+  .md-code__nav,
+  .md-clipboard {
+    opacity: 0.85 !important;
+    transform: translateY(0) !important;
+  }
+}
+
+/* When filename bar is present, position nicely inside header */
+.highlight span.filename ~ .md-code__nav,
+.highlight:has(span.filename) .md-code__nav,
+.highlight span.filename ~ .md-clipboard,
+.highlight:has(span.filename) .md-clipboard {
+  top: 4px !important;
+  right: 8px !important;
+}
+
+/* Button style */
+.md-code__button,
+.md-clipboard {
+  width: 28px !important;
+  height: 28px !important;
+  border-radius: 6px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer;
+  outline: none !important;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* The icon mask */
+.md-code__button[data-md-type="copy"]:after,
+.md-clipboard:after {
+  content: "" !important;
+  display: block !important;
+  width: 14px !important;
+  height: 14px !important;
+  margin: auto !important;
+  background-color: currentcolor !important;
+  -webkit-mask-image: var(--md-code-copy-icon) !important;
+  mask-image: var(--md-code-copy-icon) !important;
+  -webkit-mask-position: center !important;
+  mask-position: center !important;
+  -webkit-mask-repeat: no-repeat !important;
+  mask-repeat: no-repeat !important;
+  -webkit-mask-size: contain !important;
+  mask-size: contain !important;
+  transition: transform 0.15s ease !important;
+}
+
+/* When copied: replace mask image with checkmark! */
+.md-code__button--active:after,
+.md-clipboard--copied:after {
+  -webkit-mask-image: var(--md-code-copied-icon) !important;
+  mask-image: var(--md-code-copied-icon) !important;
+  transform: scale(1.1) !important;
+}
+
+/* Dark Mode Button */
+[data-md-color-scheme="slate"] .md-code__button,
+[data-md-color-scheme="slate"] .md-clipboard,
+.md-code__button,
+.md-clipboard {
+  background: rgba(15, 23, 42, 0.75) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #94a3b8 !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+[data-md-color-scheme="slate"] .md-code__button:hover,
+[data-md-color-scheme="slate"] .md-clipboard:hover,
+.md-code__button:hover,
+.md-clipboard:hover {
+  background: #1e293b !important;
+  border-color: #38bdf8 !important;
+  color: #38bdf8 !important;
+  box-shadow: 0 2px 10px rgba(56, 189, 248, 0.28) !important;
+  transform: translateY(-1px) !important;
+}
+
+[data-md-color-scheme="slate"] .md-code__button:active,
+[data-md-color-scheme="slate"] .md-clipboard:active,
+.md-code__button:active,
+.md-clipboard:active {
+  transform: scale(0.92) !important;
+}
+
+/* Active / Copied State */
+[data-md-color-scheme="slate"] .md-code__button--active,
+[data-md-color-scheme="slate"] .md-clipboard--copied,
+.md-code__button--active,
+.md-clipboard--copied {
+  opacity: 1 !important;
+  background: rgba(16, 185, 129, 0.18) !important;
+  border-color: #10b981 !important;
+  color: #34d399 !important;
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.35) !important;
+}
+
+/* Light Mode Button */
+[data-md-color-scheme="default"] .md-code__button,
+[data-md-color-scheme="default"] .md-clipboard {
+  background: rgba(255, 255, 255, 0.85) !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+  color: #64748b !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
+}
+
+[data-md-color-scheme="default"] .md-code__button:hover,
+[data-md-color-scheme="default"] .md-clipboard:hover {
+  background: #ffffff !important;
+  border-color: #0284c7 !important;
+  color: #0284c7 !important;
+  box-shadow: 0 2px 10px rgba(2, 132, 199, 0.22) !important;
+  transform: translateY(-1px) !important;
+}
+
+[data-md-color-scheme="default"] .md-code__button:active,
+[data-md-color-scheme="default"] .md-clipboard:active {
+  transform: scale(0.92) !important;
+}
+
+[data-md-color-scheme="default"] .md-code__button--active,
+[data-md-color-scheme="default"] .md-clipboard--copied {
+  opacity: 1 !important;
+  background: rgba(16, 185, 129, 0.12) !important;
+  border-color: #059669 !important;
+  color: #059669 !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.25) !important;
+}
+
+/* --------------------------------------------------------------------------
+   5. Modern Document Page Navigation (Cards Above Footer)
+   -------------------------------------------------------------------------- */
+.mio-page-nav {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 3.5rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid #1e293b;
+}
+
+[data-md-color-scheme="default"] .mio-page-nav {
+  border-top-color: #e2e8f0;
+}
+
+.mio-page-nav__link--prev {
+  grid-column: 1;
+}
+
+.mio-page-nav__link--next {
+  grid-column: 2;
+}
+
+.mio-page-nav__link {
+  display: flex !important;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px !important;
+  border-radius: 8px;
+  text-decoration: none !important;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Dark Mode Card */
+[data-md-color-scheme="slate"] .mio-page-nav__link {
+  background: #0b1017;
+  border: 1px solid #1e293b;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+[data-md-color-scheme="slate"] .mio-page-nav__link:hover {
+  background: #111824 !important;
+  border-color: #06b6d4 !important;
+  box-shadow: 0 6px 20px rgba(6, 182, 212, 0.16);
+  transform: translateY(-2px);
+}
+
+/* Light Mode Card */
+[data-md-color-scheme="default"] .mio-page-nav__link {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+[data-md-color-scheme="default"] .mio-page-nav__link:hover {
+  background: #f8fafc !important;
+  border-color: #0284c7 !important;
+  box-shadow: 0 6px 18px rgba(2, 132, 199, 0.12);
+  transform: translateY(-2px);
+}
+
+/* Icon Badge */
+.mio-page-nav__icon {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.mio-page-nav__icon svg {
+  transition: transform 0.2s ease;
+}
+
+[data-md-color-scheme="slate"] .mio-page-nav__icon {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid #334155;
+  color: #94a3b8;
+}
+
+[data-md-color-scheme="slate"] .mio-page-nav__link:hover .mio-page-nav__icon {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: #06b6d4;
+  color: #38bdf8;
+}
+
+[data-md-color-scheme="default"] .mio-page-nav__icon {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #64748b;
+}
+
+[data-md-color-scheme="default"] .mio-page-nav__link:hover .mio-page-nav__icon {
+  background: rgba(2, 132, 199, 0.1);
+  border-color: #0284c7;
+  color: #0284c7;
+}
+
+.mio-page-nav__link--prev:hover .mio-page-nav__icon svg {
+  transform: translateX(-3px);
+}
+
+.mio-page-nav__link--next:hover .mio-page-nav__icon svg {
+  transform: translateX(3px);
+}
+
+/* Text Container */
+.mio-page-nav__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mio-page-nav__link--next .mio-page-nav__text {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.mio-page-nav__link--prev .mio-page-nav__text {
+  align-items: flex-start;
+  text-align: left;
+}
+
+/* Direction label (Previous / Next) */
+.mio-page-nav__dir {
+  font-family: 'IBM Plex Mono', monospace !important;
+  font-size: 0.70rem !important;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #64748b;
+  transition: color 0.18s ease;
+}
+
+[data-md-color-scheme="default"] .mio-page-nav__dir {
+  color: #94a3b8;
+}
+
+[data-md-color-scheme="slate"] .mio-page-nav__link:hover .mio-page-nav__dir {
+  color: #38bdf8;
+}
+
+[data-md-color-scheme="default"] .mio-page-nav__link:hover .mio-page-nav__dir {
+  color: #0284c7;
+}
+
+/* Document Title */
+.mio-page-nav__title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.94rem !important;
+  font-weight: 600;
+  line-height: 1.35;
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  color: #f1f5f9;
+}
+
+[data-md-color-scheme="default"] .mio-page-nav__title {
+  color: #0f172a;
+}
+
+/* Responsive on Mobile */
+@media screen and (max-width: 640px) {
+  .mio-page-nav {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-top: 2.5rem;
+  }
+  .mio-page-nav__link--next {
+    grid-column: 1;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Clean Minimal Footer (Copyright & Social Only)
+   -------------------------------------------------------------------------- */
+.md-footer {
+  border-top: 1px solid #1e293b;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+/* Dark Mode Footer */
+[data-md-color-scheme="slate"] .md-footer {
+  background-color: #080c12 !important;
+  border-top-color: #1e293b !important;
+  color: #94a3b8 !important;
+}
+
+[data-md-color-scheme="slate"] .md-footer-meta {
+  background-color: transparent !important;
+  color: #94a3b8 !important;
+}
+
+[data-md-color-scheme="slate"] .md-copyright {
+  color: #64748b !important;
+}
+
+[data-md-color-scheme="slate"] .md-copyright a {
+  color: #38bdf8 !important;
+}
+
+[data-md-color-scheme="slate"] .md-social__link {
+  color: #94a3b8 !important;
+}
+
+[data-md-color-scheme="slate"] .md-social__link:hover {
+  color: #38bdf8 !important;
+}
+
+/* Light Mode Footer (Crisp, High Contrast) */
+[data-md-color-scheme="default"] .md-footer {
+  background-color: #f1f5f9 !important;
+  border-top-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+[data-md-color-scheme="default"] .md-footer-meta {
+  background-color: transparent !important;
+  color: #334155 !important;
+}
+
+[data-md-color-scheme="default"] .md-copyright {
+  color: #475569 !important;
+  font-weight: 500;
+}
+
+[data-md-color-scheme="default"] .md-copyright a {
+  color: #0284c7 !important;
+  font-weight: 600;
+}
+
+[data-md-color-scheme="default"] .md-social__link {
+  color: #64748b !important;
+}
+
+[data-md-color-scheme="default"] .md-social__link:hover {
+  color: #0284c7 !important;
+}
+
+.md-footer-meta__inner {
+  padding: 18px 0 !important;
+}
+
+/* --------------------------------------------------------------------------
+   6. Clean Mobile Sidebar Drawer UX
+   -------------------------------------------------------------------------- */
+@media screen and (max-width: 76.234375em) {
+  /* Let Material handle width, left (-12.1rem), and translation naturally */
+  .md-sidebar--primary {
+    border-right: 1px solid #1e293b;
+  }
+
+  [data-md-color-scheme="default"] .md-sidebar--primary {
+    border-right: 1px solid #cbd5e1;
+  }
+
+  /* Drawer Header */
+  .md-sidebar--primary .md-nav--primary > .md-nav__title,
+  .md-sidebar--primary .md-nav--primary > .md-nav__title[for="__drawer"] {
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px !important;
+    height: auto !important;
+    min-height: 56px !important;
+    line-height: 1.2 !important;
+    padding: 14px 16px !important;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #38bdf8 !important;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid #1e293b;
+    background-color: transparent !important;
+    white-space: normal;
+  }
+
+  [data-md-color-scheme="default"] .md-sidebar--primary .md-nav--primary > .md-nav__title,
+  [data-md-color-scheme="default"] .md-sidebar--primary .md-nav--primary > .md-nav__title[for="__drawer"] {
+    color: #0284c7 !important;
+    border-bottom-color: #e2e8f0;
+    background-color: transparent !important;
+  }
+
+  /* Reset absolutely positioned logo inside drawer title so it sits side-by-side */
+  .md-sidebar--primary .md-nav--primary > .md-nav__title .md-logo {
+    position: static !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 26px !important;
+    height: 26px !important;
+    flex-shrink: 0 !important;
+    color: inherit !important;
+  }
+
+  .md-sidebar--primary .md-nav--primary > .md-nav__title .md-logo svg,
+  .md-sidebar--primary .md-nav--primary > .md-nav__title .md-logo img {
+    width: 24px !important;
+    height: 24px !important;
+    display: block !important;
+    fill: currentcolor;
+  }
+
+  /* Touch-friendly navigation links */
+  .md-sidebar--primary .md-nav__link {
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    padding: 8px 14px !important;
+    font-size: 0.86rem;
+    font-weight: 500;
+    border-radius: 4px;
+    margin: 2px 6px;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  .md-sidebar--primary .md-nav__link--active {
+    font-weight: 700;
+    color: #38bdf8 !important;
+    background: rgba(56, 189, 248, 0.1) !important;
+    border-left: 3px solid #06b6d4;
+    padding-left: 11px !important;
+  }
+
+  [data-md-color-scheme="default"] .md-sidebar--primary .md-nav__link--active {
+    color: #0369a1 !important;
+    background: #e0f2fe !important;
+    border-left-color: #0284c7;
+  }
+
+  .md-sidebar--primary .md-nav--primary .md-nav {
+    position: static !important;
+    height: auto !important;
+    transform: none !important;
+    background-color: transparent !important;
+    z-index: auto !important;
+    display: grid !important;
+    grid-template-rows: 0fr !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    overflow: hidden !important;
+    transition: grid-template-rows 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.2s ease,
+                visibility 0s 0.28s !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* 2. When parent section is clicked/toggled, expand downwards smoothly */
+  .md-sidebar--primary .md-nav--primary .md-nav__toggle:checked ~ .md-nav,
+  .md-sidebar--primary .md-nav--primary .md-toggle--indeterminate ~ .md-nav {
+    grid-template-rows: 1fr !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    transition: grid-template-rows 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.2s ease,
+                visibility 0s !important;
+  }
+
+  /* 3. Dropdown sub-items container (indented with subtle guideline) */
+  .md-sidebar--primary .md-nav--primary .md-nav > .md-nav__list {
+    min-height: 0 !important;
+    overflow: hidden !important;
+    padding-left: 0.5rem !important;
+    margin: 4px 6px 6px 14px !important;
+    border-left: 1.5px solid #1e293b !important;
+  }
+
+  [data-md-color-scheme="default"] .md-sidebar--primary .md-nav--primary .md-nav > .md-nav__list {
+    border-left-color: #cbd5e1 !important;
+  }
+
+  /* 4. Hide the sliding sub-page back-button header */
+  .md-sidebar--primary .md-nav--primary .md-nav > .md-nav__title {
+    display: none !important;
+  }
+
+  /* 5. Rotate the chevron arrow downwards when accordion is open */
+  .md-sidebar--primary .md-nav__item--nested > .md-nav__link .md-nav__icon {
+    margin-left: auto;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+
+  .md-sidebar--primary .md-nav__item--nested > .md-nav__toggle:checked ~ .md-nav__link .md-nav__icon,
+  .md-sidebar--primary .md-nav__item--nested > .md-nav__toggle:checked ~ .md-nav__link .md-nav__icon:after,
+  .md-sidebar--primary .md-nav__item--nested > .md-toggle--indeterminate ~ .md-nav__link .md-nav__icon,
+  .md-sidebar--primary .md-nav__item--nested > .md-toggle--indeterminate ~ .md-nav__link .md-nav__icon:after {
+    transform: rotate(90deg) !important;
+  }
+
+  /* 6. Sub-item link appearance inside the dropdown */
+  .md-sidebar--primary .md-nav--primary .md-nav .md-nav__link {
+    min-height: 36px !important;
+    padding: 6px 12px !important;
+    font-size: 0.82rem !important;
+    margin: 1px 2px !important;
+    color: #94a3b8;
+  }
+
+  [data-md-color-scheme="default"] .md-sidebar--primary .md-nav--primary .md-nav .md-nav__link {
+    color: #475569;
+  }
+
+  .md-sidebar--primary .md-nav--primary .md-nav .md-nav__link:hover {
+    color: #38bdf8 !important;
+    background: rgba(56, 189, 248, 0.08) !important;
+  }
+
+  [data-md-color-scheme="default"] .md-sidebar--primary .md-nav--primary .md-nav .md-nav__link:hover {
+    color: #0284c7 !important;
+    background: #f1f5f9 !important;
+  }
+
+  .md-content__inner {
+    padding: 16px 14px 32px 14px !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   7. Hardware Chip Badges & Hero
+   -------------------------------------------------------------------------- */
+.chip-badge {
+  display: inline-block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  margin: 2px;
+  border-radius: 4px;
+  border: 1px solid #334155;
+  letter-spacing: 0.04em;
+}
+
+.chip-badge.n64   { border-color: #ef4444; color: #dc2626; background: rgba(239, 68, 68, 0.08); }
+.chip-badge.nds   { border-color: #3b82f6; color: #2563eb; background: rgba(59, 130, 246, 0.08); }
+.chip-badge.wii   { border-color: #06b6d4; color: #0891b2; background: rgba(6, 182, 212, 0.08); }
+.chip-badge.gba   { border-color: #8b5cf6; color: #7c3aed; background: rgba(139, 92, 246, 0.08); }
+.chip-badge.ps1   { border-color: #10b981; color: #059669; background: rgba(16, 185, 129, 0.08); }
+.chip-badge.snes  { border-color: #f59e0b; color: #d97706; background: rgba(245, 158, 11, 0.08); }
+
+[data-md-color-scheme="slate"] .chip-badge.n64  { color: #fca5a5; background: rgba(239, 68, 68, 0.15); }
+[data-md-color-scheme="slate"] .chip-badge.nds  { color: #93c5fd; background: rgba(59, 130, 246, 0.15); }
+[data-md-color-scheme="slate"] .chip-badge.wii  { color: #67e8f9; background: rgba(6, 182, 212, 0.15); }
+[data-md-color-scheme="slate"] .chip-badge.gba  { color: #c4b5fd; background: rgba(139, 92, 246, 0.15); }
+[data-md-color-scheme="slate"] .chip-badge.ps1  { color: #6ee7b7; background: rgba(16, 185, 129, 0.15); }
+[data-md-color-scheme="slate"] .chip-badge.snes { color: #fde68a; background: rgba(245, 158, 11, 0.15); }
+
+.retro-hero {
+  border-radius: 8px;
+  padding: 24px;
+  margin: 18px 0 24px 0;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+[data-md-color-scheme="slate"] .retro-hero {
+  border: 1px solid #1e293b;
+  background: linear-gradient(180deg, #111827 0%, #0c1017 100%);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.retro-hero .title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+}
+
+.retro-hero .subtitle {
+  font-size: 0.92rem;
+  margin-bottom: 14px;
+}
+
+.retro-hero .stats {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+  margin-top: 14px;
+  font-size: 0.8rem;
+}
