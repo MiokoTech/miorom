@@ -14,7 +14,7 @@ Designed with a **library-first philosophy** (analogous to `ndspy` and `pwntools
 
 ## Documentation
 
-Full online documentation is deployed and accessible at **[miokotech.github.io/miorom](https://miokotech.github.io/miorom/)**.
+Full online documentation is deployed and accessible at **[Read more here](https://miokotech.github.io/miorom/)**.
 
 - [API Reference and Architecture Guide](https://miokotech.github.io/miorom/API_REFERENCE/) - Comprehensive index of all subpackages and 60+ core classes.
 - [Binary and Assembly Primitives Guide](https://miokotech.github.io/miorom/BINARY_PRIMITIVES/) - Technical guide for low-level patching, micro-assembly, struct serialization, and symbol mapping.
