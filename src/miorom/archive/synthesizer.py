@@ -63,14 +63,14 @@ class ArchiveSynthesizer:
         if total_len < 16:
             raise ParseError(f"Data size {total_len} is too small to be a container archive.")
 
-        # 1. Detect magic (first 4 bytes)
+        # Detect file magic
         magic = data[:4]
         try:
             magic_ascii = magic.decode("ascii").strip("\x00")
         except Exception:
             magic_ascii = magic.hex()
 
-        # 2. Test endianness and file count at candidate header offsets (4, 8, 12, 16)
+        # Evaluate header candidate offsets
         best_endian = None
         best_count = 0
         best_toc_off = 0
@@ -90,7 +90,7 @@ class ArchiveSynthesizer:
                 for toc_off in (count_off + 4, 16, 32, 64, 128, 256):
                     if toc_off >= total_len:
                         continue
-                    # Test strides (8: offset, size; 12: offset, size, id; 16: offset, size, hash, flags)
+                    # Test candidate strides (8, 12, 16)
                     for stride in (8, 12, 16):
                         toc_len = cand_count * stride
                         if toc_off + toc_len > total_len:
@@ -118,7 +118,7 @@ class ArchiveSynthesizer:
         if not best_entries:
             raise RuntimeError("Could not heuristically identify container TOC structure in binary.")
 
-        # 3. Extract entries and classify types
+        # Extract entries
         extracted: List[SynthesizedEntry] = []
         for idx, (off, sz) in enumerate(best_entries):
             sub_data = data[off : off + sz]
@@ -135,7 +135,7 @@ class ArchiveSynthesizer:
                 )
             )
 
-        # 4. Generate Python class code
+        # Generate parser class
         py_code = cls._generate_python_class(
             magic=magic,
             endian=best_endian or "<",

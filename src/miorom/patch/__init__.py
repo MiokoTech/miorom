@@ -3,6 +3,8 @@ from miorom.errors import PatchError
 from typing import Optional
 from miorom.patch.ips import IpsPatcher
 from miorom.patch.bps import BpsPatcher
+from miorom.patch.ups import UpsPatcher
+from miorom.patch.ppf import PPFPatcher
 from miorom.patch.hunks import PatchHunk, filter_hunks, merge_patches
 from miorom.patch.xdelta import XdeltaPatcher
 from miorom.patch.slack import SlackSpaceManager, SlackBlock, FarMemoryHeap
@@ -29,10 +31,23 @@ from miorom.patch.pointer_remapper import (
     MultiPointerRemapper,
 )
 from miorom.patch.patch_writer import PatchWriter, PatchRecord
+from miorom.patch.cheats import (
+    CheatCode,
+    NesGameGenie,
+    SnesGameGenie,
+    GenesisGameGenie,
+    GameBoyGameGenie,
+    GameShark,
+    parse_cheat_code,
+    hard_patch_rom,
+)
+
 
 __all__ = [
     "IpsPatcher",
     "BpsPatcher",
+    "UpsPatcher",
+    "PPFPatcher",
     "PatchHunk",
     "filter_hunks",
     "merge_patches",
@@ -55,6 +70,14 @@ __all__ = [
     "MultiPointerRemapper",
     "PatchWriter",
     "PatchRecord",
+    "CheatCode",
+    "NesGameGenie",
+    "SnesGameGenie",
+    "GenesisGameGenie",
+    "GameBoyGameGenie",
+    "GameShark",
+    "parse_cheat_code",
+    "hard_patch_rom",
     "create_patch",
     "apply_patch",
 ]
@@ -66,6 +89,10 @@ def detect_format_from_filename(filename: str) -> str:
         return "ips"
     elif ext in [".bps"]:
         return "bps"
+    elif ext in [".ups"]:
+        return "ups"
+    elif ext in [".ppf"]:
+        return "ppf"
     elif ext in [".xdelta", ".xdelta3", ".vcdiff"]:
         return "xdelta"
     return "bps"  # default modern
@@ -79,7 +106,7 @@ def create_patch(
 ):
     """
     Create a patch from source_path to target_path.
-    Auto-detects format from patch_path extension (.ips, .bps, .xdelta) if fmt is None.
+    Auto-detects format from patch_path extension (.ips, .bps, .ups, .ppf, .xdelta) if fmt is None.
     """
     format_type = fmt.lower() if fmt else detect_format_from_filename(patch_path)
 
@@ -87,10 +114,14 @@ def create_patch(
         IpsPatcher.create_file(source_path, target_path, patch_path)
     elif format_type == "bps":
         BpsPatcher.create_file(source_path, target_path, patch_path)
+    elif format_type == "ups":
+        UpsPatcher.create_file(source_path, target_path, patch_path)
+    elif format_type == "ppf":
+        PPFPatcher.create_file(source_path, target_path, patch_path)
     elif format_type == "xdelta":
         XdeltaPatcher.create_patch(source_path, target_path, patch_path)
     else:
-        raise PatchError(f"Unsupported patch format: '{format_type}'. Choose 'ips', 'bps', or 'xdelta'.")
+        raise PatchError(f"Unsupported patch format: '{format_type}'. Choose 'ips', 'bps', 'ups', 'ppf', or 'xdelta'.")
 
 
 def apply_patch(
@@ -101,7 +132,7 @@ def apply_patch(
 ):
     """
     Apply a patch to source_path and write output to output_path.
-    Auto-detects format from patch_path extension (.ips, .bps, .xdelta) or magic bytes if fmt is None.
+    Auto-detects format from patch_path extension (.ips, .bps, .ups, .ppf, .xdelta) or magic bytes if fmt is None.
     """
     format_type = fmt.lower() if fmt else None
     if not format_type:
@@ -112,6 +143,10 @@ def apply_patch(
             format_type = "ips"
         elif header.startswith(b"BPS1"):
             format_type = "bps"
+        elif header.startswith(b"UPS1"):
+            format_type = "ups"
+        elif header in (b"PPF10", b"PPF20", b"PPF30"):
+            format_type = "ppf"
         else:
             format_type = detect_format_from_filename(patch_path)
 
@@ -119,6 +154,10 @@ def apply_patch(
         IpsPatcher.apply_file(source_path, patch_path, output_path)
     elif format_type == "bps":
         BpsPatcher.apply_file(source_path, patch_path, output_path)
+    elif format_type == "ups":
+        UpsPatcher.apply_file(source_path, patch_path, output_path)
+    elif format_type == "ppf":
+        PPFPatcher.apply_file(source_path, patch_path, output_path)
     elif format_type == "xdelta":
         XdeltaPatcher.apply_patch(source_path, patch_path, output_path)
     else:

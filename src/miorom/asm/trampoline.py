@@ -1,6 +1,7 @@
-from miorom.result import MioRomResult
+import struct
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union
+from miorom.result import MioRomResult
 from miorom.asm.branch import ARMBranch, ThumbBranch, PowerPCBranch, MIPSBranch
 from miorom.asm.codecave import CodeCaveFinder
 
@@ -161,6 +162,72 @@ class TrampolineHook:
         return hook_bytes, bytes(cave_bytes)
 
     @classmethod
+    def create_6502_hook(
+        cls,
+        hook_ram_addr: int,
+        original_instr_bytes: bytes,
+        custom_payload_bytes: bytes,
+        cave_ram_addr: int,
+    ) -> Tuple[bytes, bytes]:
+        """
+        Creates an 8-bit MOS 6502 function hook (NES).
+        Requires at least 3 bytes at hook site for JMP $xxxx (0x4C).
+        Returns (hook_bytes, cave_bytes).
+        """
+        if len(original_instr_bytes) < 3:
+            raise RelocationError("MOS 6502 hook site must be at least 3 bytes for JMP instruction.")
+
+        hook_bytes = b"\x4C" + struct.pack("<H", cave_ram_addr & 0xFFFF)
+        if len(original_instr_bytes) > 3:
+            hook_bytes += b"\xEA" * (len(original_instr_bytes) - 3)
+
+        cave_bytes = bytearray(custom_payload_bytes)
+        cave_bytes.extend(original_instr_bytes)
+
+        return_target = (hook_ram_addr + len(original_instr_bytes)) & 0xFFFF
+        cave_bytes.append(0x4C)
+        cave_bytes.extend(struct.pack("<H", return_target))
+
+        return hook_bytes, bytes(cave_bytes)
+
+    @classmethod
+    def create_snes_hook(
+        cls,
+        hook_ram_addr: int,
+        original_instr_bytes: bytes,
+        custom_payload_bytes: bytes,
+        cave_ram_addr: int,
+        mode: str = "jml",
+    ) -> Tuple[bytes, bytes]:
+        """
+        Creates a 16-bit W65C816 function hook (SNES).
+        Requires at least 4 bytes at hook site for JML (0x5C) or JSL (0x22).
+        Returns (hook_bytes, cave_bytes).
+        """
+        if len(original_instr_bytes) < 4:
+            raise RelocationError("SNES (W65C816) hook site must be at least 4 bytes for JML/JSL instruction.")
+
+        mode_norm = mode.lower()
+        opcode = 0x22 if mode_norm == "jsl" else 0x5C
+
+        target_24 = struct.pack("<I", cave_ram_addr & 0xFFFFFF)[:3]
+        hook_bytes = bytes([opcode]) + target_24
+        if len(original_instr_bytes) > 4:
+            hook_bytes += b"\xEA" * (len(original_instr_bytes) - 4)
+
+        cave_bytes = bytearray(custom_payload_bytes)
+        cave_bytes.extend(original_instr_bytes)
+
+        if mode_norm == "jsl":
+            cave_bytes.append(0x6B)  # RTL
+        else:
+            return_target = (hook_ram_addr + len(original_instr_bytes)) & 0xFFFFFF
+            cave_bytes.append(0x5C)  # JML
+            cave_bytes.extend(struct.pack("<I", return_target)[:3])
+
+        return hook_bytes, bytes(cave_bytes)
+
+    @classmethod
     def create_hook(
         cls,
         arch: str,
@@ -172,7 +239,7 @@ class TrampolineHook:
     ) -> Tuple[bytes, bytes]:
         """
         Unified hook constructor.
-        Supported arch values: 'ppc', 'powerpc', 'arm', 'thumb', 'mips', 'mips_le', 'mips_be', 'psx', 'n64', 'psp'.
+        Supported arch values: 'ppc', 'arm', 'thumb', 'mips', '6502', 'snes', etc.
         """
         arch_norm = arch.lower()
         if arch_norm in ("ppc", "powerpc", "wii", "gc", "gamecube"):
@@ -187,8 +254,12 @@ class TrampolineHook:
         elif arch_norm in ("mips_be", "n64"):
             end = endian or ">"
             return cls.create_mips_hook(hook_ram_addr, original_instr_bytes, custom_payload_bytes, cave_ram_addr, endian=end)
+        elif arch_norm in ("6502", "nes"):
+            return cls.create_6502_hook(hook_ram_addr, original_instr_bytes, custom_payload_bytes, cave_ram_addr)
+        elif arch_norm in ("snes", "65816", "w65c816"):
+            return cls.create_snes_hook(hook_ram_addr, original_instr_bytes, custom_payload_bytes, cave_ram_addr)
         else:
-            raise UnsupportedFormatError(f"Unsupported architecture: '{arch}'. Supported: 'ppc', 'arm', 'thumb', 'mips_le', 'mips_be'.")
+            raise UnsupportedFormatError(f"Unsupported architecture: '{arch}'.")
 
     @classmethod
     def auto_hook(
@@ -209,9 +280,17 @@ class TrampolineHook:
         patches the buffer in-place, and returns (patched_buffer, hook_record).
         """
         buf = bytearray(data)
-        min_hook_size = 8 if "mips" in arch.lower() or arch.lower() in ("psx", "n64", "psp") else 4
+        arch_l = arch.lower()
+        if "mips" in arch_l or arch_l in ("psx", "n64", "psp"):
+            min_hook_size = 8
+        elif arch_l in ("6502", "nes"):
+            min_hook_size = 3
+        elif arch_l in ("thumb", "arm_thumb", "gba_thumb"):
+            min_hook_size = 2
+        else:
+            min_hook_size = 4
 
-        # Estimate required cave size: payload + orig + return branch (+ delay slot if mips)
+        # Estimate required cave size
         est_cave_size = len(custom_payload_bytes) + len(original_instr_bytes) + 8
 
         if cave_file_offset is None:

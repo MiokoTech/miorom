@@ -107,8 +107,7 @@ class BRFNTFont:
         endian = self.endian
         if len(data) < 20:
             return
-        # FINF header: magic (4), size (4), font_type (1), line_feed (1),
-        # alter_char_index (2), default_width (CharWidth: 3 bytes), encoding (1)
+        # FINF header
         font_type = data[8]
         self.line_height = data[9]
         self.default_width = data[12] if len(data) > 12 else 8
@@ -120,7 +119,7 @@ class BRFNTFont:
         endian = self.endian
         if len(data) < 16:
             return
-        # Magic (4), Size (4), First Glyph (2), Last Glyph (2), Next Section (4)
+        # TGLP/WND section header
         width_header = BRFNTWidthHeaderStruct.from_bytes(data, endian=endian)
         first_glyph, last_glyph = width_header.first_glyph, width_header.last_glyph
         pos = 16
@@ -136,7 +135,7 @@ class BRFNTFont:
         endian = self.endian
         if len(data) < 20:
             return
-        # Magic (4), Size (4), First Char (2), Last Char (2), Map Type (2), Reserved (2), Next Section (4)
+        # CMAP section header
         charmap_header = BRFNTCharMapHeaderStruct.from_bytes(data, endian=endian)
         first_char = charmap_header.first_char
         last_char = charmap_header.last_char

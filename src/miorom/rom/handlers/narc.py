@@ -1,5 +1,6 @@
 import os
 from miorom.errors import ParseError
+from miorom.security import sanitize_extract_path
 from typing import Dict, Any, Optional
 
 from miorom.rom.base import BaseRomHandler
@@ -39,7 +40,8 @@ class NarcRomHandler(BaseRomHandler):
 
         for e in entries:
             fname = e.name if e.name else f"file_{e.index:0{padding}d}.bin"
-            fpath = os.path.join(root_dir, fname)
+            # Sanitize entry path
+            fpath = sanitize_extract_path(root_dir, fname)
             os.makedirs(os.path.dirname(fpath), exist_ok=True)
             with open(fpath, "wb") as f_out:
                 f_out.write(e.data)

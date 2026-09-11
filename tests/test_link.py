@@ -166,11 +166,11 @@ def test_elf_arm_relocations():
     externs = {"hook_target": 0x08002000}
     linked = relocator.relocate(base_ram, external_symbols=externs)
 
-    # 1. Check ABS32 at offset 0: should be 0x08002000
+    # Check ABS32 at offset 0: should be 0x08002000
     abs32_val = struct.unpack_from("<I", linked, 0)[0]
     assert abs32_val == 0x08002000
 
-    # 2. Check ARM CALL at offset 4:
+    # Check ARM CALL at offset 4:
     # Target = 0x08002000, PC = base_ram + 4 + 8 = 0x0800100C
     # Diff = 0x08002000 - 0x0800100C = 0xFF4
     # branch_offset = 0xFF4 >> 2 = 0x3FD

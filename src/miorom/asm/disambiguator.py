@@ -80,7 +80,7 @@ class CodeDataDisambiguator:
         step = 2 if arch.lower() == "thumb" else 4
         byte_labels = [ByteClassification.UNKNOWN] * total_len
 
-        # 1. Recursive Descent from Entry Points
+        # Recursive descent from entry points
         entries = entry_points if entry_points else [base_address]
         visited_pcs: Set[int] = set()
         queue = deque(entries)
@@ -139,7 +139,7 @@ class CodeDataDisambiguator:
                 # Normal instruction: continue fallthrough
                 queue.append(pc + step)
 
-        # 2. Detect Padding Blocks
+        # Identify padding blocks
         # Look for contiguous sequences of 0x00 or NOPs after function boundaries
         pos = 0
         while pos < total_len:
@@ -157,8 +157,7 @@ class CodeDataDisambiguator:
                     continue
             pos += 1
 
-        # 3. Detect Jump Tables
-        # Look for tables of 32-bit addresses in remaining unknown areas pointing into valid CODE
+        # Scan for pointer tables targeting valid code
         code_ranges_set = {
             base_address + idx for idx, lbl in enumerate(byte_labels) if lbl == ByteClassification.CODE
         }
@@ -188,7 +187,7 @@ class CodeDataDisambiguator:
                         continue
             pos += 4
 
-        # 4. Detect Printable Strings
+        # Identify printable text strings
         pos = 0
         while pos < total_len:
             if byte_labels[pos] == ByteClassification.UNKNOWN:
@@ -207,12 +206,12 @@ class CodeDataDisambiguator:
                         continue
             pos += 1
 
-        # 5. Mark remaining as RODATA
+        # Mark unclassified ranges as read-only data
         for idx in range(total_len):
             if byte_labels[idx] == ByteClassification.UNKNOWN:
                 byte_labels[idx] = ByteClassification.RODATA
 
-        # 6. Consolidate contiguous byte labels into ClassifiedRanges
+        # Consolidate contiguous byte labels
         ranges: List[ClassifiedRange] = []
         cur_start = 0
         cur_type = byte_labels[0]
@@ -244,7 +243,7 @@ class CodeDataDisambiguator:
             )
         )
 
-        # 7. Compute statistics
+        # Compile classification statistics
         stats: Dict[str, int] = {}
         for r in ranges:
             name = r.classification.value

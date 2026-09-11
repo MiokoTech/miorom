@@ -49,7 +49,7 @@ class DualSlotSave:
             # Both uninitialized, default to Slot A
             return 0, slot_a, 0
 
-        # Both valid: pick higher counter (handling overflow if needed)
+        # Pick higher counter
         if cnt_a >= cnt_b:
             return 0, slot_a, cnt_a
         else:

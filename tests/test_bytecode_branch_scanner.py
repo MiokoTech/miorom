@@ -114,3 +114,69 @@ def test_scan_and_relocate_switch_tables():
     assert struct.unpack_from("<h", modified, 7)[0] == 2
     # Case 1 target was 21 (>=15, new 29): off = 29 - (9 + 2) = 18
     assert struct.unpack_from("<h", modified, 9)[0] == 18
+
+
+def test_scan_branches_with_instruction_lengths_prevents_operand_collisions():
+    # Bytecode layout simulating flag check operand collision:
+    # 0x00: CHECK_FLAG (0x10) [mode: 0x00] [flag: 0x000F] -> length = 4 bytes!
+    #       Notice byte 2 is 0x0F, which would collide with branch opcode 0x0F!
+    #       Bytes 3..4: 0x06, 0x00 -> if read as rel16: +6 -> target 2 + 3 + 6 = 11 (within bounds)
+    # 0x05: REAL_BRANCH (0x0F) [rel: +3] -> target 5 + 3 + 3 = 11
+    # 0x0B: Target instruction
+    buf = bytearray(20)
+    buf[0] = 0x10  # opcode 0x10
+    buf[1] = 0x00  # mode
+    buf[2] = 0x0F  # operand matches branch opcode 0x0F!
+    buf[3] = 0x06  # low byte of fake offset (+6)
+    buf[4] = 0x00  # high byte
+    buf[5] = 0x0F  # real branch opcode
+    struct.pack_into("<h", buf, 6, 3)
+
+    # Without instruction_lengths: byte 2 (0x0F) triggers false positive
+    naive = BytecodeBranchScanner.scan_relative_branches(
+        data=bytes(buf),
+        branch_opcodes={0x0F},
+        disjoint=True,
+    )
+    assert len(naive) == 2  # One false positive at pc=2, one real at pc=5
+
+    # With instruction_lengths: opcode 0x10 advances by 4, skipping operand 0x0F at pc=2
+    smart = BytecodeBranchScanner.scan_relative_branches(
+        data=bytes(buf),
+        branch_opcodes={0x0F},
+        disjoint=True,
+        instruction_lengths={0x10: 4},
+    )
+    assert len(smart) == 1
+    assert smart[0].pc == 5
+    assert smart[0].target == 11
+
+
+def test_relocate_branches_target_validation():
+    buf = bytearray(30)
+    buf[0] = 0x0F
+    struct.pack_into("<h", buf, 1, 10)  # target = 0 + 3 + 10 = 13
+
+    branches = BytecodeBranchScanner.scan_relative_branches(
+        data=bytes(buf),
+        branch_opcodes={0x0F},
+    )
+
+    # Test out of valid_target_range raises ValueError
+    with pytest.raises(ValueError, match="out of valid range"):
+        BytecodeBranchScanner.relocate_branches(
+            buffer=bytearray(buf),
+            branches=branches,
+            mapper=lambda addr: addr + 100,  # new target 113
+            valid_target_range=(0, 50),
+        )
+
+    # Test collision with excluded_target_ranges raises ValueError
+    with pytest.raises(ValueError, match="collides with excluded data range"):
+        BytecodeBranchScanner.relocate_branches(
+            buffer=bytearray(buf),
+            branches=branches,
+            mapper=lambda addr: addr,  # target 13
+            excluded_target_ranges=[(10, 20)],
+        )
+

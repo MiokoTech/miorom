@@ -77,7 +77,7 @@ class CryptoScanner:
     TEA_DELTA_LE = struct.pack("<I", 0x9E3779B9)
     TEA_DELTA_BE = struct.pack(">I", 0x9E3779B9)
 
-    # Standard CRC32 polynomial table entry (0xEDB88320 or 0x04C11DB7)
+    # CRC32 IEEE lookup table prefix
     CRC32_IEEE_PREFIX = bytes([
         0x00, 0x00, 0x00, 0x00, 0x96, 0x30, 0x07, 0x77,
         0x2C, 0x61, 0x0E, 0xEE, 0xBA, 0x51, 0x09, 0x99,
@@ -100,7 +100,7 @@ class CryptoScanner:
         scan_xrefs: bool = True,
     ) -> Iterator[CryptoMatch]:
         """Yield cryptographic primitives as they are found."""
-        # 1. Scan AES S-Box
+        # AES S-Box constants
         pos = 0
         while True:
             idx = data.find(cls.AES_SBOX_PREFIX, pos)
@@ -116,7 +116,7 @@ class CryptoScanner:
                 )
             pos = idx + 1
 
-        # 2. Scan AES Inverse S-Box
+        # AES Inverse S-Box constants
         pos = 0
         while True:
             idx = data.find(cls.AES_INV_SBOX_PREFIX, pos)
@@ -132,7 +132,7 @@ class CryptoScanner:
                 )
             pos = idx + 1
 
-        # 3. Scan MD5 Constants
+        # MD5 constants
         for sig, end_name in ((cls.MD5_CONSTANTS_LE, "Little-Endian"), (cls.MD5_CONSTANTS_BE, "Big-Endian")):
             pos = 0
             while True:
@@ -149,7 +149,7 @@ class CryptoScanner:
                     )
                 pos = idx + 1
 
-        # 4. Scan SHA-1 Constants
+        # SHA-1 constants
         for sig, end_name in ((cls.SHA1_CONSTANTS_LE, "Little-Endian"), (cls.SHA1_CONSTANTS_BE, "Big-Endian")):
             pos = 0
             while True:
@@ -166,7 +166,7 @@ class CryptoScanner:
                     )
                 pos = idx + 1
 
-        # 5. Scan TEA Delta (0x9E3779B9)
+        # TEA delta constant (0x9E3779B9)
         for sig, end_name in ((cls.TEA_DELTA_LE, "Little-Endian"), (cls.TEA_DELTA_BE, "Big-Endian")):
             pos = 0
             while True:
@@ -183,7 +183,7 @@ class CryptoScanner:
                     )
                 pos = idx + 1
 
-        # 6. Scan CRC32 Lookup Table
+        # CRC32 polynomial lookup table
         pos = 0
         while True:
             idx = data.find(cls.CRC32_IEEE_PREFIX, pos)

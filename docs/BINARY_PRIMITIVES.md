@@ -10,16 +10,65 @@ Rather than imposing monolithic workflows, these primitives act as composable bu
 
 | Primitive | Module | Purpose |
 | :--- | :--- | :--- |
+| `BinaryReader` | `miorom.core` | Endian-aware stream reader, zero-allocation static unpacker, and format gateway |
+| `BinaryWriter` | `miorom.core` | Fluent binary stream writer, atomic packer, and in-place buffer mutator |
 | `PatchWriter` | `miorom.patch` | Fluent binary patching with offset tracking and IPS generation |
-| `AsmSnippet` | `miorom.asm` | Pure-Python micro-assembler for ARM32 and MIPS sequences |
+| `UpsPatcher` | `miorom.patch` | Universal Patching System (UPS) with XOR diffing and CRC32 |
+| `BpsPatcher` | `miorom.patch` | Modern Beat Patching System (BPS) creator and applier |
+| `AsmSnippet` | `miorom.asm` | Pure-Python micro-assembler for ARM, Thumb, MIPS, PPC, SM83, and SNES |
+| `SymbolicXrefEngine` | `miorom.asm` | Multi-architecture symbolic cross-reference discovery and call graphs |
+| `CStructOverlay` | `miorom.core` | Interactive ANSI C struct parser compiling C declarations into binary layouts |
 | `RecordBuilder` | `miorom.core` | Fluent binary struct and header serializer with alignment |
 | `SymbolMap` | `miorom.core` | Symbol table with No$GBA `.sym` and Ghidra CSV export |
 | `HexDiffHighlighter` | `miorom.core` | Terminal hex diff renderer with ANSI colors |
 | `GameTextTemplate` | `miorom.text` | Bidirectional dialogue template engine |
+| `BMFont` | `miorom.text` | AngelCode BMFont reader/writer with pure-Python PNG atlas packing |
 
 ---
 
-## 1. Binary Patching — `PatchWriter`
+## 1. Stream I/O & Atomic Packing — `BinaryReader` & `BinaryWriter`
+
+`BinaryReader` and `BinaryWriter` provide fluent, endian-aware stream reading and writing, alongside zero-allocation static unpacking and atomic packing methods.
+
+### Fluent Streaming I/O
+
+```python
+from miorom.core.binary import BinaryReader, BinaryWriter
+
+# Writing binary streams
+writer = BinaryWriter(endian=">")
+writer.write_u32(0x12345678).write_u16(0xABCD).write_u8(0x42)
+writer.write_string("Item_Name", encoding="utf-8", null_terminated=True)
+writer.align(4, pad_byte=0x00)
+data = writer.to_bytes()
+
+# Reading binary streams
+reader = BinaryReader(data, endian=">")
+magic = reader.read_u32()
+version = reader.read_u16()
+flags = reader.read_u8()
+name = reader.read_string(encoding="utf-8")
+```
+
+### Static Zero-Allocation Helpers & Format Gateway
+
+Eliminates repetitive `struct.unpack_from` and `struct.pack` boilerplates:
+
+```python
+# Atomic unpacking without instantiating BytesIO
+magic = BinaryReader.unpack_u32(rom_bytes, offset=0x1C, endian=">")
+short_val = BinaryReader.unpack_s16(rom_bytes, offset=0x80, endian="<")
+comp, chk = BinaryReader.unpack_from("<HH", rom_bytes, offset=0x7FDC)
+
+# Atomic packing & in-place mutable buffer packing
+header_magic = BinaryWriter.pack_u32(0x80371240, endian=">")
+BinaryWriter.pack_into_u32(rom_buffer, offset=0x80, val=new_size, endian="<")
+BinaryWriter.pack_into(">IH", rom_buffer, offset=0x200, 0xCAFEBABE, 0x1234)
+```
+
+---
+
+## 2. Binary Patching — `PatchWriter` & Patcher Suite
 
 `PatchWriter` provides a fluent interface for applying surgical modifications to binary buffers with automatic boundary checks, cursor management, and IPS patch emission.
 
@@ -31,8 +80,13 @@ Rather than imposing monolithic workflows, these primitives act as composable bu
 - `apply()` — return the patched buffer as `bytes`
 - `build_ips()` — export the delta as a standard IPS patch file
 
+MioROM also provides native pure-Python patchers:
+- **`UpsPatcher`**: `create_file(src, tgt, patch)` and `apply_file(src, patch, out)` using XOR diffing and CRC32 verification.
+- **`BpsPatcher`**: Full BPS v1 spec with source/target copy actions and checksums.
+- **`IpsPatcher`**: Fast 16MB IPS patcher with constant-memory streaming support (`apply_stream`).
+
 ```python title="patch_arm9.py"
-from miorom.patch import PatchWriter
+from miorom.patch import PatchWriter, UpsPatcher
 
 rom_data = open("arm9.bin", "rb").read()
 writer = PatchWriter(rom_data)
@@ -45,13 +99,30 @@ patched_bytes = writer.apply()
 
 with open("patch.ips", "wb") as f:
     f.write(writer.build_ips())
+
+# Or create a UPS patch directly between files:
+UpsPatcher.create_file("source.gba", "modified.gba", "game.ups")
 ```
 
 ---
 
-## 2. Micro-Assembly — `AsmSnippet`
+## 3. Micro-Assembly — `AsmSnippet`
 
 `AsmSnippet` generates raw machine code for small function hooks, trampolines, and code caves — **no external cross-compiler required** (no devkitARM, no GCC).
+
+=== "Thumb (16-bit)"
+
+    | Method | Description |
+    | :--- | :--- |
+    | `push(regs)` / `pop(regs)` | Stack operations (r0-r7, LR/PC) |
+    | `mov_imm` / `mov_reg` | Load immediate into register / register copy |
+    | `add_imm` / `sub_imm` | 8-bit or 3-bit arithmetic with immediate |
+    | `cmp_imm` / `cmp_reg` | Compare register with immediate or register |
+    | `ldr_imm` / `str_imm` | Load / store 32-bit word relative to register |
+    | `ldr_pc` / `ldr_sp` | Load literal from PC pool / SP stack |
+    | `b` / `b_cond` | Relative unconditional or conditional branch |
+    | `bl` / `bx` / `blx` | 32-bit branch-link, branch-exchange, BLX |
+    | `nop()` | 16-bit NOP (`mov r8, r8`) |
 
 === "ARM32"
 
@@ -63,6 +134,18 @@ with open("patch.ips", "wb") as f:
     | `b` / `bl` / `bx` | Branch / branch-link / branch-exchange |
     | `nop()` | Padding instruction |
 
+=== "PowerPC (PPC32)"
+
+    | Method | Description |
+    | :--- | :--- |
+    | `stwu(rs, offset, ra)` | Store word with update (stack frame setup) |
+    | `lwz` / `stw` | Load and store 32-bit words |
+    | `li(rt, imm)` | Load 32-bit immediate (auto splits into `lis + ori`) |
+    | `mr(ra, rs)` | Move register (`or ra, rs, rs`) |
+    | `mflr` / `mtlr` | Move from/to Link Register |
+    | `b` / `bl` / `blr` | Unconditional branch / branch-link / return |
+    | `nop()` | PowerPC NOP (`ori r0, r0, 0`) |
+
 === "MIPS"
 
     | Method | Description |
@@ -72,37 +155,59 @@ with open("patch.ips", "wb") as f:
     | `j` / `jal` / `jr_ra` | Jump / jump-and-link / return |
     | `nop()` | Branch delay slot padding |
 
+=== "SNES (W65C816)"
+
+    | Method | Description |
+    | :--- | :--- |
+    | `rep(flags)` / `sep(flags)` | Reset / Set processor flags (16-bit A/X/Y) |
+    | `pha` / `pla` / `php` / `plp` | Push and pull accumulator or status |
+    | `lda_imm` / `lda_addr` / `lda_long` | Load accumulator (8/16-bit, direct, long) |
+    | `sta_addr` / `sta_long` | Store accumulator |
+    | `jsr` / `jsl` / `rts` / `rtl` | Subroutine calls and returns (short/long) |
+    | `nop()` | 65816 NOP (`0xEA`) |
+
 === "Game Boy (SM83)"
 
     | Method | Description |
     | :--- | :--- |
-    | `ld_rr` / `ld_imm` | Register and immediate loads |
+    | `ld_rr` / `ld_r_n` | Register and immediate loads |
     | `call` / `jp` / `jr` / `ret` | Control flow |
     | `push` / `pop` | Stack operations |
+    | `cb(op, reg, bit)` | Bitwise CB prefix operations |
 
 ```python title="asm_hook.py"
 from miorom.asm import AsmSnippet
 
-# ARM32 trampoline hook
-arm = AsmSnippet.arm("<")
-arm.push(["r4", "r5", "lr"])
-arm.mov_imm("r0", 42)
-arm.add_imm("r1", "r0", 10)
-arm.bx("lr")
-arm_code = arm.emit()
+# Thumb 16-bit hook (GBA / NDS)
+thumb = AsmSnippet.thumb("<")
+thumb.push(["r4", "lr"])
+thumb.mov_imm("r0", 42)
+thumb.bl(target_vaddr=0x08005200, current_pc=0x08001004)
+thumb.pop(["r4", "pc"])
+thumb_bytes = thumb.emit()
 
-# MIPS routine (PS1 / N64)
-mips = AsmSnippet.mips(">")
-mips.li("a0", 0x80041A20)
-mips.lw("v0", "a0", 0)
-mips.sw("v0", "sp", 16)
-mips.jr_ra()
-mips_code = mips.emit()
+# PowerPC hook (GameCube / Wii)
+ppc = AsmSnippet.ppc(">")
+ppc.stwu("r1", -32, "r1")
+ppc.mflr("r0")
+ppc.stw("r0", 36, "r1")
+ppc.li("r3", 0x80245000)
+ppc.blr()
+ppc_bytes = ppc.emit()
+
+# SNES W65C816 hook
+snes = AsmSnippet.snes()
+snes.rep(0x20)  # 16-bit Accumulator
+snes.lda_imm(0x1234, is_16bit=True)
+snes.sta_addr(0x2100)
+snes.sep(0x20)  # 8-bit Accumulator
+snes.rts()
+snes_bytes = snes.emit()
 ```
 
 ---
 
-## 3. Struct Serialization — `RecordBuilder`
+## 4. Struct Serialization — `RecordBuilder`
 
 `RecordBuilder` constructs binary records, file headers, and metadata tables with exact field alignments — without brittle `struct.pack` format strings.
 
@@ -127,7 +232,7 @@ record = (
 
 ---
 
-## 4. Symbol Management — `SymbolMap`
+## 5. Symbol Management — `SymbolMap`
 
 `SymbolMap` tracks function entrypoints, jump tables, string pools, and RAM variables — then exports them to debugger and disassembler formats.
 
@@ -149,7 +254,7 @@ with open("ghidra_labels.csv", "w", encoding="utf-8") as f:
 
 ---
 
-## 5. Hex Diff Inspection — `HexDiffHighlighter`
+## 6. Hex Diff Inspection — `HexDiffHighlighter`
 
 `HexDiffHighlighter` renders colorized hex diffs in the terminal — lets you visually verify every changed byte **before** writing to disk.
 
@@ -170,7 +275,7 @@ HexDiffHighlighter.print_diff(
 
 ---
 
-## 6. Dialogue Templates — `GameTextTemplate`
+## 7. Dialogue Templates — `GameTextTemplate`
 
 `GameTextTemplate` provides bidirectional parsing for dialogue strings that contain embedded control tags, actor variables, and item parameters.
 
@@ -184,6 +289,90 @@ rendered = tmpl.render(name="Raguna", count=3, item="Turnip")
 
 data = tmpl.extract(rendered)
 # → {"name": "Raguna", "count": "3", "item": "Turnip"}
+```
+
+---
+
+## 8. C Struct Modeling — `CStructOverlay`
+
+`CStructOverlay` parses ANSI C struct declarations and provides a pythonic overlay mapping directly over binary buffers. It supports nested structs, fixed-length arrays/strings, attribute access (`monster.hp`), dictionary access, table iterations, and in-place binary writes.
+
+```python title="parse_c_struct.py"
+from miorom.core import CStructOverlay
+
+c_decl = """
+struct Enemy {
+    uint16_t id;
+    char name[16];
+    int16_t hp;
+    int16_t max_hp;
+    uint8_t attack;
+    uint8_t defense;
+    uint32_t exp;
+};
+"""
+
+overlay = CStructOverlay.from_c(c_decl, endian="<", pack_alignment=1)
+print(f"Struct size: {overlay.size} bytes")  # 28 bytes
+
+# Read an entire table of enemies from ROM
+enemies = overlay.read_table(rom_data, offset=0x02005000, count=10)
+for enemy in enemies:
+    print(f"[{enemy.id}] {enemy.name} - HP: {enemy.hp}/{enemy.max_hp}")
+
+# Modify and pack back in-place
+enemies[0].hp = 999
+overlay.write(rom_data_bytearray, offset=0x02005000, record=enemies[0])
+```
+
+---
+
+## 9. Symbolic Cross-References — `SymbolicXrefEngine`
+
+`SymbolicXrefEngine` analyzes multi-architecture machine code and pointer structures to discover bidirectional relationships between code and data. It identifies literal pool references, split immediates, direct calls, and jump branches, with IDA/Ghidra-style comment generation.
+
+```python title="analyze_xrefs.py"
+from miorom.asm import SymbolicXrefEngine, UniversalDisassembler
+
+# Scan ARM9 code segment
+db = SymbolicXrefEngine.analyze(arm9_bytes, base_address=0x02000000, arch="arm", endian="<")
+
+# Query inbound calls
+callers = db.callers_of(0x02004500)
+print(f"Functions calling sub_02004500: {[hex(c) for c in callers]}")
+
+# Generate IDA / Ghidra style annotated disassembly
+instructions = UniversalDisassembler.disassemble(arm9_bytes[:256], base_address=0x02000000, arch="arm")
+annotated_lines = db.annotate_disassembly(instructions)
+for line in annotated_lines:
+    print(line)
+```
+
+---
+
+## 10. AngelCode BMFont & Texture Packing — `BMFont`
+
+`BMFont` provides two-way serialization for AngelCode `.fnt` files (both Text and XML variants), automatic 2D texture atlas shelf packing, and built-in pure-Python PNG encoding/decoding without requiring PIL/Pillow.
+
+```python title="bmfont_workflow.py"
+from miorom.text import BMFont, BitmapFont, PNGCodec
+
+# 1. Load an existing AngelCode font
+font = BMFont.from_text(open("dialogue.fnt").read())
+print(f"Font: {font.info.face}, Line Height: {font.common.line_height}, Glyphs: {len(font.chars)}")
+
+# 2. Pack a BitmapFont into a 2D atlas texture sheet + pure Python PNG
+bf = BitmapFont(default_height=12)
+# ... add glyphs ...
+bmfont, raw_atlas, png_bytes = BMFont.from_bitmap_font(
+    bf, page_file="font_atlas.png", texture_width=256, texture_height=256
+)
+
+with open("font_atlas.png", "wb") as f:
+    f.write(png_bytes)
+
+with open("font.fnt", "w") as f:
+    f.write(bmfont.to_text())
 ```
 
 ---

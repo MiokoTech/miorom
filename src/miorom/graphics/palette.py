@@ -47,6 +47,24 @@ class Color:
         b = (b5 * 255 + 15) // 31
         return cls(r, g, b, alpha)
 
+    def to_md_color(self) -> int:
+        """Converts RGBA color to 9-bit RGB333 integer for Sega Genesis / Mega Drive VDP."""
+        r3 = (self.r * 7 + 127) // 255
+        g3 = (self.g * 7 + 127) // 255
+        b3 = (self.b * 7 + 127) // 255
+        return (b3 << 9) | (g3 << 5) | (r3 << 1)
+
+    @classmethod
+    def from_md_color(cls, val: int, alpha: int = 255) -> "Color":
+        """Converts Sega Genesis / Mega Drive 9-bit RGB333 VDP word into 32-bit RGBA Color."""
+        r3 = (val >> 1) & 0x07
+        g3 = (val >> 5) & 0x07
+        b3 = (val >> 9) & 0x07
+        r = (r3 * 255 + 3) // 7
+        g = (g3 * 255 + 3) // 7
+        b = (b3 * 255 + 3) // 7
+        return cls(r, g, b, alpha)
+
     def distance_squared(self, other: "Color") -> int:
         """Weighted Euclidean color distance (approximates human perception)."""
         dr = self.r - other.r
@@ -89,6 +107,78 @@ class Palette:
         for col in self.colors:
             out.extend(struct.pack("<H", col.to_bgr555()))
         return bytes(out)
+
+    @classmethod
+    def from_md_bytes(cls, data: bytes, endian: str = ">") -> "Palette":
+        """Reads Sega Genesis / Mega Drive VDP 9-bit RGB333 CRAM words (2 bytes per color)."""
+        colors = []
+        fmt = f"{endian}H"
+        for i in range(0, len(data) - 1, 2):
+            val = struct.unpack_from(fmt, data, i)[0]
+            colors.append(Color.from_md_color(val))
+        return cls(colors)
+
+    def to_md_bytes(self, endian: str = ">") -> bytes:
+        """Serializes palette into Sega Genesis / Mega Drive VDP CRAM binary words."""
+        out = bytearray()
+        fmt = f"{endian}H"
+        for col in self.colors:
+            out.extend(struct.pack(fmt, col.to_md_color()))
+        return bytes(out)
+
+    def to_act(self) -> bytes:
+        """Serializes palette into Adobe Color Table (.act) binary format (768 bytes)."""
+        out = bytearray()
+        for i in range(256):
+            if i < len(self.colors):
+                c = self.colors[i]
+                out.extend([c.r, c.g, c.b])
+            else:
+                out.extend([0, 0, 0])
+        # ACT 4-byte footer
+        out.extend(struct.pack(">HH", min(256, len(self.colors)), 0xFFFF))
+        return bytes(out)
+
+    @classmethod
+    def from_act(cls, data: bytes) -> "Palette":
+        """Parses an Adobe Color Table (.act) binary file."""
+        if len(data) < 768:
+            raise ParseError(f"Data too short for ACT palette: expected at least 768 bytes, got {len(data)}")
+        count = 256
+        if len(data) >= 772:
+            count_in_file = struct.unpack_from(">H", data, 768)[0]
+            if 0 < count_in_file <= 256:
+                count = count_in_file
+        colors = []
+        for i in range(count):
+            r, g, b = data[i * 3], data[i * 3 + 1], data[i * 3 + 2]
+            colors.append(Color(r, g, b))
+        return cls(colors)
+
+    def to_jasc_pal(self) -> str:
+        """Serializes palette to JASC Paint Shop Pro ASCII (.pal) format."""
+        lines = ["JASC-PAL", "0100", str(len(self.colors))]
+        for c in self.colors:
+            lines.append(f"{c.r} {c.g} {c.b}")
+        return "\n".join(lines) + "\n"
+
+    @classmethod
+    def from_jasc_pal(cls, text: str) -> "Palette":
+        """Parses JASC Paint Shop Pro ASCII (.pal) text format."""
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if len(lines) < 3 or lines[0] != "JASC-PAL" or lines[1] != "0100":
+            raise ParseError("Invalid JASC-PAL header: must start with 'JASC-PAL' and '0100'")
+        try:
+            count = int(lines[2])
+        except ValueError:
+            raise ParseError(f"Invalid JASC-PAL count: {lines[2]!r}")
+        colors = []
+        for line in lines[3 : 3 + count]:
+            parts = line.split()
+            if len(parts) >= 3:
+                r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
+                colors.append(Color(r, g, b))
+        return cls(colors)
 
     def match_color(self, color: Color, start_index: int = 0) -> int:
         """Finds closest color index in palette."""
@@ -147,15 +237,22 @@ class FloydSteinbergDitherer:
                 err_g = old_g - matched.g
                 err_b = old_b - matched.b
 
-                def add_err(nx, ny, factor):
-                    if 0 <= nx < width and 0 <= ny < height:
-                        r_buf[ny][nx] += err_r * factor
-                        g_buf[ny][nx] += err_g * factor
-                        b_buf[ny][nx] += err_b * factor
-
-                add_err(x + 1, y, 7.0 / 16.0)
-                add_err(x - 1, y + 1, 3.0 / 16.0)
-                add_err(x, y + 1, 5.0 / 16.0)
-                add_err(x + 1, y + 1, 1.0 / 16.0)
+                # Floyd-Steinberg error diffusion
+                if x + 1 < width:
+                    r_buf[y][x + 1] += err_r * (7.0 / 16.0)
+                    g_buf[y][x + 1] += err_g * (7.0 / 16.0)
+                    b_buf[y][x + 1] += err_b * (7.0 / 16.0)
+                if y + 1 < height:
+                    if x > 0:
+                        r_buf[y + 1][x - 1] += err_r * (3.0 / 16.0)
+                        g_buf[y + 1][x - 1] += err_g * (3.0 / 16.0)
+                        b_buf[y + 1][x - 1] += err_b * (3.0 / 16.0)
+                    r_buf[y + 1][x] += err_r * (5.0 / 16.0)
+                    g_buf[y + 1][x] += err_g * (5.0 / 16.0)
+                    b_buf[y + 1][x] += err_b * (5.0 / 16.0)
+                    if x + 1 < width:
+                        r_buf[y + 1][x + 1] += err_r * (1.0 / 16.0)
+                        g_buf[y + 1][x + 1] += err_g * (1.0 / 16.0)
+                        b_buf[y + 1][x + 1] += err_b * (1.0 / 16.0)
 
         return result

@@ -120,6 +120,11 @@ class Huffman:
             else:
                 cur_node_idx = child_idx
 
+        if len(output) < uncompressed_size:
+            raise CompressionError(
+                f"Huffman decompression truncated: expected {uncompressed_size} bytes, got {len(output)} bytes"
+            )
+
         return bytes(output)
 
     @classmethod
@@ -197,9 +202,7 @@ class Huffman:
                 queue.append(curr.left)
                 queue.append(curr.right)
 
-        # Now assign positions in tree array
-        # Each internal node takes 1 byte. Child pair takes 2 bytes (left at 2k, right at 2k+1)
-        # Standard approach:
+        # Internal node layout (1 byte per node, 2 bytes per child pair)
         tree_array: List[Optional[Tuple[bool, Any]]] = [None] * 512
         node_pos_map: Dict[int, int] = {}
 

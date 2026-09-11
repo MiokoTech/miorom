@@ -167,7 +167,7 @@ class RelocatableBuffer:
             "details": []
         }
 
-        # 1. Relocate registered pointers
+        # Relocate registered pointers
         for ptr in self.registered_pointers:
             fmt = f"{ptr.endian}{'H' if ptr.size == 2 else 'I'}"
             old_pos = ptr.pristine_pos
@@ -187,7 +187,7 @@ class RelocatableBuffer:
                     f"Pointer at 0x{old_pos:X}->0x{new_pos:X}: 0x{old_target:X}->0x{new_target:X}"
                 )
 
-        # 2. Update anchored fields
+        # Update anchored fields
         for field in self.anchored_fields:
             fmt = f"{field.endian}{'H' if field.size == 2 else 'I'}"
             old_pos = field.pristine_pos

@@ -80,7 +80,7 @@ class StringHeapBuilder:
             cur_offset += len(payload)
 
             if null_terminated:
-                # Add appropriate null terminator: 2 bytes for utf-16, 1 byte otherwise
+                # Null terminator
                 term = b"\x00\x00" if "16" in encoding.lower() else b"\x00"
                 buf.extend(term)
                 cur_offset += len(term)

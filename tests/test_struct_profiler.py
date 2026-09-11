@@ -21,13 +21,13 @@ def test_autodetect_stride_and_field_profiling():
         # Field 5: u32 zero padding (0x0C)
         struct.pack_into("<I", buf, off + 12, 0)
 
-    # 1. Autodetect Stride
+    # Autodetect Stride
     candidates = StructProfiler.autodetect_stride(bytes(buf), min_stride=4, max_stride=32)
     assert len(candidates) > 0
     # Top candidate should be 16
     assert candidates[0].stride == 16
 
-    # 2. Profile Struct
+    # Profile Struct
     profile = StructProfiler.profile_struct(
         data=bytes(buf),
         stride=16,
@@ -49,14 +49,14 @@ def test_autodetect_stride_and_field_profiling():
     assert pad_field.field_type == FieldType.PADDING
     assert pad_field.is_constant is True
 
-    # 3. Export to C struct
+    # Export to C struct
     c_code = profile.to_c_struct(struct_name="MonsterStats")
     assert "typedef struct {" in c_code
     assert "MonsterStats;" in c_code
     assert "void* ptr_04;" in c_code
     assert "pad_0C" in c_code
 
-    # 4. Export to JSON schema
+    # Export to JSON schema
     schema = profile.to_json_schema()
     assert schema["stride"] == 16
     assert schema["record_count"] == 12

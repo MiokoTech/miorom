@@ -1,4 +1,16 @@
 from miorom.asm.branch import ARMBranch, ThumbBranch, PowerPCBranch, MIPSBranch
+from miorom.asm.branch_calc import (
+    calc_arm_branch,
+    resolve_arm_branch,
+    calc_thumb_branch,
+    resolve_thumb_branch,
+    calc_mips_jump,
+    resolve_mips_jump,
+    calc_mips_branch,
+    resolve_mips_branch,
+    calc_6502_branch,
+    resolve_6502_branch,
+)
 from miorom.asm.codecave import CodeCave, CodeCaveFinder
 from miorom.asm.trampoline import TrampolineHook, HookRecord
 from miorom.asm.instruction_scanner import (
@@ -40,6 +52,13 @@ from miorom.asm.xref import (
     XRefType,
     CallerGraph,
 )
+from miorom.asm.xref_engine import (
+    SymbolicXrefEngine,
+    XRefDatabase,
+    XRefRecord,
+    XRefDirection,
+)
+from miorom.asm.reloc_calc import BranchRelocator, BranchRelocation
 from miorom.asm.literal_relocator import (
     CodeLiteralRelocator,
     LiteralRelocationReport,
@@ -49,8 +68,31 @@ from miorom.asm.micro_patcher import (
     StackAllocPatcher,
     OpcodeTransmuter,
 )
-from miorom.asm.snippet import AsmSnippet, ArmSnippet, MipsSnippet, SM83Snippet
+from miorom.asm.snippet import (
+    AsmSnippet,
+    ArmSnippet,
+    ThumbSnippet,
+    MipsSnippet,
+    PpcSnippet,
+    SM83Snippet,
+    SnesSnippet,
+    M68kSnippet,
+    Mos6502Snippet,
+)
 from miorom.asm.prologue_scanner import FunctionPrologueScanner, DiscoveredFunction
+from miorom.asm.hook_manager import (
+    CodeCave as HookCodeCave,
+    HookRecord as HookManagerRecord,
+    CodeCaveManager,
+    ArmHookBuilder,
+    HookManager,
+)
+from miorom.asm.m68k import M68kInstruction, M68kDisassembler
+from miorom.asm.vwf_hook_engine import (
+    VWFHookEngine,
+    VWFHookConfig,
+    VWFDeploymentReport,
+)
 
 __all__ = [
     "ARMBranch",
@@ -89,6 +131,10 @@ __all__ = [
     "APMatch",
     "APBypassReport",
     "GlobalXrefEngine",
+    "SymbolicXrefEngine",
+    "XRefDatabase",
+    "XRefRecord",
+    "XRefDirection",
     "XRef",
     "XRefType",
     "CallerGraph",
@@ -99,8 +145,35 @@ __all__ = [
     "OpcodeTransmuter",
     "AsmSnippet",
     "ArmSnippet",
+    "ThumbSnippet",
     "MipsSnippet",
+    "PpcSnippet",
     "SM83Snippet",
+    "SnesSnippet",
+    "M68kSnippet",
+    "Mos6502Snippet",
     "FunctionPrologueScanner",
     "DiscoveredFunction",
+    "HookCodeCave",
+    "HookManagerRecord",
+    "CodeCaveManager",
+    "ArmHookBuilder",
+    "HookManager",
+    "M68kInstruction",
+    "M68kDisassembler",
+    "calc_arm_branch",
+    "resolve_arm_branch",
+    "calc_thumb_branch",
+    "resolve_thumb_branch",
+    "calc_mips_jump",
+    "resolve_mips_jump",
+    "calc_mips_branch",
+    "resolve_mips_branch",
+    "calc_6502_branch",
+    "resolve_6502_branch",
+    "BranchRelocator",
+    "BranchRelocation",
+    "VWFHookEngine",
+    "VWFHookConfig",
+    "VWFDeploymentReport",
 ]

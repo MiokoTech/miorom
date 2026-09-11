@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 from miorom.graphics.palette import Color, Palette
 from miorom.graphics.tiles import Tile
 from miorom.graphics.tilemap import Tilemap, TileReducer
@@ -23,9 +23,16 @@ class ImageBridge:
         tiles: List[Tile],
         palette: Palette,
         width_in_tiles: int,
+        transparency_mode: str = "opaque",
     ) -> "Image.Image":
         """
         Renders a list of 8x8 tiles into a PIL RGBA Image.
+
+        Args:
+            tiles: List of 8x8 Tile objects.
+            palette: Palette containing colors.
+            width_in_tiles: Horizontal dimension in tiles.
+            transparency_mode: "opaque", "transparent", or "auto" (detects color-key).
         """
         if not HAS_PIL:
             raise ImportError("Pillow is required for ImageBridge. Install with 'pip install Pillow'.")
@@ -40,6 +47,14 @@ class ImageBridge:
         img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         pixels = img.load()
 
+        is_trans_zero = False
+        if transparency_mode == "transparent":
+            is_trans_zero = True
+        elif transparency_mode == "auto" and len(palette) > 0:
+            c0 = palette[0]
+            if (c0.r, c0.g, c0.b) in [(255, 0, 255), (0, 255, 255), (0, 255, 0)]:
+                is_trans_zero = True
+
         for t_idx, tile in enumerate(tiles):
             tile_x = (t_idx % width_in_tiles) * 8
             tile_y = (t_idx // width_in_tiles) * 8
@@ -47,6 +62,8 @@ class ImageBridge:
             for y in range(8):
                 for x in range(8):
                     pal_idx = tile.get_pixel(x, y)
+                    if is_trans_zero and pal_idx == 0:
+                        continue
                     if pal_idx < len(palette):
                         col = palette[pal_idx]
                         pixels[tile_x + x, tile_y + y] = (col.r, col.g, col.b, col.a)
@@ -122,3 +139,46 @@ class ImageBridge:
             return unique_tiles, palette, tilemap
 
         return raw_tiles, palette, None
+
+    @classmethod
+    def to_tim(
+        cls,
+        image_or_path: Union[str, "Image.Image"],
+        bpp: int = 4,
+        target_palette: Optional[Palette] = None,
+        img_dx: int = 0,
+        img_dy: int = 0,
+        clut_dx: int = 0,
+        clut_dy: int = 0,
+    ):
+        """
+        Converts a PIL Image or image file path into a PlayStation 1 TIMImage.
+        """
+        from miorom.platforms.psx.tim import TIMImage
+
+        return TIMImage.from_image(
+            image_or_path=image_or_path,
+            bpp=bpp,
+            target_palette=target_palette,
+            img_dx=img_dx,
+            img_dy=img_dy,
+            clut_dx=clut_dx,
+            clut_dy=clut_dy,
+        )
+
+    @classmethod
+    def from_tim(
+        cls,
+        tim_or_bytes: Union[bytes, Any],
+        palette_index: int = 0,
+    ) -> "Image.Image":
+        """
+        Renders a TIMImage or TIM binary bytes into a PIL RGBA Image.
+        """
+        from miorom.platforms.psx.tim import TIMImage
+
+        if isinstance(tim_or_bytes, (bytes, bytearray)):
+            tim = TIMImage(bytes(tim_or_bytes))
+        else:
+            tim = tim_or_bytes
+        return tim.to_image(palette_index=palette_index)

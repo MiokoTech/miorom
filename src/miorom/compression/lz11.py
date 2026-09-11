@@ -92,6 +92,11 @@ class LZ11:
                     out.append(data[in_pos])
                     in_pos += 1
 
+        if len(out) < uncompressed_size:
+            raise CompressionError(
+                f"LZ11 decompression truncated: expected {uncompressed_size} bytes, got {len(out)} bytes"
+            )
+
         return bytes(out)
 
     @classmethod

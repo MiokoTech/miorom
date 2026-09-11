@@ -11,7 +11,7 @@ and injected C/assembly code payloads.
 
 from miorom.result import MioRomResult
 import math
-import struct
+from miorom.core.binary import BinaryWriter
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -146,17 +146,14 @@ class RomLayoutExpander:
         delta = target_size - orig_len
         out.extend(bytes([pad_byte]) * delta)
 
-        # In NDS header, offset 0x14 stores Device Capacity (1 << (20 + n) bytes)
-        # Calculate smallest power of 2 >= target_size
         capacity_exp = math.ceil(math.log2(target_size))
         nds_device_capacity = max(0, capacity_exp - 17)  # standard NDS formula
         if len(out) > 0x15:
             out[0x14] = nds_device_capacity & 0xFF
 
-        # Offset 0x80 stores Total Used ROM size (ARM9/ARM7 + FAT/FNT + overlays)
         # Update 0x80 with new size
         if len(out) >= 0x84:
-            struct.pack_into("<I", out, 0x80, target_size)
+            BinaryWriter.pack_into_u32(out, 0x80, target_size, endian="<")
 
         report = RomExpansionReport(
             platform="nds",
@@ -193,21 +190,18 @@ class RomLayoutExpander:
         if target_offset + source_size > len(rom_data):
             raise RelocationError("Target offset exceeds expanded ROM buffer bounds")
 
-        # 1. Copy data chunk to far target
         payload = bytes(rom_data[source_offset : source_offset + source_size])
         rom_data[target_offset : target_offset + source_size] = payload
 
-        # 2. Fill source area with pad_byte (freeing space or creating code cave)
         rom_data[source_offset : source_offset + source_size] = bytes([pad_byte]) * source_size
 
-        # 3. Update referencing pointers
         new_ram_ptr = target_offset + ram_base
         fmt = f"{endian}I"
         updated_ptrs = 0
 
         for ptr_loc in pointer_locations:
             if ptr_loc + 4 <= len(rom_data):
-                struct.pack_into(fmt, rom_data, ptr_loc, new_ram_ptr)
+                BinaryWriter.pack_into_u32(rom_data, ptr_loc, new_ram_ptr, endian=endian)
                 updated_ptrs += 1
 
         return updated_ptrs

@@ -85,20 +85,20 @@ def test_game_project_lifecycle():
 
         game = TestRPG()
 
-        # 1. Analyze
+        # Analyze
         game.analyze()
 
-        # 2. Extract
+        # Extract
         out_dir = os.path.join(tmpdir, "translations")
         extracted = game.extract(output_dir=out_dir)
         assert "village_dialog" in extracted
         assert os.path.exists(extracted["village_dialog"])
 
-        # 3. Validate
+        # Validate
         is_valid = game.validate(translations_dir=out_dir)
         assert is_valid is True
 
-        # 4. Build
+        # Build
         game.build(output_rom=os.path.join(tmpdir, "build.iso"))
 
 

@@ -51,7 +51,7 @@ class InspectionReport(MioRomResult):
             "=" * 78,
         ]
 
-        # 1. Format Fingerprints
+        # Format signatures
         lines.append("\n[1] IDENTIFIED CONTAINER & FORMAT FINGERPRINTS:")
         if self.fingerprints:
             for fp in self.fingerprints:
@@ -61,7 +61,7 @@ class InspectionReport(MioRomResult):
         else:
             lines.append("  - No known container or format signatures detected.")
 
-        # 2. Encoding Probing
+        # Character encoding probes
         lines.append("\n[2] ENCODING AUTO-PROBING & RANKING:")
         if self.best_encoding and self.best_encoding.string_count > 0:
             lines.append(
@@ -82,7 +82,7 @@ class InspectionReport(MioRomResult):
         else:
             lines.append("  - No obvious plain text found with tested encodings.")
 
-        # 3. Pointer Tables
+        # Pointer table scan
         lines.append("\n[3] POINTER TABLES:")
         all_tables = self.pointer_tables + self.footer_tables
         if all_tables:
@@ -99,7 +99,7 @@ class InspectionReport(MioRomResult):
         else:
             lines.append("  - No obvious contiguous pointer tables detected.")
 
-        # 4. Orphans
+        # Unreferenced text detection
         if self.orphans:
             lines.append(f"\n[4] ⚠ ORPHANED STRINGS ({len(self.orphans)} detected):")
             for s in self.orphans[:6]:
@@ -108,7 +108,7 @@ class InspectionReport(MioRomResult):
             if len(self.orphans) > 6:
                 lines.append(f"  ... and {len(self.orphans) - 6} more orphaned strings.")
 
-        # 5. Actionable Suggestions
+        # Recommendations
         lines.append("\n[5] ACTIONABLE RECOMMENDATIONS:")
         if self.suggestions:
             for s in self.suggestions:
@@ -138,11 +138,11 @@ class SmartInspector:
                 orphans=[], suggestions=["File is empty (0 bytes)."]
             )
 
-        # 1. Deep Format Fingerprints
+        # Deep format signatures
         deep_report = DeepScanner().scan(data, min_confidence=0.5)
         fingerprints = deep_report.fingerprints
 
-        # 2. Entropy Analysis
+        # Entropy profile
         ent = deep_report.overall_entropy
         if ent >= 7.2:
             entropy_profile = "compressed / encrypted"
@@ -153,11 +153,11 @@ class SmartInspector:
         else:
             entropy_profile = "sparse / mostly zeroes"
 
-        # 3. Encoding Probing
+        # Character encoding probe
         encoding_candidates = cls._probe_encodings(data)
         best_enc = encoding_candidates[0] if encoding_candidates and encoding_candidates[0].string_count > 0 else None
 
-        # 4. Pointer Table Scanning with best encoding
+        # Pointer table scan
         pointer_tables: List[CandidatePointerTable] = []
         footer_tables: List[CandidatePointerTable] = []
         orphans: List[FoundString] = []
@@ -181,7 +181,7 @@ class SmartInspector:
                     ref_offsets.add(tgt)
             orphans = [s for s in found_strings if s.offset not in ref_offsets]
 
-        # 5. Formulate Suggestions
+        # Analysis summary
         suggestions = cls._generate_suggestions(
             sz, entropy_profile, fingerprints, best_enc, pointer_tables, footer_tables, orphans
         )
@@ -203,7 +203,7 @@ class SmartInspector:
     @classmethod
     def _probe_encodings(cls, data: bytes) -> List[EncodingCandidate]:
         results: List[EncodingCandidate] = []
-        # Sample first 256KB to keep probing fast even on massive 500MB payloads
+        # Sample initial 256KB
         sample = data[:256 * 1024]
 
         # Common English/natural character frequency test

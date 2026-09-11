@@ -94,6 +94,9 @@ class GlyphWidthTable:
             return self.widths[idx]
         return self.metrics.default_glyph_width
 
+    # Alias for compatibility with injectors
+    get_char_width = get_width
+
     def set_width(self, char: str, width: int) -> None:
         """Sets pixel width for a character."""
         if self.charmap:

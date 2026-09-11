@@ -80,13 +80,20 @@ class BpsPatcher:
             action = data & 3
             length = (data >> 2) + 1
 
+            if output_offset + length > target_size:
+                raise PatchError(f"BPS action {action} exceeds target size ({output_offset + length} > {target_size})")
+
             if action == 0:
                 # SourceRead
+                if output_offset + length > len(source):
+                    raise PatchError(f"BPS SourceRead out of bounds of source data")
                 target[output_offset:output_offset+length] = source[output_offset:output_offset+length]
                 output_offset += length
             elif action == 1:
                 # TargetRead
                 chunk = stream.read(length)
+                if len(chunk) < length:
+                    raise PatchError("Unexpected EOF reading BPS TargetRead literal data")
                 target[output_offset:output_offset+length] = chunk
                 output_offset += length
             elif action == 2:
@@ -94,6 +101,10 @@ class BpsPatcher:
                 offset_data = _decode_vlq(stream)
                 offset_sign = -1 if (offset_data & 1) else 1
                 source_rel_offset += offset_sign * (offset_data >> 1)
+                if source_rel_offset < 0 or source_rel_offset + length > len(source):
+                    raise PatchError(
+                        f"BPS SourceCopy out of bounds: offset={source_rel_offset}, len={length}, source_len={len(source)}"
+                    )
                 for _ in range(length):
                     target[output_offset] = source[source_rel_offset]
                     output_offset += 1
@@ -103,6 +114,10 @@ class BpsPatcher:
                 offset_data = _decode_vlq(stream)
                 offset_sign = -1 if (offset_data & 1) else 1
                 target_rel_offset += offset_sign * (offset_data >> 1)
+                if target_rel_offset < 0 or target_rel_offset >= output_offset:
+                    raise PatchError(
+                        f"BPS TargetCopy out of bounds: offset={target_rel_offset}, output_offset={output_offset}"
+                    )
                 for _ in range(length):
                     target[output_offset] = target[target_rel_offset]
                     output_offset += 1

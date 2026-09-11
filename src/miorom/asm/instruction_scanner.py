@@ -81,7 +81,7 @@ class PPCInstructionScanner:
                 rd1 = (insn1 >> 21) & 0x1F
                 imm_hi = (insn1 & 0xFFFF) << 16
 
-                # Search forward up to max_lookahead instructions for matching addi/ori with same register
+                # Look ahead for matching addi/ori
                 for j in range(1, max_lookahead + 1):
                     off2 = i + (j * 4)
                     if off2 + 4 > len(code):
@@ -122,7 +122,7 @@ class PPCInstructionScanner:
                             ))
                         break
 
-                    # If register rd1 is clobbered by another instruction before addi/ori, stop search
+                    # Stop if register is clobbered
                     if rd2 == rd1:
                         break
 
@@ -294,7 +294,7 @@ class ARMInstructionScanner:
             fmt16 = f"{endian}H"
             for i in range(0, code_len - 1, 2):
                 insn = struct.unpack_from(fmt16, code, i)[0]
-                # Thumb LDR Rd, [PC, #imm8]: 0100 1 Rd(3) imm8(8) -> (insn & 0xF800) == 0x4800
+                # Thumb LDR Rd, [PC, #imm8]
                 if (insn & 0xF800) == 0x4800:
                     rd = (insn >> 8) & 0x7
                     imm8 = insn & 0xFF
@@ -369,7 +369,7 @@ class ARMInstructionScanner:
 
         for i in range(0, code_len - 3, 4):
             insn1 = struct.unpack_from(fmt, code, i)[0]
-            # movw Rd, #imm16: bits [27:20] == 0011 0000 -> (insn & 0x0FF00000) == 0x03000000
+            # movw Rd, #imm16
             if (insn1 & 0x0FF00000) == 0x03000000:
                 rd1 = (insn1 >> 12) & 0xF
                 imm4_1 = (insn1 >> 16) & 0xF
@@ -381,7 +381,7 @@ class ARMInstructionScanner:
                     if off2 + 4 > code_len:
                         break
                     insn2 = struct.unpack_from(fmt, code, off2)[0]
-                    # movt Rd, #imm16: bits [27:20] == 0011 0100 -> (insn & 0x0FF00000) == 0x03400000
+                    # movt Rd, #imm16
                     if (insn2 & 0x0FF00000) == 0x03400000:
                         rd2 = (insn2 >> 12) & 0xF
                         if rd2 == rd1:

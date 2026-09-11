@@ -111,7 +111,7 @@ class RomTriageEngine:
 
         ent = cls.calculate_entropy(data)
 
-        # 1. Check for pure padding (entropy < 1.0)
+        # Low-entropy padding check
         if ent < 1.0 and (data[0] in (0x00, 0xFF) and data.count(data[0]) > size * 0.95):
             return FileTriageRecord(
                 path=name,
@@ -124,7 +124,7 @@ class RomTriageEngine:
                 suggested_tool="SlackSpaceManager",
             )
 
-        # 2. Check Magic signatures
+        # Signature match
         magic4 = data[:4]
         magic8 = data[:8] if size >= 8 else b""
 
@@ -173,14 +173,14 @@ class RomTriageEngine:
                 fmt_name = "LZ10" if data[0] == 0x10 else ("LZ11" if data[0] == 0x11 else "RLE")
                 return FileTriageRecord(name, size, ent, AssetType.COMPRESSED_DATA, fmt_name, 0.90, f"Nintendo {fmt_name} Stream", "CompressionCarver")
 
-        # 3. High entropy check (> 7.2 => Compressed or Encrypted)
+        # High-entropy payload check
         if ent >= 7.2:
             return FileTriageRecord(
                 name, size, ent, AssetType.COMPRESSED_DATA, "HighEntropy", 0.85,
                 f"Entropy {ent:.2f} indicates compressed payload or crypto", "CompressionCarver",
             )
 
-        # 4. Printable ASCII / text density sampling
+        # Printable ASCII density sample
         sample = data[:min(size, 4096)]
         printable = sum(1 for b in sample if 32 <= b <= 126 or b in (9, 10, 13))
         ascii_ratio = printable / len(sample)
@@ -191,11 +191,10 @@ class RomTriageEngine:
                 f"Printable text ratio: {ascii_ratio:.1%}", "CharMap, RelativeSearcher",
             )
 
-        # 5. Pointer Table / Data Matrix
-        # Frequent nulls and pointer patterns: e.g. 0x0000 / 0x0800 in 32-bit words
+        # Pointer table check
         if size >= 16 and size % 4 == 0:
             words = [struct.unpack_from("<I", sample, k)[0] for k in range(0, min(len(sample), 64), 4)]
-            # Monotonically increasing addresses indicates a pointer table
+            # Monotonic address check
             increasing = sum(1 for idx in range(len(words) - 1) if 0 < words[idx] < words[idx + 1] < size * 10)
             if increasing >= len(words) // 2:
                 return FileTriageRecord(
@@ -203,7 +202,7 @@ class RomTriageEngine:
                     "Monotonically increasing 32-bit word table", "PointerScanner, CascadingRelocator",
                 )
 
-        # 6. Moderate entropy machine code (5.5 - 7.1)
+        # Executable code entropy range
         if 5.5 <= ent <= 7.1:
             return FileTriageRecord(
                 name, size, ent, AssetType.EXECUTABLE_CODE, "MachineCode", 0.65,

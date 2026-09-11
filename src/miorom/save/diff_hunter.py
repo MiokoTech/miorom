@@ -144,8 +144,7 @@ class SaveStateDiffHunter:
         n = len(data)
         trails: List[PointerTrail] = []
 
-        # Find level-1 pointers: [ptr_val] + offset = target_ram
-        # where ptr_val <= target_ram and target_ram - ptr_val <= max_offset
+        # Find level-1 pointers to target_ram
         def find_pointers_to(target: int) -> List[Tuple[int, int]]:
             # returns list of (pointer_ram_addr, offset_delta)
             results = []

@@ -58,11 +58,11 @@ class ScriptArcheologist:
         if total_len < 4:
             return ArcheologyReport(total_len)
 
-        # 1. Frequency analysis of potential leading bytes
+        # Opcode frequency analysis
         byte_counts = Counter(data)
         common_bytes = [b for b, count in byte_counts.most_common(20)]
 
-        # 2. Heuristic scan of instruction patterns
+        # Instruction pattern heuristics
         opcodes: Dict[int, OpcodeCandidate] = {}
         pos = 0
 

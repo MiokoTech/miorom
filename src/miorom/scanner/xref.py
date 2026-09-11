@@ -328,7 +328,7 @@ class XRefAnalyzer:
         total_len = len(data)
         valid_range = (base_address, base_address + total_len)
 
-        # 1. Code XRefs (branches and calls)
+        # Code cross-references (branches and calls)
         for ins in instructions:
             if ins.target_address:
                 xtype = XRefType.CODE_CALL if ins.is_call else XRefType.CODE_JUMP
@@ -339,7 +339,7 @@ class XRefAnalyzer:
                     context=ins.mnemonic,
                 )
 
-        # 2. Data Pointer Tables XRefs
+        # Data pointer cross-references
         end_align = total_len - (total_len % 4)
         fmt = f"{endian or '>'}I" if arch == "ppc" else f"{endian or '<'}I"
 

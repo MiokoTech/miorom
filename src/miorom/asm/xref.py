@@ -83,8 +83,7 @@ class GlobalXrefEngine:
         n_words = len(data) // 4
         for i in range(n_words):
             word = struct.unpack_from(f"{endian}I", data, i * 4)[0]
-            # LDR Rd, [PC, #+/-imm12]: bits 27..20 = 0101x001 (0x051 or 0x059) and Rn = 15 (PC)
-            # cond: 31..28, 010: 27..25, I: 24=0, P: 23, U: 22, B: 21=0, W: 20=0, Rn: 19..16=15 (0xF)
+            # LDR Rd, [PC, #+/-imm12]
             cond = (word >> 28) & 0xF
             is_ldr_pc = ((word & 0x0E5F0000) == 0x041F0000) or ((word & 0x0E5F0000) == 0x059F0000)
 
@@ -129,7 +128,7 @@ class GlobalXrefEngine:
                 rt1 = (w1 >> 16) & 0x1F
                 imm_hi = w1 & 0xFFFF
 
-                # Next instruction: ADDIU Rt, Rs, imm (op 001001 = 0x09) or ORI (op 001101 = 0x0D)
+                # Next ADDIU or ORI instruction
                 op2 = (w2 >> 26) & 0x3F
                 rs2 = (w2 >> 21) & 0x1F
                 rt2 = (w2 >> 16) & 0x1F

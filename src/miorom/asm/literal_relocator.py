@@ -61,7 +61,7 @@ class CodeLiteralRelocator:
         old_bytes = old_str.encode("utf-8") if isinstance(old_str, str) else old_str
         new_bytes = new_str.encode("utf-8") if isinstance(new_str, str) else new_str
 
-        # 1. Locate original string in ROM
+        # Locate target string in ROM
         old_off = rom.find(old_bytes)
         if old_off == -1:
             raise RelocationError(f"Old string {old_str!r} not found in ROM buffer.")
@@ -69,7 +69,7 @@ class CodeLiteralRelocator:
         old_vaddr = ram_base + old_off
         new_vaddr = ram_base + cave_offset
 
-        # 2. Write new string into cave (with null terminator)
+        # Write relocated string to code cave
         rom[cave_offset : cave_offset + len(new_bytes)] = new_bytes
         if cave_offset + len(new_bytes) < len(rom):
             rom[cave_offset + len(new_bytes)] = 0  # Null terminator
@@ -77,7 +77,7 @@ class CodeLiteralRelocator:
         patched_count = 0
         patch_offsets: List[int] = []
 
-        # 3. Discover and patch code pointers according to architecture
+        # Patch pointer references
         arch_lower = arch.lower()
         min_tgt = min(old_vaddr, ram_base)
         max_tgt = max(old_vaddr, ram_base + len(rom)) + 0x10000

@@ -260,12 +260,32 @@ class AsmSnippet:
         return ArmSnippet(endian=endian)
 
     @staticmethod
+    def thumb(endian: str = "<") -> ThumbSnippet:
+        return ThumbSnippet(endian=endian)
+
+    @staticmethod
     def mips(endian: str = ">") -> MipsSnippet:
         return MipsSnippet(endian=endian)
 
     @staticmethod
+    def ppc(endian: str = ">") -> PpcSnippet:
+        return PpcSnippet(endian=endian)
+
+    @staticmethod
     def sm83() -> SM83Snippet:
         return SM83Snippet()
+
+    @staticmethod
+    def snes() -> SnesSnippet:
+        return SnesSnippet()
+
+    @staticmethod
+    def m68k() -> M68kSnippet:
+        return M68kSnippet()
+
+    @staticmethod
+    def mos6502() -> Mos6502Snippet:
+        return Mos6502Snippet()
 
 
 class SM83Snippet:
@@ -415,6 +435,862 @@ class SM83Snippet:
 
     def nop(self, count: int = 1) -> "SM83Snippet":
         self._instructions.extend(b"\x00" * count)
+        return self
+
+    def emit(self) -> bytes:
+        return bytes(self._instructions)
+
+
+class ThumbSnippet:
+    """Fluent 16-bit ARM Thumb assembly snippet builder for GBA & NDS."""
+
+    REG_MAP: Dict[str, int] = {
+        "r0": 0, "r1": 1, "r2": 2, "r3": 3,
+        "r4": 4, "r5": 5, "r6": 6, "r7": 7,
+        "r8": 8, "r9": 9, "r10": 10, "r11": 11,
+        "r12": 12, "sp": 13, "r13": 13, "lr": 14, "r14": 14,
+        "pc": 15, "r15": 15,
+    }
+
+    COND_MAP: Dict[str, int] = {
+        "eq": 0, "ne": 1, "cs": 2, "hs": 2, "cc": 3, "lo": 3,
+        "mi": 4, "pl": 5, "vs": 6, "vc": 7, "hi": 8, "ls": 9,
+        "ge": 10, "lt": 11, "gt": 12, "le": 13, "al": 14,
+    }
+
+    def __init__(self, endian: str = "<"):
+        self.endian = endian
+        self._instructions: List[int] = []
+
+    def _reg(self, name: str, allow_high: bool = False) -> int:
+        clean = name.lower().strip()
+        if clean not in self.REG_MAP:
+            raise ParseError(f"Unknown Thumb register: {name}")
+        idx = self.REG_MAP[clean]
+        if not allow_high and idx > 7:
+            raise ParseError(f"High register {name} not permitted in low-register Thumb instruction")
+        return idx
+
+    def push(self, regs: Sequence[str]) -> "ThumbSnippet":
+        """Emits PUSH {regs} (optional LR)."""
+        mask = 0
+        has_lr = False
+        for r in regs:
+            clean = r.lower().strip()
+            if clean in ("lr", "r14"):
+                has_lr = True
+            else:
+                idx = self._reg(clean, allow_high=False)
+                mask |= (1 << idx)
+        opcode = 0xB400 | (0x0100 if has_lr else 0) | mask
+        self._instructions.append(opcode)
+        return self
+
+    def pop(self, regs: Sequence[str]) -> "ThumbSnippet":
+        """Emits POP {regs} (optional PC)."""
+        mask = 0
+        has_pc = False
+        for r in regs:
+            clean = r.lower().strip()
+            if clean in ("pc", "r15"):
+                has_pc = True
+            else:
+                idx = self._reg(clean, allow_high=False)
+                mask |= (1 << idx)
+        opcode = 0xBC00 | (0x0100 if has_pc else 0) | mask
+        self._instructions.append(opcode)
+        return self
+
+    def mov_imm(self, rd: str, imm: int) -> "ThumbSnippet":
+        """Emits MOV Rd, #imm8."""
+        rd_idx = self._reg(rd)
+        if not 0 <= imm <= 0xFF:
+            raise ParseError(f"Thumb MOV immediate 0x{imm:X} out of 8-bit range (0..255)")
+        opcode = 0x2000 | (rd_idx << 8) | (imm & 0xFF)
+        self._instructions.append(opcode)
+        return self
+
+    def mov_reg(self, rd: str, rs: str) -> "ThumbSnippet":
+        """Emits MOV Rd, Rs (supports low and high registers)."""
+        rd_idx = self._reg(rd, allow_high=True)
+        rs_idx = self._reg(rs, allow_high=True)
+        opcode = 0x4600 | ((rd_idx >> 3) << 7) | ((rs_idx >> 3) << 6) | ((rs_idx & 7) << 3) | (rd_idx & 7)
+        self._instructions.append(opcode)
+        return self
+
+    def add_imm(self, rd: str, imm: int, rn: Optional[str] = None) -> "ThumbSnippet":
+        """Emits ADD Rd, #imm8 or ADD Rd, Rn, #imm3."""
+        rd_idx = self._reg(rd)
+        if rn is None or rn.lower().strip() == rd.lower().strip():
+            if not 0 <= imm <= 0xFF:
+                raise ParseError(f"Thumb ADD immediate 0x{imm:X} out of 8-bit range")
+            opcode = 0x3000 | (rd_idx << 8) | (imm & 0xFF)
+        else:
+            rn_idx = self._reg(rn)
+            if not 0 <= imm <= 7:
+                raise ParseError(f"Thumb ADD 3-reg immediate 0x{imm:X} out of 3-bit range (0..7)")
+            opcode = 0x1C00 | ((imm & 7) << 6) | (rn_idx << 3) | rd_idx
+        self._instructions.append(opcode)
+        return self
+
+    def sub_imm(self, rd: str, imm: int, rn: Optional[str] = None) -> "ThumbSnippet":
+        """Emits SUB Rd, #imm8 or SUB Rd, Rn, #imm3."""
+        rd_idx = self._reg(rd)
+        if rn is None or rn.lower().strip() == rd.lower().strip():
+            if not 0 <= imm <= 0xFF:
+                raise ParseError(f"Thumb SUB immediate 0x{imm:X} out of 8-bit range")
+            opcode = 0x3800 | (rd_idx << 8) | (imm & 0xFF)
+        else:
+            rn_idx = self._reg(rn)
+            if not 0 <= imm <= 7:
+                raise ParseError(f"Thumb SUB 3-reg immediate 0x{imm:X} out of 3-bit range (0..7)")
+            opcode = 0x1E00 | ((imm & 7) << 6) | (rn_idx << 3) | rd_idx
+        self._instructions.append(opcode)
+        return self
+
+    def add_reg(self, rd: str, rn: str, rm: str) -> "ThumbSnippet":
+        """Emits ADD Rd, Rn, Rm."""
+        rd_idx = self._reg(rd)
+        rn_idx = self._reg(rn)
+        rm_idx = self._reg(rm)
+        opcode = 0x1800 | (rm_idx << 6) | (rn_idx << 3) | rd_idx
+        self._instructions.append(opcode)
+        return self
+
+    def sub_reg(self, rd: str, rn: str, rm: str) -> "ThumbSnippet":
+        """Emits SUB Rd, Rn, Rm."""
+        rd_idx = self._reg(rd)
+        rn_idx = self._reg(rn)
+        rm_idx = self._reg(rm)
+        opcode = 0x1A00 | (rm_idx << 6) | (rn_idx << 3) | rd_idx
+        self._instructions.append(opcode)
+        return self
+
+    def cmp_imm(self, rn: str, imm: int) -> "ThumbSnippet":
+        """Emits CMP Rn, #imm8."""
+        rn_idx = self._reg(rn)
+        if not 0 <= imm <= 0xFF:
+            raise ParseError(f"Thumb CMP immediate 0x{imm:X} out of 8-bit range")
+        opcode = 0x2800 | (rn_idx << 8) | (imm & 0xFF)
+        self._instructions.append(opcode)
+        return self
+
+    def cmp_reg(self, rn: str, rm: str) -> "ThumbSnippet":
+        """Emits CMP Rn, Rm (supports low and high registers)."""
+        rn_idx = self._reg(rn, allow_high=True)
+        rm_idx = self._reg(rm, allow_high=True)
+        if rn_idx <= 7 and rm_idx <= 7:
+            opcode = 0x4280 | (rm_idx << 3) | rn_idx
+        else:
+            opcode = 0x4500 | ((rn_idx >> 3) << 7) | ((rm_idx >> 3) << 6) | ((rm_idx & 7) << 3) | (rn_idx & 7)
+        self._instructions.append(opcode)
+        return self
+
+    def ldr_imm(self, rd: str, rn: str, offset: int = 0) -> "ThumbSnippet":
+        """Emits LDR Rd, [Rn, #offset] (offset must be multiple of 4, 0..124)."""
+        rd_idx = self._reg(rd)
+        rn_idx = self._reg(rn)
+        if offset % 4 != 0 or not (0 <= offset <= 124):
+            raise ParseError(f"Thumb LDR offset {offset} must be multiple of 4 in range 0..124")
+        imm5 = offset >> 2
+        opcode = 0x6800 | (imm5 << 6) | (rn_idx << 3) | rd_idx
+        self._instructions.append(opcode)
+        return self
+
+    def str_imm(self, rd: str, rn: str, offset: int = 0) -> "ThumbSnippet":
+        """Emits STR Rd, [Rn, #offset] (offset must be multiple of 4, 0..124)."""
+        rd_idx = self._reg(rd)
+        rn_idx = self._reg(rn)
+        if offset % 4 != 0 or not (0 <= offset <= 124):
+            raise ParseError(f"Thumb STR offset {offset} must be multiple of 4 in range 0..124")
+        imm5 = offset >> 2
+        opcode = 0x6000 | (imm5 << 6) | (rn_idx << 3) | rd_idx
+        self._instructions.append(opcode)
+        return self
+
+    def ldr_pc(self, rd: str, offset: int) -> "ThumbSnippet":
+        """Emits LDR Rd, [PC, #offset] (offset must be multiple of 4, 0..1020)."""
+        rd_idx = self._reg(rd)
+        if offset % 4 != 0 or not (0 <= offset <= 1020):
+            raise ParseError(f"Thumb LDR PC offset {offset} must be multiple of 4 in range 0..1020")
+        imm8 = offset >> 2
+        opcode = 0x4800 | (rd_idx << 8) | imm8
+        self._instructions.append(opcode)
+        return self
+
+    def ldr_sp(self, rd: str, offset: int) -> "ThumbSnippet":
+        """Emits LDR Rd, [SP, #offset] (offset must be multiple of 4, 0..1020)."""
+        rd_idx = self._reg(rd)
+        if offset % 4 != 0 or not (0 <= offset <= 1020):
+            raise ParseError(f"Thumb LDR SP offset {offset} must be multiple of 4 in range 0..1020")
+        imm8 = offset >> 2
+        opcode = 0x9800 | (rd_idx << 8) | imm8
+        self._instructions.append(opcode)
+        return self
+
+    def str_sp(self, rd: str, offset: int) -> "ThumbSnippet":
+        """Emits STR Rd, [SP, #offset] (offset must be multiple of 4, 0..1020)."""
+        rd_idx = self._reg(rd)
+        if offset % 4 != 0 or not (0 <= offset <= 1020):
+            raise ParseError(f"Thumb STR SP offset {offset} must be multiple of 4 in range 0..1020")
+        imm8 = offset >> 2
+        opcode = 0x9000 | (rd_idx << 8) | imm8
+        self._instructions.append(opcode)
+        return self
+
+    def b(self, target_vaddr: int, current_pc: int) -> "ThumbSnippet":
+        """Emits unconditional branch B label (PC-relative)."""
+        diff = target_vaddr - (current_pc + 4)
+        if diff % 2 != 0:
+            raise ParseError(f"Thumb target address 0x{target_vaddr:08X} is not 2-byte aligned")
+        if not (-2048 <= diff <= 2046):
+            raise ParseError(f"Thumb branch displacement {diff} out of range (-2048..+2046)")
+        imm11 = (diff >> 1) & 0x7FF
+        opcode = 0xE000 | imm11
+        self._instructions.append(opcode)
+        return self
+
+    def b_cond(self, cond: str, target_vaddr: int, current_pc: int) -> "ThumbSnippet":
+        """Emits conditional branch B{cond} label."""
+        clean = cond.lower().strip()
+        if clean not in self.COND_MAP:
+            raise ParseError(f"Unknown Thumb condition code: {cond}")
+        cond_code = self.COND_MAP[clean]
+        diff = target_vaddr - (current_pc + 4)
+        if diff % 2 != 0:
+            raise ParseError(f"Thumb target address 0x{target_vaddr:08X} is not 2-byte aligned")
+        if not (-256 <= diff <= 254):
+            raise ParseError(f"Thumb conditional branch displacement {diff} out of range (-256..+254)")
+        imm8 = (diff >> 1) & 0xFF
+        opcode = 0xD000 | (cond_code << 8) | imm8
+        self._instructions.append(opcode)
+        return self
+
+    def bl(self, target_vaddr: int, current_pc: int) -> "ThumbSnippet":
+        """Emits 32-bit BL target_vaddr (two 16-bit halfwords)."""
+        diff = target_vaddr - (current_pc + 4)
+        if diff % 2 != 0:
+            raise ParseError(f"Thumb BL target address 0x{target_vaddr:08X} is not 2-byte aligned")
+        offset22 = diff >> 1
+        hi_11 = (offset22 >> 11) & 0x7FF
+        lo_11 = offset22 & 0x7FF
+        self._instructions.append(0xF000 | hi_11)
+        self._instructions.append(0xF800 | lo_11)
+        return self
+
+    def bx(self, rm: str = "lr") -> "ThumbSnippet":
+        """Emits BX Rm."""
+        rm_idx = self._reg(rm, allow_high=True)
+        opcode = 0x4700 | (rm_idx << 3)
+        self._instructions.append(opcode)
+        return self
+
+    def blx(self, rm: str) -> "ThumbSnippet":
+        """Emits BLX Rm."""
+        rm_idx = self._reg(rm, allow_high=True)
+        opcode = 0x4780 | (rm_idx << 3)
+        self._instructions.append(opcode)
+        return self
+
+    def nop(self, count: int = 1) -> "ThumbSnippet":
+        """Emits Thumb NOP (mov r8, r8 = 0x46C0)."""
+        for _ in range(count):
+            self._instructions.append(0x46C0)
+        return self
+
+    def emit(self) -> bytes:
+        fmt = f"{self.endian}H"
+        buf = bytearray()
+        for op in self._instructions:
+            buf.extend(struct.pack(fmt, op))
+        return bytes(buf)
+
+
+class PpcSnippet:
+    """Fluent PowerPC 32-bit assembly snippet builder for GameCube & Wii."""
+
+    REG_MAP: Dict[str, int] = {
+        f"r{i}": i for i in range(32)
+    }
+    REG_MAP.update({
+        "sp": 1, "r1": 1, "rtoc": 2, "r2": 2,
+    })
+
+    def __init__(self, endian: str = ">"):
+        self.endian = endian
+        self._instructions: List[int] = []
+
+    def _reg(self, name: str) -> int:
+        clean = name.lower().strip()
+        if clean not in self.REG_MAP:
+            raise ParseError(f"Unknown PowerPC register: {name}")
+        return self.REG_MAP[clean]
+
+    def nop(self, count: int = 1) -> "PpcSnippet":
+        """Emits PowerPC NOP (ori r0, r0, 0 = 0x60000000)."""
+        for _ in range(count):
+            self._instructions.append(0x60000000)
+        return self
+
+    def blr(self) -> "PpcSnippet":
+        """Emits BLR (branch to Link Register: 0x4E800020)."""
+        self._instructions.append(0x4E800020)
+        return self
+
+    def b(self, target_vaddr: int, current_pc: int) -> "PpcSnippet":
+        """Emits relative B target_vaddr."""
+        diff = target_vaddr - current_pc
+        if diff % 4 != 0:
+            raise ParseError(f"PowerPC branch target 0x{target_vaddr:08X} is not 4-byte aligned")
+        li24 = (diff >> 2) & 0x00FFFFFF
+        opcode = (18 << 26) | (li24 << 2)
+        self._instructions.append(opcode)
+        return self
+
+    def bl(self, target_vaddr: int, current_pc: int) -> "PpcSnippet":
+        """Emits relative BL target_vaddr (Branch with Link)."""
+        diff = target_vaddr - current_pc
+        if diff % 4 != 0:
+            raise ParseError(f"PowerPC branch target 0x{target_vaddr:08X} is not 4-byte aligned")
+        li24 = (diff >> 2) & 0x00FFFFFF
+        opcode = (18 << 26) | (li24 << 2) | 1
+        self._instructions.append(opcode)
+        return self
+
+    def addi(self, rt: str, ra: str, imm: int) -> "PpcSnippet":
+        """Emits ADDI Rt, Ra, simm16."""
+        rt_idx = self._reg(rt)
+        ra_idx = self._reg(ra)
+        opcode = (14 << 26) | (rt_idx << 21) | (ra_idx << 16) | (imm & 0xFFFF)
+        self._instructions.append(opcode)
+        return self
+
+    def lis(self, rt: str, imm: int) -> "PpcSnippet":
+        """Emits LIS Rt, imm16 (addis Rt, 0, imm16)."""
+        rt_idx = self._reg(rt)
+        opcode = (15 << 26) | (rt_idx << 21) | (0 << 16) | (imm & 0xFFFF)
+        self._instructions.append(opcode)
+        return self
+
+    def ori(self, ra: str, rs: str, imm: int) -> "PpcSnippet":
+        """Emits ORI Ra, Rs, uimm16."""
+        ra_idx = self._reg(ra)
+        rs_idx = self._reg(rs)
+        opcode = (24 << 26) | (rs_idx << 21) | (ra_idx << 16) | (imm & 0xFFFF)
+        self._instructions.append(opcode)
+        return self
+
+    def li(self, rt: str, imm: int) -> "PpcSnippet":
+        """Load 32-bit immediate (emits ADDI or LIS + ORI)."""
+        if -0x8000 <= imm <= 0x7FFF:
+            return self.addi(rt, "r0", imm)
+        hi = (imm >> 16) & 0xFFFF
+        lo = imm & 0xFFFF
+        self.lis(rt, hi)
+        if lo != 0:
+            self.ori(rt, rt, lo)
+        return self
+
+    def mr(self, ra: str, rs: str) -> "PpcSnippet":
+        """Emits MR Ra, Rs (or Ra, Rs, Rs)."""
+        ra_idx = self._reg(ra)
+        rs_idx = self._reg(rs)
+        opcode = (31 << 26) | (rs_idx << 21) | (ra_idx << 16) | (rs_idx << 11) | (444 << 1)
+        self._instructions.append(opcode)
+        return self
+
+    def lwz(self, rd: str, offset: int, ra: str) -> "PpcSnippet":
+        """Emits LWZ Rd, offset(Ra)."""
+        rd_idx = self._reg(rd)
+        ra_idx = self._reg(ra)
+        opcode = (32 << 26) | (rd_idx << 21) | (ra_idx << 16) | (offset & 0xFFFF)
+        self._instructions.append(opcode)
+        return self
+
+    def stw(self, rs: str, offset: int, ra: str) -> "PpcSnippet":
+        """Emits STW Rs, offset(Ra)."""
+        rs_idx = self._reg(rs)
+        ra_idx = self._reg(ra)
+        opcode = (36 << 26) | (rs_idx << 21) | (ra_idx << 16) | (offset & 0xFFFF)
+        self._instructions.append(opcode)
+        return self
+
+    def stwu(self, rs: str, offset: int, ra: str) -> "PpcSnippet":
+        """Emits STWU Rs, offset(Ra) (Store Word with Update, e.g. stwu r1, -0x20(r1))."""
+        rs_idx = self._reg(rs)
+        ra_idx = self._reg(ra)
+        opcode = (37 << 26) | (rs_idx << 21) | (ra_idx << 16) | (offset & 0xFFFF)
+        self._instructions.append(opcode)
+        return self
+
+    def mflr(self, rd: str) -> "PpcSnippet":
+        """Emits MFLR Rd (Move From Link Register: mfspr Rd, 8)."""
+        rd_idx = self._reg(rd)
+        opcode = 0x7C0802A6 | (rd_idx << 21)
+        self._instructions.append(opcode)
+        return self
+
+    def mtlr(self, rd: str) -> "PpcSnippet":
+        """Emits MTLR Rd (Move To Link Register: mtspr 8, Rd)."""
+        rd_idx = self._reg(rd)
+        opcode = 0x7C0803A6 | (rd_idx << 21)
+        self._instructions.append(opcode)
+        return self
+
+    def emit(self) -> bytes:
+        fmt = f"{self.endian}I"
+        buf = bytearray()
+        for op in self._instructions:
+            buf.extend(struct.pack(fmt, op))
+        return bytes(buf)
+
+
+class SnesSnippet:
+    """Fluent W65C816 (SNES) assembly snippet builder."""
+
+    def __init__(self):
+        self._instructions: bytearray = bytearray()
+
+    def nop(self, count: int = 1) -> "SnesSnippet":
+        self._instructions.extend(b"\xEA" * count)
+        return self
+
+    def clc(self) -> "SnesSnippet":
+        self._instructions.append(0x18)
+        return self
+
+    def sec(self) -> "SnesSnippet":
+        self._instructions.append(0x38)
+        return self
+
+    def sei(self) -> "SnesSnippet":
+        self._instructions.append(0x78)
+        return self
+
+    def cli(self) -> "SnesSnippet":
+        self._instructions.append(0x58)
+        return self
+
+    def rep(self, flags: int) -> "SnesSnippet":
+        """Reset Processor Status Bits (REP #$flags)."""
+        self._instructions.extend([0xC2, flags & 0xFF])
+        return self
+
+    def sep(self, flags: int) -> "SnesSnippet":
+        """Set Processor Status Bits (SEP #$flags)."""
+        self._instructions.extend([0xE2, flags & 0xFF])
+        return self
+
+    def pha(self) -> "SnesSnippet":
+        self._instructions.append(0x48)
+        return self
+
+    def pla(self) -> "SnesSnippet":
+        self._instructions.append(0x68)
+        return self
+
+    def phx(self) -> "SnesSnippet":
+        self._instructions.append(0xDA)
+        return self
+
+    def plx(self) -> "SnesSnippet":
+        self._instructions.append(0xFA)
+        return self
+
+    def phy(self) -> "SnesSnippet":
+        self._instructions.append(0x5A)
+        return self
+
+    def ply(self) -> "SnesSnippet":
+        self._instructions.append(0x7A)
+        return self
+
+    def php(self) -> "SnesSnippet":
+        self._instructions.append(0x08)
+        return self
+
+    def plp(self) -> "SnesSnippet":
+        self._instructions.append(0x28)
+        return self
+
+    def phb(self) -> "SnesSnippet":
+        self._instructions.append(0x8B)
+        return self
+
+    def plb(self) -> "SnesSnippet":
+        self._instructions.append(0xAB)
+        return self
+
+    def phd(self) -> "SnesSnippet":
+        self._instructions.append(0x0B)
+        return self
+
+    def pld(self) -> "SnesSnippet":
+        self._instructions.append(0x2B)
+        return self
+
+    def phk(self) -> "SnesSnippet":
+        self._instructions.append(0x4B)
+        return self
+
+    def lda_imm(self, val: int, is_16bit: bool = False) -> "SnesSnippet":
+        if is_16bit:
+            self._instructions.extend([0xA9, val & 0xFF, (val >> 8) & 0xFF])
+        else:
+            self._instructions.extend([0xA9, val & 0xFF])
+        return self
+
+    def lda_dp(self, offset: int) -> "SnesSnippet":
+        self._instructions.extend([0xA5, offset & 0xFF])
+        return self
+
+    def lda_addr(self, addr: int) -> "SnesSnippet":
+        self._instructions.extend([0xAD, addr & 0xFF, (addr >> 8) & 0xFF])
+        return self
+
+    def lda_long(self, addr: int) -> "SnesSnippet":
+        self._instructions.extend([0xAF, addr & 0xFF, (addr >> 8) & 0xFF, (addr >> 16) & 0xFF])
+        return self
+
+    def sta_dp(self, offset: int) -> "SnesSnippet":
+        self._instructions.extend([0x85, offset & 0xFF])
+        return self
+
+    def sta_addr(self, addr: int) -> "SnesSnippet":
+        self._instructions.extend([0x8D, addr & 0xFF, (addr >> 8) & 0xFF])
+        return self
+
+    def sta_long(self, addr: int) -> "SnesSnippet":
+        self._instructions.extend([0x8F, addr & 0xFF, (addr >> 8) & 0xFF, (addr >> 16) & 0xFF])
+        return self
+
+    def ldx_imm(self, val: int, is_16bit: bool = False) -> "SnesSnippet":
+        if is_16bit:
+            self._instructions.extend([0xA2, val & 0xFF, (val >> 8) & 0xFF])
+        else:
+            self._instructions.extend([0xA2, val & 0xFF])
+        return self
+
+    def ldy_imm(self, val: int, is_16bit: bool = False) -> "SnesSnippet":
+        if is_16bit:
+            self._instructions.extend([0xA0, val & 0xFF, (val >> 8) & 0xFF])
+        else:
+            self._instructions.extend([0xA0, val & 0xFF])
+        return self
+
+    def stx_addr(self, addr: int) -> "SnesSnippet":
+        self._instructions.extend([0x8E, addr & 0xFF, (addr >> 8) & 0xFF])
+        return self
+
+    def sty_addr(self, addr: int) -> "SnesSnippet":
+        self._instructions.extend([0x8C, addr & 0xFF, (addr >> 8) & 0xFF])
+        return self
+
+    def jsr(self, addr: int) -> "SnesSnippet":
+        self._instructions.extend([0x20, addr & 0xFF, (addr >> 8) & 0xFF])
+        return self
+
+    def jsl(self, addr: int) -> "SnesSnippet":
+        self._instructions.extend([0x22, addr & 0xFF, (addr >> 8) & 0xFF, (addr >> 16) & 0xFF])
+        return self
+
+    def rts(self) -> "SnesSnippet":
+        self._instructions.append(0x60)
+        return self
+
+    def rtl(self) -> "SnesSnippet":
+        self._instructions.append(0x6B)
+        return self
+
+    def jmp(self, addr: int) -> "SnesSnippet":
+        self._instructions.extend([0x4C, addr & 0xFF, (addr >> 8) & 0xFF])
+        return self
+
+    def jml(self, addr: int) -> "SnesSnippet":
+        self._instructions.extend([0x5C, addr & 0xFF, (addr >> 8) & 0xFF, (addr >> 16) & 0xFF])
+        return self
+
+    def bra(self, offset: int) -> "SnesSnippet":
+        self._instructions.extend([0x80, offset & 0xFF])
+        return self
+
+    def emit(self) -> bytes:
+        return bytes(self._instructions)
+
+
+class M68kSnippet:
+    """Fluent Motorola 68000 assembly snippet builder for Sega Genesis / Mega Drive."""
+
+    def __init__(self):
+        self._instructions: List[int] = []
+
+    def _reg(self, name: str) -> Tuple[int, int]:
+        clean = name.lower().strip()
+        if clean == "sp":
+            return (1, 7)
+        if clean.startswith("d") and clean[1:].isdigit():
+            idx = int(clean[1:])
+            if 0 <= idx <= 7:
+                return (0, idx)
+        if clean.startswith("a") and clean[1:].isdigit():
+            idx = int(clean[1:])
+            if 0 <= idx <= 7:
+                return (1, idx)
+        raise ParseError(f"Unknown M68K register: {name}")
+
+    def nop(self) -> "M68kSnippet":
+        self._instructions.append(0x4E71)
+        return self
+
+    def rts(self) -> "M68kSnippet":
+        self._instructions.append(0x4E75)
+        return self
+
+    def rte(self) -> "M68kSnippet":
+        self._instructions.append(0x4E73)
+        return self
+
+    def rtr(self) -> "M68kSnippet":
+        self._instructions.append(0x4E77)
+        return self
+
+    def illegal(self) -> "M68kSnippet":
+        self._instructions.append(0x4AFC)
+        return self
+
+    def trap(self, vector: int) -> "M68kSnippet":
+        self._instructions.append(0x4E40 | (vector & 0xF))
+        return self
+
+    def moveq(self, reg: str, imm: int) -> "M68kSnippet":
+        mode, r = self._reg(reg)
+        if mode != 0:
+            raise ParseError(f"MOVEQ target must be a data register (D0-D7), got {reg}")
+        self._instructions.append(0x7000 | (r << 9) | (imm & 0xFF))
+        return self
+
+    def move_imm(self, dst: str, imm: int, size: str = "w") -> "M68kSnippet":
+        mode, r = self._reg(dst)
+        size = size.lower()
+        if size == "l" and mode == 0 and -128 <= imm <= 127:
+            return self.moveq(dst, imm)
+
+        size_code = {"b": 1, "w": 3, "l": 2}.get(size)
+        if size_code is None:
+            raise ParseError(f"Invalid M68K size: {size}")
+
+        dst_bits = (r << 9) | (mode << 6)
+        opcode = (size_code << 12) | dst_bits | 0x3C
+        self._instructions.append(opcode)
+
+        if size == "l":
+            self._instructions.append((imm >> 16) & 0xFFFF)
+            self._instructions.append(imm & 0xFFFF)
+        elif size == "w":
+            self._instructions.append(imm & 0xFFFF)
+        else:
+            self._instructions.append(imm & 0xFF)
+        return self
+
+    def move_reg(self, src: str, dst: str, size: str = "w") -> "M68kSnippet":
+        s_mode, s_reg = self._reg(src)
+        d_mode, d_reg = self._reg(dst)
+        size = size.lower()
+        size_code = {"b": 1, "w": 3, "l": 2}.get(size)
+        if size_code is None:
+            raise ParseError(f"Invalid M68K size: {size}")
+
+        dst_bits = (d_reg << 9) | (d_mode << 6)
+        src_bits = (s_mode << 3) | s_reg
+        opcode = (size_code << 12) | dst_bits | src_bits
+        self._instructions.append(opcode)
+        return self
+
+    def lea(self, addr: int, dst: str) -> "M68kSnippet":
+        mode, r = self._reg(dst)
+        if mode != 1:
+            raise ParseError(f"LEA target must be an address register (A0-A7), got {dst}")
+        opcode = 0x41F9 | (r << 9)
+        self._instructions.append(opcode)
+        self._instructions.append((addr >> 16) & 0xFFFF)
+        self._instructions.append(addr & 0xFFFF)
+        return self
+
+    def jmp(self, addr: int) -> "M68kSnippet":
+        self._instructions.append(0x4EF9)
+        self._instructions.append((addr >> 16) & 0xFFFF)
+        self._instructions.append(addr & 0xFFFF)
+        return self
+
+    def jsr(self, addr: int) -> "M68kSnippet":
+        self._instructions.append(0x4EB9)
+        self._instructions.append((addr >> 16) & 0xFFFF)
+        self._instructions.append(addr & 0xFFFF)
+        return self
+
+    def bra(self, disp: int) -> "M68kSnippet":
+        if -128 <= disp <= 127 and disp != 0:
+            self._instructions.append(0x6000 | (disp & 0xFF))
+        else:
+            self._instructions.append(0x6000)
+            self._instructions.append(disp & 0xFFFF)
+        return self
+
+    def bsr(self, disp: int) -> "M68kSnippet":
+        if -128 <= disp <= 127 and disp != 0:
+            self._instructions.append(0x6100 | (disp & 0xFF))
+        else:
+            self._instructions.append(0x6100)
+            self._instructions.append(disp & 0xFFFF)
+        return self
+
+    def emit(self) -> bytes:
+        out = bytearray()
+        for word in self._instructions:
+            out.extend(struct.pack(">H", word & 0xFFFF))
+        return bytes(out)
+
+
+class Mos6502Snippet:
+    """Fluent MOS 6502 assembly snippet builder for NES / Famicom."""
+
+    def __init__(self):
+        self._instructions: List[int] = []
+
+    def nop(self) -> "Mos6502Snippet":
+        self._instructions.append(0xEA)
+        return self
+
+    def lda_imm(self, val: int) -> "Mos6502Snippet":
+        self._instructions.extend([0xA9, val & 0xFF])
+        return self
+
+    def lda_zp(self, addr: int) -> "Mos6502Snippet":
+        self._instructions.extend([0xA5, addr & 0xFF])
+        return self
+
+    def lda_abs(self, addr: int) -> "Mos6502Snippet":
+        self._instructions.extend([0xAD, addr & 0xFF, (addr >> 8) & 0xFF])
+        return self
+
+    def sta_zp(self, addr: int) -> "Mos6502Snippet":
+        self._instructions.extend([0x85, addr & 0xFF])
+        return self
+
+    def sta_abs(self, addr: int) -> "Mos6502Snippet":
+        self._instructions.extend([0x8D, addr & 0xFF, (addr >> 8) & 0xFF])
+        return self
+
+    def ldx_imm(self, val: int) -> "Mos6502Snippet":
+        self._instructions.extend([0xA2, val & 0xFF])
+        return self
+
+    def ldx_zp(self, addr: int) -> "Mos6502Snippet":
+        self._instructions.extend([0xA6, addr & 0xFF])
+        return self
+
+    def ldx_abs(self, addr: int) -> "Mos6502Snippet":
+        self._instructions.extend([0xAE, addr & 0xFF, (addr >> 8) & 0xFF])
+        return self
+
+    def stx_zp(self, addr: int) -> "Mos6502Snippet":
+        self._instructions.extend([0x86, addr & 0xFF])
+        return self
+
+    def stx_abs(self, addr: int) -> "Mos6502Snippet":
+        self._instructions.extend([0x8E, addr & 0xFF, (addr >> 8) & 0xFF])
+        return self
+
+    def ldy_imm(self, val: int) -> "Mos6502Snippet":
+        self._instructions.extend([0xA0, val & 0xFF])
+        return self
+
+    def ldy_zp(self, addr: int) -> "Mos6502Snippet":
+        self._instructions.extend([0xA4, addr & 0xFF])
+        return self
+
+    def ldy_abs(self, addr: int) -> "Mos6502Snippet":
+        self._instructions.extend([0xAC, addr & 0xFF, (addr >> 8) & 0xFF])
+        return self
+
+    def sty_zp(self, addr: int) -> "Mos6502Snippet":
+        self._instructions.extend([0x84, addr & 0xFF])
+        return self
+
+    def sty_abs(self, addr: int) -> "Mos6502Snippet":
+        self._instructions.extend([0x8C, addr & 0xFF, (addr >> 8) & 0xFF])
+        return self
+
+    def tax(self) -> "Mos6502Snippet":
+        self._instructions.append(0xAA)
+        return self
+
+    def tay(self) -> "Mos6502Snippet":
+        self._instructions.append(0xA8)
+        return self
+
+    def txa(self) -> "Mos6502Snippet":
+        self._instructions.append(0x8A)
+        return self
+
+    def tya(self) -> "Mos6502Snippet":
+        self._instructions.append(0x98)
+        return self
+
+    def pha(self) -> "Mos6502Snippet":
+        self._instructions.append(0x48)
+        return self
+
+    def pla(self) -> "Mos6502Snippet":
+        self._instructions.append(0x68)
+        return self
+
+    def php(self) -> "Mos6502Snippet":
+        self._instructions.append(0x08)
+        return self
+
+    def plp(self) -> "Mos6502Snippet":
+        self._instructions.append(0x28)
+        return self
+
+    def jsr(self, addr: int) -> "Mos6502Snippet":
+        self._instructions.extend([0x20, addr & 0xFF, (addr >> 8) & 0xFF])
+        return self
+
+    def rts(self) -> "Mos6502Snippet":
+        self._instructions.append(0x60)
+        return self
+
+    def jmp_abs(self, addr: int) -> "Mos6502Snippet":
+        self._instructions.extend([0x4C, addr & 0xFF, (addr >> 8) & 0xFF])
+        return self
+
+    def jmp_ind(self, addr: int) -> "Mos6502Snippet":
+        self._instructions.extend([0x6C, addr & 0xFF, (addr >> 8) & 0xFF])
+        return self
+
+    def bne(self, offset: int) -> "Mos6502Snippet":
+        self._instructions.extend([0xD0, offset & 0xFF])
+        return self
+
+    def beq(self, offset: int) -> "Mos6502Snippet":
+        self._instructions.extend([0xF0, offset & 0xFF])
+        return self
+
+    def clc(self) -> "Mos6502Snippet":
+        self._instructions.append(0x18)
+        return self
+
+    def sec(self) -> "Mos6502Snippet":
+        self._instructions.append(0x38)
+        return self
+
+    def cli(self) -> "Mos6502Snippet":
+        self._instructions.append(0x58)
+        return self
+
+    def sei(self) -> "Mos6502Snippet":
+        self._instructions.append(0x78)
         return self
 
     def emit(self) -> bytes:

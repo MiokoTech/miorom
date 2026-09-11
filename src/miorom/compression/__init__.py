@@ -6,7 +6,17 @@ from miorom.errors import CompressionError
 from miorom.compression.lz11 import LZ11
 from miorom.compression.rle import RLE
 from miorom.compression.yaz0 import Yaz0
+from miorom.compression.yay0 import Yay0
+from miorom.compression.aplib import APLib
+from miorom.compression.refpack import RefPack
+from miorom.compression.lzss import LZSS
 from miorom.compression.huffman import Huffman
+from miorom.compression.kosinski import KosinskiCodec, Kosinski
+from miorom.compression.nemesis import NemesisCodec, Nemesis
+from miorom.compression.enigma import EnigmaCodec, Enigma
+from miorom.compression.mio0 import MIO0Codec, MIO0
+from miorom.compression.saxman import SaxmanCodec, Saxman
+from miorom.compression.comper import ComperCodec, Comper
 from miorom.compression.heuristic import (
     LZSSConfig,
     decompress_lzss,
@@ -20,13 +30,35 @@ from miorom.compression.inspector import (
     CompressedSizeComparator,
     CompressionSizeReport,
 )
+from miorom.compression.text_compression_hunter import (
+    TextCompressionHunter,
+    HuffmanTreeCandidate,
+    HuffmanNodeEntry,
+    DteDictionaryCandidate,
+)
 
 __all__ = [
     "LZ10",
     "LZ11",
     "RLE",
     "Yaz0",
+    "Yay0",
+    "APLib",
+    "RefPack",
+    "LZSS",
     "Huffman",
+    "KosinskiCodec",
+    "Kosinski",
+    "NemesisCodec",
+    "Nemesis",
+    "EnigmaCodec",
+    "Enigma",
+    "MIO0Codec",
+    "MIO0",
+    "SaxmanCodec",
+    "Saxman",
+    "ComperCodec",
+    "Comper",
     "LZSSConfig",
     "decompress_lzss",
     "compress_lzss",
@@ -42,6 +74,10 @@ __all__ = [
     "compress",
     "register_codec",
     "list_codecs",
+    "TextCompressionHunter",
+    "HuffmanTreeCandidate",
+    "HuffmanNodeEntry",
+    "DteDictionaryCandidate",
 ]
 
 _compress_registry: dict = {}
@@ -72,6 +108,9 @@ def decompress(data: bytes) -> bytes:
     if data[:4] in _magic_registry:
         return _magic_registry[data[:4]](data)
 
+    if data[:2] in _magic_registry:
+        return _magic_registry[data[:2]](data)
+
     magic = data[0]
     if magic in _magic_registry:
         return _magic_registry[magic](data)
@@ -92,9 +131,19 @@ register_codec("lz10", LZ10, magic_int=0x10)
 register_codec("lz11", LZ11, magic_int=0x11)
 register_codec("rle", RLE, magic_int=0x30)
 register_codec("yaz0", Yaz0, magic_bytes=b"Yaz0")
+register_codec("yay0", Yay0, magic_bytes=b"Yay0")
+register_codec("aplib", APLib, magic_bytes=b"AP32")
+register_codec("refpack", RefPack, magic_bytes=b"\x10\xfb")
+register_codec("lzss", LZSS)
 register_codec("huffman4", Huffman, magic_int=0x24, compress_func=lambda d: Huffman.compress(d, bit_depth=4))
 register_codec("huffman8", Huffman, magic_int=0x28, compress_func=lambda d: Huffman.compress(d, bit_depth=8))
 register_codec("huffman", Huffman, magic_int=0x28, compress_func=lambda d: Huffman.compress(d, bit_depth=8))
+register_codec("kosinski", KosinskiCodec)
+register_codec("nemesis", NemesisCodec)
+register_codec("enigma", EnigmaCodec)
+register_codec("mio0", MIO0Codec, magic_bytes=b"MIO0")
+register_codec("saxman", SaxmanCodec)
+register_codec("comper", ComperCodec)
 
 def _discover_codec_plugins():
     """Auto-discover third-party compression codecs via entry_points."""

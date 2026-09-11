@@ -8,7 +8,7 @@ while automatically recalculating absolute and relative branch jump targets.
 
 from miorom.result import MioRomResult
 from dataclasses import dataclass
-import struct
+from miorom.core.binary import BinaryReader, BinaryWriter
 from typing import List, Sequence, Tuple
 
 
@@ -59,7 +59,7 @@ class BytecodeStreamSplicer:
 
             fmt = f"{bt.endian}{'I' if bt.operand_size == 4 else 'H'}"
             # Read original target value from original bytecode
-            raw_val = struct.unpack_from(fmt, bytecode, bt.operand_offset)[0]
+            raw_val = BinaryReader.unpack_from(fmt, bytecode, bt.operand_offset)[0]
 
             if bt.is_relative:
                 # Relative jump: target_abs = instruction_offset + raw_val
@@ -72,11 +72,9 @@ class BytecodeStreamSplicer:
 
                 target_abs = bt.instruction_offset + signed_val
 
-                # If jump crosses the splice point, adjust relative delta
-                # Case 1: instruction before splice, target after splice -> distance increases by delta
+                # Adjust relative delta when crossing splice boundary
                 if bt.instruction_offset < splice_offset and target_abs >= splice_offset:
                     new_rel = signed_val + delta
-                # Case 2: instruction after splice, target before splice -> distance decreases by delta
                 elif bt.instruction_offset >= splice_offset and target_abs < splice_offset:
                     new_rel = signed_val - delta
                 else:
@@ -84,14 +82,14 @@ class BytecodeStreamSplicer:
 
                 # Mask to unsigned representation for packing
                 mask = 0xFFFFFFFF if bt.operand_size == 4 else 0xFFFF
-                struct.pack_into(fmt, buf, eff_op_pos, new_rel & mask)
+                BinaryWriter.pack_into(fmt, buf, eff_op_pos, new_rel & mask)
                 adjusted_count += 1
             else:
                 # Absolute jump: target_abs = raw_val
                 # If target is at or after splice_offset, increase by delta
                 if raw_val >= splice_offset:
                     new_abs = raw_val + delta
-                    struct.pack_into(fmt, buf, eff_op_pos, new_abs)
+                    BinaryWriter.pack_into(fmt, buf, eff_op_pos, new_abs)
                     adjusted_count += 1
 
         return bytes(buf), adjusted_count

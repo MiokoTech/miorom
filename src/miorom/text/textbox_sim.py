@@ -184,10 +184,10 @@ class TextboxSimulator:
         img = Image.new("RGBA", (cfg.box_width_pixels, cfg.box_height_pixels), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
 
-        # 1. Draw box background and double border
+        # Render box background and border
         draw.rectangle([0, 0, cfg.box_width_pixels - 1, cfg.box_height_pixels - 1], fill=bg_color, outline=border_color, width=2)
 
-        # 2. Draw portrait placeholder if specified
+        # Render portrait placeholder
         if cfg.portrait_width > 0:
             p_box = [
                 cfg.margin_left,
@@ -197,7 +197,7 @@ class TextboxSimulator:
             ]
             draw.rectangle(p_box, fill=(40, 50, 70, 255), outline=border_color, width=1)
 
-        # 3. Draw text lines
+        # Render text lines
         start_x = cfg.margin_left + cfg.portrait_width
         start_y = cfg.margin_top
 

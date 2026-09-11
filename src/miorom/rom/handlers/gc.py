@@ -1,5 +1,7 @@
 import os
-import struct
+from miorom.core.binary import BinaryReader
+from miorom.errors import ParseError
+from miorom.security import sanitize_extract_path
 from typing import Dict, Any, Optional
 
 from miorom.rom.base import BaseRomHandler
@@ -8,9 +10,8 @@ from miorom.platforms.gc.disc import GameCubeDisc, GCHeader
 
 class GameCubeRomHandler(BaseRomHandler):
     """
-    Nintendo GameCube and Wii Disc Image (.iso / .gcm) unpacker and repacker.
-    Extracts disc header, system files, and full FST directory tree.
-    Repacks modified files into bit-aligned disc images with updated FST tables.
+    GameCube / Wii Disc Image (.iso, .gcm) handler.
+    Unpacks FST filesystem and repacks into valid GameCube disc image.
     """
 
     name = "gamecube"
@@ -19,19 +20,27 @@ class GameCubeRomHandler(BaseRomHandler):
 
     def can_handle(self, data: bytes, filepath: Optional[str] = None) -> bool:
         if len(data) >= 0x20:
-            magic = struct.unpack_from(">I", data, 0x1C)[0]
+            magic = BinaryReader.unpack_u32(data, 0x1C, endian=">")
             if magic == GameCubeDisc.GC_MAGIC:
                 return True
 
-        if filepath:
-            ext = os.path.splitext(filepath)[1].lower()
-            if ext in self.extensions and len(data) >= 0x440:
-                magic = struct.unpack_from(">I", data, 0x1C)[0]
-                return magic == GameCubeDisc.GC_MAGIC
+        if filepath and os.path.isfile(filepath):
+            try:
+                with open(filepath, "rb") as f:
+                    hdr = f.read(0x20)
+                    if len(hdr) >= 0x20:
+                        magic = BinaryReader.unpack_u32(hdr, 0x1C, endian=">")
+                        return magic == GameCubeDisc.GC_MAGIC
+            except OSError:
+                return False
 
         return False
 
     def unpack(self, data: bytes, output_dir: str, **kwargs) -> Dict[str, Any]:
+        filepath = kwargs.pop("filepath", None)
+        if filepath and os.path.isfile(filepath):
+            return self.unpack_file(filepath, output_dir, **kwargs)
+
         disc = GameCubeDisc(data)
         sys_dir = os.path.join(output_dir, "sys")
         root_dir = os.path.join(output_dir, "root")
@@ -42,7 +51,7 @@ class GameCubeRomHandler(BaseRomHandler):
         with open(os.path.join(sys_dir, "header.bin"), "wb") as f:
             f.write(disc.header.pack())
 
-        # Save disc base system sectors (header, bi2, apploader, boot.dol) up to FST
+        # System sectors up to FST
         base_size = min(len(data), disc.header.fst_offset if disc.header.fst_offset > 0 else 0x450000)
         with open(os.path.join(sys_dir, "disc_base.bin"), "wb") as f:
             f.write(data[:base_size])
@@ -50,7 +59,7 @@ class GameCubeRomHandler(BaseRomHandler):
         # Extract all files from FST
         extracted_count = 0
         for rel_path, file_data in disc.files.items():
-            dest = os.path.join(root_dir, rel_path)
+            dest = sanitize_extract_path(root_dir, rel_path)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             with open(dest, "wb") as f:
                 f.write(file_data)
@@ -69,6 +78,69 @@ class GameCubeRomHandler(BaseRomHandler):
             "file_count": extracted_count,
             "dol_offset": f"0x{disc.header.dol_offset:08X}",
             "fst_offset": f"0x{disc.header.fst_offset:08X}",
+        }
+
+    def unpack_file(self, filepath: str, output_dir: str, **kwargs) -> Dict[str, Any]:
+        """Streaming disc unpack directly from file, consuming minimal RAM."""
+        sys_dir = os.path.join(output_dir, "sys")
+        root_dir = os.path.join(output_dir, "root")
+        os.makedirs(sys_dir, exist_ok=True)
+        os.makedirs(root_dir, exist_ok=True)
+
+        with open(filepath, "rb") as f_in:
+            hdr_bytes = f_in.read(0x440)
+            header = GCHeader.parse(hdr_bytes)
+
+            with open(os.path.join(sys_dir, "header.bin"), "wb") as f_out:
+                f_out.write(header.pack())
+
+            f_in.seek(0)
+            file_size = os.path.getsize(filepath)
+            base_size = min(file_size, header.fst_offset if header.fst_offset > 0 else 0x450000)
+            with open(os.path.join(sys_dir, "disc_base.bin"), "wb") as f_out:
+                rem = base_size
+                while rem > 0:
+                    chunk = f_in.read(min(rem, 65536))
+                    if not chunk:
+                        break
+                    f_out.write(chunk)
+                    rem -= len(chunk)
+
+            f_in.seek(header.fst_offset)
+            fst_data = f_in.read(header.fst_size)
+            entries = GameCubeDisc.parse_fst_entries(fst_data)
+
+            extracted_count = 0
+            for entry in entries:
+                if entry.is_directory:
+                    continue
+                dest = sanitize_extract_path(root_dir, entry.path)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                f_in.seek(entry.file_offset)
+                with open(dest, "wb") as f_out:
+                    rem = entry.file_size
+                    while rem > 0:
+                        chunk = f_in.read(min(rem, 65536))
+                        if not chunk:
+                            break
+                        f_out.write(chunk)
+                        rem -= len(chunk)
+                extracted_count += 1
+
+        return {
+            "format": self.name,
+            "platform": "GameCube / Wii",
+            "game_id": header.game_id,
+            "maker_code": header.maker_code,
+            "game_title": header.game_title,
+            "disc_number": header.disc_number,
+            "version": header.version,
+            "audio_streaming": header.audio_streaming,
+            "stream_buf_size": header.stream_buf_size,
+            "file_count": extracted_count,
+            "dol_offset": f"0x{header.dol_offset:08X}",
+            "fst_offset": f"0x{header.fst_offset:08X}",
+            "streaming": True,
         }
 
     def repack(self, input_dir: str, **kwargs) -> bytes:

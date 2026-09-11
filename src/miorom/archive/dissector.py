@@ -51,7 +51,7 @@ def detect_file_extension(data: bytes) -> str:
         if data.startswith(magic):
             return ext
 
-    # Nintendo LZ10/LZ11 header check (0x10 or 0x11 followed by 24-bit uncompressed size)
+    # LZ10/LZ11 header check
     if len(data) >= 4 and data[0] in (0x10, 0x11):
         unpacked_sz = data[1] | (data[2] << 8) | (data[3] << 16)
         if 0 < unpacked_sz <= 16 * 1024 * 1024:
@@ -209,28 +209,28 @@ class HeuristicArchiveDissector:
         if len(data) < 16:
             return None
 
-        # 1. Try Explicit (Offset, Size) or (Size, Offset) pairs with Count prefix
+        # Parse explicit offset-size or size-offset pairs with count prefix
         for endian in ("<", ">"):
             for ptr_sz in (4, 2):
                 res = cls._try_explicit_pairs(data, endian, ptr_sz, min_entries, max_entries)
                 if res and res.confidence >= 0.8:
                     return res
 
-        # 2. Try Implicit Offset Table with Count prefix
+        # Parse implicit offset table with count prefix
         for endian in ("<", ">"):
             for ptr_sz in (4, 2):
                 res = cls._try_implicit_offsets_with_count(data, endian, ptr_sz, min_entries, max_entries)
                 if res and res.confidence >= 0.8:
                     return res
 
-        # 3. Try Implicit Offset Table without Count prefix (pure offset table starting at 0)
+        # Parse raw offset table
         for endian in ("<", ">"):
             for ptr_sz in (4, 2):
                 res = cls._try_implicit_offsets_no_count(data, endian, ptr_sz, min_entries, max_entries)
                 if res and res.confidence >= 0.8:
                     return res
 
-        # 4. Fallback: Magic / Signature Carving
+        # Fallback signature carve
         res_carved = cls._try_magic_carving(data, min_entries)
         if res_carved:
             return res_carved

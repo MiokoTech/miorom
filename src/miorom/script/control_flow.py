@@ -33,7 +33,7 @@ class ControlFlowGraph:
 
         cfg.entry_addr = script.instructions[0].offset
 
-        # 1. Identify leader offsets (where each block begins)
+        # Basic block leader offsets
         leaders: Set[int] = {script.instructions[0].offset}
 
         # Any labeled address is a leader
@@ -61,12 +61,12 @@ class ControlFlowGraph:
                 if i + 1 < len(script.instructions):
                     leaders.add(script.instructions[i + 1].offset)
 
-        # Only retain leaders that correspond to an actual instruction offset
+        # Filter leaders by instruction offset
         instruction_offsets = {ins.offset for ins in script.instructions}
         actual_leaders = sorted(leaders.intersection(instruction_offsets))
         leader_set = set(actual_leaders)
 
-        # 2. Slice instructions into basic blocks
+        # Partition instructions into basic blocks
         cur_block: Optional[BasicBlock] = None
         for instr in script.instructions:
             if instr.offset in leader_set:
@@ -82,7 +82,7 @@ class ControlFlowGraph:
                     cur_block.instructions.append(instr)
                     cur_block.end_addr = instr.offset
 
-        # 3. Connect control flow edges
+        # Control flow graph edges
         sorted_block_addrs = sorted(cfg.blocks.keys())
         for idx, b_addr in enumerate(sorted_block_addrs):
             block = cfg.blocks[b_addr]

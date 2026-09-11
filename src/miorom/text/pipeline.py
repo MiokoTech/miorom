@@ -181,7 +181,7 @@ class StringTablePipeline:
         new_payloads: List[bytes] = []
 
         for idx, entry in enumerate(po_handler.entries):
-            # If translated (msgstr non-empty), use msgstr; else fall back to msgid
+            # Use msgstr if present, else fallback to msgid
             text = entry.msgstr if entry.msgstr else entry.msgid
 
             # Encode

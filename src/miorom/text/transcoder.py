@@ -37,7 +37,7 @@ class TrieTranscoder:
         if not byte_seq or not text:
             return
 
-        # 1. Add to Byte Trie (bytes -> text)
+        # Populate byte-to-text trie
         node = self.byte_root
         for b in byte_seq:
             if b not in node.children:
@@ -45,7 +45,7 @@ class TrieTranscoder:
             node = node.children[b]
         node.value = text
 
-        # 2. Add to Char Trie (text -> bytes)
+        # Populate text-to-byte trie
         cnode = self.char_root
         for ch in text:
             if ch not in cnode.children:

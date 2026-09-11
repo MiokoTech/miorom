@@ -23,7 +23,7 @@ def is_smd(data: bytes) -> bool:
     """Check if binary data is in Super Magic Drive (.smd) interleaved format."""
     if len(data) < 512:
         return False
-    # SMD header has block count and magic bytes 0xAA 0xBB at offset 8, 9
+    # SMD header check
     if len(data) < MDSmdHeaderStruct.sizeof():
         return False
     magic = MDSmdHeaderStruct.from_bytes(data).magic

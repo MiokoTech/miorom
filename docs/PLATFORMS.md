@@ -8,15 +8,19 @@ MioROM includes native parsers, serializers, and filesystem managers for multipl
 
 | Module | Architecture | Supported Formats & Containers |
 | :--- | :--- | :--- |
-| `miorom.platforms.nds` | ARM7TDMI / ARM946E-S | `.nds` ROM, NARC (`.narc`), NFTR Font (`.nftr`), SDAT Audio (`.sdat`) |
-| `miorom.platforms.wii` | PowerPC Broadway / Hollywood | U8 Archive (`.arc`, `.szs`), TPL Textures (`.tpl`), BRFNT Font (`.brfnt`) |
+| `miorom.platforms.nds` | ARM7TDMI / ARM946E-S / Thumb | `.nds` ROM, NARC (`.narc`), NFTR Font, NCLR/NCGR/NSCR Graphics, SDAT Audio |
+| `miorom.platforms.wii` | PowerPC Broadway / Hollywood | U8 Archive (`.arc`, `.szs`), TPL Textures (`.tpl`), BRFNT Font, DSP-ADPCM Audio |
 | `miorom.platforms.gc` | PowerPC Gekko / Flipper | Disc Images (`.iso`, `.gcm`), FST Filesystem (`FstInjector`), DOL Executable |
-| `miorom.platforms.psx` | MIPS R3000A | ISO9660 Disc, CUE/BIN Multi-track, PS-X EXE, TIM Images, STR Movie, CD-XA |
-| `miorom.platforms.n64` | MIPS VR4300 | `.z64` (BE), `.v64` (Swapped), `.n64` (LE), IPL3 CIC Checksums |
-| `miorom.platforms.gba` | ARM7TDMI | `.gba` Cartridge, Save Chip Detector (EEPROM/SRAM/Flash), Complement CRC |
+| `miorom.platforms.psx` | MIPS R3000A | ISO9660 Disc, CUE/BIN Multi-track, PS-X EXE, TIM Images, VAG SPU-ADPCM, STR Movie, CD-XA |
+| `miorom.platforms.n64` | MIPS VR4300 | `.z64` (BE), `.v64` (Swapped), `.n64` (LE), IPL3 CIC Checksums, Fast3D Textures |
+| `miorom.platforms.gba` | ARM7TDMI / Thumb | `.gba` Cartridge, Save Chip Detector, BIOS SWI Resolver (`GBASwiResolver`), Multiboot (`.mb`) Builder |
 | `miorom.platforms.gb` | Sharp LR35902 (Z80-like) | `.gb`, `.gbc`, MBC1/2/3/5 Bank Addressing, Header & Global Checksums |
-| `miorom.platforms.snes` | Ricoh 5A22 (W65C816S) | LoROM, HiROM, ExHiROM Mapping, 512-byte SMC Stripper, Complement Checksum |
+| `miorom.platforms.snes` | Ricoh 5A22 (W65C816S) | LoROM, HiROM, ExHiROM Mapping, 512-byte SMC Stripper, SPC700 BRR Audio, Complement Checksum |
+| `miorom.platforms.nes` | MOS Technology 6502 | `.nes`, `.unf`, iNES, NES 2.0, Mapper Identification, PRG/CHR Separation |
 | `miorom.platforms.md` | Motorola 68000 / Z80 | `.bin`, `.md`, SMD Interleaved (`.smd`), 16-bit Big-Endian Checksum |
+| `miorom.platforms.sega_disc` | Hitachi SH-2 / SH-4 | Sega Saturn 512B Security Sector, Dreamcast IP.BIN / GD-ROM GDI Sheets |
+| `miorom.platforms.psp` | MIPS R4000 (Allegrex) | EBOOT.PBP, PARAM.SFO (System File Object), PS1 Classics & Homebrew |
+| `miorom.platforms.iso` | Universal Optical Media | ISO 9660 Disc Synthesizer (`Iso9660Builder`), Compressed ISO (`CSOImage`) |
 
 ---
 
@@ -71,6 +75,30 @@ font.set_glyph("É", custom_glyph_tile, advance=7)
 
 with open("font_edited.nftr", "wb") as f:
     f.write(font.to_bytes())
+```
+
+### 2D Graphics Suite (`NCLRFile`, `NCGRFile`, `NSCRFile`)
+Full pure-Python suite for extracting, modifying, and repacking 2D graphics in Nintendo DS games:
+- **`NCLRFile`**: Nitro Color Palette (`.nclr`) reader and serializer for BGR555 color palettes.
+- **`NCGRFile`**: Nitro Character Graphic (`.ncgr`) reader and serializer for 4bpp/8bpp tiled character graphics.
+- **`NSCRFile`**: Nitro Screen Resource (`.nscr`) background tilemap screen reader with flip/palette attribute support.
+
+```python
+from miorom.platforms.nds import NCLRFile, NCGRFile, NSCRFile
+
+# Load palette, character tiles, and screen map
+nclr = NCLRFile.from_bytes(open("bg.nclr", "rb").read())
+ncgr = NCGRFile.from_bytes(open("bg.ncgr", "rb").read())
+nscr = NSCRFile.from_bytes(open("bg.nscr", "rb").read())
+
+# Access and modify palette colors
+print("Colors in palette:", len(nclr.colors))
+nclr.colors[0] = (255, 0, 0)  # Red RGB
+
+# Export modified files
+open("bg_mod.nclr", "wb").write(nclr.to_bytes())
+open("bg_mod.ncgr", "wb").write(ncgr.to_bytes())
+open("bg_mod.nscr", "wb").write(nscr.to_bytes())
 ```
 
 ---
@@ -320,3 +348,226 @@ if md.is_smd:
 md.fix_checksum()
 md.save("sonic_clean.bin")
 ```
+
+---
+
+## 9. Nintendo Entertainment System (`miorom.platforms.nes`)
+
+### Cartridge Header Parsing & Mapper Identification (`NESRom`)
+- Parses 16-byte iNES and modern NES 2.0 headers (`NESHeaderStruct`).
+- Identifies memory mappers (NROM, MMC1, MMC3, MMC5, UNROM, CNROM, etc.).
+- Detects vertical, horizontal, and four-screen mirroring modes.
+- Separates PRG ROM (program code) and CHR ROM/RAM (pattern graphics).
+- Extracts and strips 512-byte trainer buffers if present.
+
+```python
+from miorom.platforms.nes import NESRom
+
+rom = NESRom.from_file("mario.nes")
+print(f"Mapper: {rom.mapper_id}, PRG Size: {len(rom.prg_rom)} bytes, CHR Size: {len(rom.chr_rom)} bytes")
+print("Is NES 2.0 format:", rom.is_nes20)
+
+# Modify PRG or CHR data and repack
+rom.save("mario_mod.nes")
+```
+
+---
+
+## 10. Console Audio & Sound Codecs (`miorom.audio`)
+
+MioROM features native pure-Python codecs for retro audio processing and extraction:
+
+### Sony PS1 & PS2 SPU-ADPCM (`VAGFile`, `VAGCodec`)
+Standard audio format used for character voices, dialogue, and sound effects across PlayStation 1 and 2 games.
+- Decodes 16-byte blocks (28 samples per block) into 16-bit PCM using Sony predictor filter coefficients.
+- Encodes PCM audio into SPU-ADPCM blocks with optimal filter selection.
+- Directly exports to standard 16-bit RIFF/WAVE (`.wav`) files.
+
+```python
+from miorom.audio.vag import VAGFile
+
+vag = VAGFile.from_bytes(open("voice.vag", "rb").read())
+print(f"Sample Rate: {vag.header.sample_rate} Hz, Name: {vag.header.name}")
+
+# Export decoded audio directly to WAV
+open("voice.wav", "wb").write(vag.to_wav())
+
+# Encode raw PCM into a new VAG file
+new_vag = VAGFile.from_pcm(samples=[...], sample_rate=44100, name="DIALOGUE_01")
+open("new_voice.vag", "wb").write(new_vag.to_bytes())
+```
+
+### Super Nintendo SPC700 BRR (`BRRCodec`)
+Bit Rate Reduction (BRR) audio format utilized by the SNES S-DSP sound processor for all instruments and sound effects:
+- Decodes 9-byte BRR blocks (16 samples per block) with 4-filter Gaussian interpolation.
+- Encodes 16-bit PCM into BRR blocks with loop point tagging.
+- Wraps decoded audio into WAV files.
+
+```python
+from miorom.audio.brr import BRRCodec
+
+# Decode raw SNES BRR data to PCM samples
+samples = BRRCodec.decode(open("sample.brr", "rb").read())
+
+# Export to WAV
+wav_bytes = BRRCodec.to_wav(open("sample.brr", "rb").read(), sample_rate=32000)
+open("sample.wav", "wb").write(wav_bytes)
+
+# Encode PCM samples to BRR
+brr_data = BRRCodec.encode(samples, loop_point=16)
+open("sample_repacked.brr", "wb").write(brr_data)
+```
+
+### Nintendo GameCube & Wii DSP-ADPCM (`DSPADPCMCodec`)
+Standard audio codec for `.dsp` and `.brstm` streams on GameCube and Wii:
+- Decodes 8-byte frames (14 samples per frame) using hardware coefficient matrix.
+- Generates 16-bit PCM WAV audio.
+
+```python
+from miorom.audio.dsp_adpcm import DSPADPCMCodec
+
+dsp_data = open("bgm.dsp", "rb").read()
+pcm_samples = DSPADPCMCodec.decode(dsp_data)
+open("bgm.wav", "wb").write(DSPADPCMCodec.to_wav(dsp_data, sample_rate=32000))
+```
+
+---
+
+## 11. PlayStation Portable (`miorom.platforms.psp`)
+
+### PARAM.SFO Metadata (`SFOFile`)
+Parser and builder for Sony's standard System File Object configuration file used across PSP, PS3, PS4, and PS Vita:
+- Reads and writes UTF-8 strings, ASCII strings, and 32-bit unsigned integers.
+- Property accessors for `title`, `disc_id`, and `category`.
+
+```python
+from miorom.platforms.psp import SFOFile
+
+sfo = SFOFile.from_file("PARAM.SFO")
+print(f"Title: {sfo.title}, Disc ID: {sfo.disc_id}, Category: {sfo.category}")
+
+# Update metadata
+sfo["TITLE"] = "Final Fantasy Tactics (Custom Translation)"
+sfo.save("PARAM.SFO")
+```
+
+### EBOOT.PBP Container (`PBPFile`)
+Container archive unpacker and synthesizer for PSP homebrew, updates, and PS1 Classics packages:
+- Access and modify all 8 canonical PBP sections: `PARAM.SFO`, `ICON0.PNG`, `ICON1.PMF`, `PIC0.PNG`, `PIC1.PNG`, `SND0.AT3`, `DATA.PSP`, `DATA.PSAR`.
+- Direct `.sfo` parsed object property.
+- Bulk directory extraction via `extract_all()`.
+
+```python
+from miorom.platforms.psp import PBPFile
+
+pbp = PBPFile.from_file("EBOOT.PBP")
+print(f"Game: {pbp.sfo.title if pbp.sfo else 'Unknown'}")
+
+# Extract all sections to directory
+pbp.extract_all("extracted_pbp/")
+
+# Modify executable or assets and repack
+pbp.set_section("ICON0.PNG", open("new_icon.png", "rb").read())
+pbp.save("EBOOT_MODIFIED.PBP")
+```
+
+---
+
+## 12. Optical Disc & Compressed ISO (`miorom.platforms.iso`)
+
+### Compressed ISO (`CSOImage`)
+Sector-based random-access reader and compressor for CSO/CISO disc images used by PSP and PS2 emulators:
+- Transparent zlib/deflate decompression per sector.
+- Random-access multi-sector and cross-boundary byte reads (`read_bytes()`).
+- Direct decompression streaming to disk (`decompress_to_file()`).
+- Pure-Python ISO-to-CSO compressor (`CSOImage.compress_iso()`).
+
+```python
+from miorom.platforms.iso import CSOImage
+
+# Open CSO image for random-access reading
+with CSOImage("game.cso") as cso:
+    print(f"Total Sectors: {cso.sector_count}, Block Size: {cso.sector_size}")
+    boot_sector = cso.read_sector(16)
+    slice_data = cso.read_bytes(0x8000, 1024)
+
+# Compress raw ISO to CSO format
+CSOImage.compress_iso("game.iso", output_path="game.cso", block_size=2048)
+```
+
+---
+
+## 13. Sega Optical Discs (`miorom.platforms.sega_disc`)
+
+### Saturn Disc Security Sector (`SaturnDiscHeader`)
+Parser and editor for Sega Saturn 512-byte bootstrap security sectors (Sector 0):
+- Verifies `SEGA SEGASATURN ` magic, product numbers, release dates, and boot filenames (`0.BIN`).
+- Modifies and unlocks area symbols with `make_region_free()` (`JTUEKABL`).
+
+```python
+from miorom.platforms.sega_disc import SaturnDiscHeader
+
+hdr = SaturnDiscHeader.from_file("saturn_game.iso")
+print(f"Title: {hdr.title}, Version: {hdr.version}, Boot File: {hdr.boot_file}")
+print("Region Free:", hdr.is_region_free)
+
+hdr.make_region_free()
+```
+
+### Dreamcast Bootstrap & GDI Descriptors (`DreamcastIpBin`, `GDISheet`)
+Handles Dreamcast initial bootstrap sector 0 (IP.BIN) and GD-ROM `.gdi` multi-track sheets:
+- Recalculates 16-bit CRC checksums across IP.BIN headers via `calculate_crc()`.
+- Unlocks worldwide region code (`JUE`).
+- Inspects and parses GDI multi-track sheets, identifying high-density game data tracks.
+
+```python
+from miorom.platforms.sega_disc import DreamcastIpBin, GDISheet
+
+# Parse Dreamcast IP.BIN
+ip = DreamcastIpBin.from_file("IP.BIN")
+ip.make_region_free()
+ip.crc = ip.calculate_crc()
+
+# Parse GDI descriptor sheet
+gdi = GDISheet.from_file("disc.gdi")
+hd_track = gdi.high_density_track
+print(f"High Density Track: {hd_track.track_number} ({hd_track.filename}) at LBA {hd_track.start_lba}")
+```
+
+---
+
+## 14. Game Boy Advance Extended (`miorom.platforms.gba`)
+
+### BIOS SWI Symbolic Resolver (`GBASwiResolver`)
+Resolves and annotates official Nintendo GBA BIOS system calls across ARM and Thumb disassemblies:
+- 32-entry lookup database covering math, decompression (LZ77, Huffman, RL), sound (MusicPlayer2000), and DMA routines.
+- Instruction annotation (`annotate_thumb_instruction`, `annotate_arm_instruction`).
+- Binary scanner (`scan_swi_calls`).
+
+```python
+from miorom.platforms.gba import GBASwiResolver
+
+# Scan binary payload for BIOS SWI calls
+calls = GBASwiResolver.scan_swi_calls(arm_code, thumb_mode=True, base_addr=0x08000000)
+for call in calls:
+    print(f"At {hex(call['address'])}: {call['name']} - {call['description']}")
+```
+
+### Multiboot Payload Builder (`GBAMultiboot`)
+Generates valid GBA Multiboot (`.mb`) 256KB EWRAM executables for cable transmission:
+- Synthesizes ARM entry branch, official Nintendo logo, metadata, and complement checksums.
+- Validates and parses `.mb` files.
+
+```python
+from miorom.platforms.gba import GBAMultiboot
+
+mb_data = GBAMultiboot.create_payload(
+    code_bytes=my_ewram_code,
+    title="MINIGAME",
+    game_code="MB01",
+)
+with open("game.mb", "wb") as f:
+    f.write(mb_data)
+```
+
+

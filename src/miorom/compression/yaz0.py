@@ -78,6 +78,11 @@ class Yaz0:
                     output.append(output[copy_pos])
                     copy_pos += 1
 
+        if len(output) < uncompressed_size:
+            raise CompressionError(
+                f"Yaz0 decompression truncated: expected {uncompressed_size} bytes, got {len(output)} bytes"
+            )
+
         return bytes(output)
 
     @classmethod

@@ -66,6 +66,66 @@ class ADPCMCodec:
         return samples
 
     @classmethod
+    def encode_ima(
+        cls,
+        samples: List[int],
+        initial_predictor: int = 0,
+        initial_index: int = 0,
+    ) -> Tuple[bytes, int, int]:
+        """
+        Compresses signed 16-bit PCM audio samples into 4-bit IMA-ADPCM bytes.
+        Returns a tuple of (adpcm_bytes, final_predictor, final_index).
+        """
+        predictor = initial_predictor
+        step_index = max(0, min(88, initial_index))
+        nibbles: List[int] = []
+
+        for sample in samples:
+            diff = sample - predictor
+            sign = 0
+            if diff < 0:
+                sign = 8
+                diff = -diff
+
+            step = cls.STEP_TABLE[step_index]
+            delta = 0
+            vpdiff = step >> 3
+
+            if diff >= step:
+                delta |= 4
+                diff -= step
+                vpdiff += step
+            step_half = step >> 1
+            if diff >= step_half:
+                delta |= 2
+                diff -= step_half
+                vpdiff += step_half
+            step_quarter = step >> 2
+            if diff >= step_quarter:
+                delta |= 1
+                vpdiff += step_quarter
+
+            if sign:
+                predictor -= vpdiff
+            else:
+                predictor += vpdiff
+
+            predictor = max(-32768, min(32767, predictor))
+            nibbles.append(sign | delta)
+
+            step_index += cls.INDEX_TABLE[delta]
+            step_index = max(0, min(88, step_index))
+
+        # Pack lower nibble first, then upper nibble
+        adpcm_bytes = bytearray()
+        for i in range(0, len(nibbles), 2):
+            low = nibbles[i]
+            high = nibbles[i + 1] if i + 1 < len(nibbles) else 0
+            adpcm_bytes.append(low | (high << 4))
+
+        return bytes(adpcm_bytes), predictor, step_index
+
+    @classmethod
     def build_wav(
         cls,
         samples: List[int],
@@ -80,7 +140,7 @@ class ADPCMCodec:
         byte_rate = sample_rate * block_align
         data_bytes = bytearray()
         for s in samples:
-            data_bytes.extend(struct.pack("<h", s))
+            data_bytes.extend(struct.pack("<h", max(-32768, min(32767, s))))
 
         data_size = len(data_bytes)
         riff_size = 36 + data_size
@@ -106,3 +166,55 @@ class ADPCMCodec:
         header.extend(struct.pack("<I", data_size))
 
         return bytes(header + data_bytes)
+
+    @classmethod
+    def read_wav(cls, data: bytes) -> dict:
+        """
+        Parses standard RIFF/WAVE audio data into channels, sample rate, and PCM samples.
+        """
+        if len(data) < 44 or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+            raise ValueError("Invalid WAV file container (missing RIFF/WAVE header).")
+
+        pos = 12
+        channels = 1
+        sample_rate = 22050
+        bits_per_sample = 16
+        audio_format = 1
+        raw_pcm = b""
+
+        while pos + 8 <= len(data):
+            chunk_id = data[pos : pos + 4]
+            chunk_size = struct.unpack_from("<I", data, pos + 4)[0]
+            pos += 8
+            if chunk_id == b"fmt ":
+                if chunk_size >= 16:
+                    audio_format, channels, sample_rate, _, _, bits_per_sample = struct.unpack_from(
+                        "<HHIIHH", data, pos
+                    )
+            elif chunk_id == b"data":
+                raw_pcm = data[pos : pos + chunk_size]
+            pos += chunk_size
+            # Chunks in RIFF are word-aligned (even byte boundary)
+            if chunk_size % 2 != 0:
+                pos += 1
+
+        if audio_format != 1:
+            raise ValueError(f"Unsupported WAV audio format: {audio_format} (only PCM format 1 is supported).")
+
+        samples: List[int] = []
+        if bits_per_sample == 16:
+            count = len(raw_pcm) // 2
+            samples = list(struct.unpack(f"<{count}h", raw_pcm[: count * 2]))
+        elif bits_per_sample == 8:
+            # Standard WAV 8-bit PCM is unsigned (0..255, 128 is center)
+            samples = [((b - 128) << 8) for b in raw_pcm]
+        else:
+            raise ValueError(f"Unsupported bits per sample: {bits_per_sample} (expected 8 or 16).")
+
+        return {
+            "channels": channels,
+            "sample_rate": sample_rate,
+            "bits_per_sample": bits_per_sample,
+            "samples": samples,
+        }
+

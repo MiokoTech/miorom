@@ -61,8 +61,7 @@ class EncodingTransmuter:
 
         word = struct.unpack_from(f"{endian}I", code, instruction_offset)[0]
 
-        # Check if instruction is LDRH (bits 7..4 = 1011 = 0xB, bits 27..25 = 000)
-        # ARM LDRH: cond 000 P U 0 W 1 Rn Rd imm4 1 0 1 1 imm4
+        # ARM LDRH instruction check
         is_ldrh = ((word >> 25) & 0x7) == 0 and ((word >> 4) & 0xF) == 0xB
         if is_ldrh:
             cond = (word >> 28) & 0xF

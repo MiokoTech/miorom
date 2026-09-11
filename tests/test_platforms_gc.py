@@ -7,7 +7,7 @@ def build_synthetic_gc_disc():
     """Build a minimal valid GameCube disc image in memory with an FST."""
     disc_data = bytearray(0x500000)
 
-    # 1. Header
+    # Header
     header = GCHeader(
         game_id="GALE",
         maker_code="01",
@@ -26,7 +26,7 @@ def build_synthetic_gc_disc():
     )
     disc_data[:0x440] = header.pack()
 
-    # 2. Build initial FST with 2 entries:
+    # Build initial FST with 2 entries:
     # 0: Root directory (total entries: 3)
     # 1: dir "script" (parent: 0, next: 3)
     # 2: file "dialogue.bin" inside script (parent: 1, offset: 0x460000, size: 12)
@@ -45,7 +45,7 @@ def build_synthetic_gc_disc():
     disc_data[0x428:0x42C] = struct.pack(">I", len(full_fst))
     disc_data[0x450000:0x450000 + len(full_fst)] = full_fst
 
-    # 3. File data
+    # File data
     disc_data[0x460000:0x460000 + 12] = b"HELLO_MELEE!"
 
     return bytes(disc_data)

@@ -2,7 +2,20 @@ import struct
 from typing import Optional, Tuple
 
 
-from miorom.errors import RelocationError
+from miorom.asm.branch_calc import (
+    calc_arm_branch,
+    resolve_arm_branch,
+    calc_thumb_branch,
+    resolve_thumb_branch,
+    calc_mips_jump,
+    resolve_mips_jump,
+    calc_mips_branch,
+    resolve_mips_branch,
+    calc_6502_branch,
+    resolve_6502_branch,
+)
+from miorom.errors import ParseError, RelocationError
+
 
 class ARMBranch:
     """
@@ -23,14 +36,10 @@ class ARMBranch:
         Encodes ARM 32-bit B or BL instruction.
         In ARM state, PC is read as current_instruction + 8.
         """
-        diff = target_addr - (source_pc + 8)
-        if diff % 4 != 0:
+        if (target_addr - (source_pc + 8)) % 4 != 0:
             raise ParseError(f"Target address 0x{target_addr:08X} is not 4-byte aligned.")
-
-        imm24 = (diff >> 2) & 0x00FFFFFF
-        opcode_base = 0x0B000000 if link else 0x0A000000
-        instr = (cond << 28) | opcode_base | imm24
-        return struct.pack("<I", instr)
+        opcode = calc_arm_branch(source_pc, target_addr, link=link, cond=cond)
+        return struct.pack("<I", opcode)
 
     @classmethod
     def decode_b(cls, source_pc: int, instr_bytes: bytes) -> Tuple[int, bool, int]:
@@ -41,13 +50,7 @@ class ARMBranch:
         instr = struct.unpack("<I", instr_bytes[:4])[0]
         cond = (instr >> 28) & 0xF
         link = bool((instr >> 24) & 1)
-        imm24 = instr & 0x00FFFFFF
-
-        # Sign-extend 24-bit to 32-bit
-        if imm24 & 0x00800000:
-            imm24 -= 0x01000000
-
-        target = source_pc + 8 + (imm24 << 2)
+        target = resolve_arm_branch(source_pc, instr)
         return target, link, cond
 
 
@@ -76,16 +79,9 @@ class ThumbBranch:
         Encodes 32-bit Thumb BL (Branch with Link) composed of two 16-bit halfwords.
         Range: -4MB to +4MB.
         """
-        diff = target_addr - (source_pc + 4)
-        if diff % 2 != 0:
+        if (target_addr - (source_pc + 4)) % 2 != 0:
             raise ParseError(f"Thumb target address 0x{target_addr:08X} is not 2-byte aligned.")
-
-        offset22 = (diff >> 1)
-        hi_11 = (offset22 >> 11) & 0x7FF
-        lo_11 = offset22 & 0x7FF
-
-        w1 = 0xF000 | hi_11
-        w2 = 0xF800 | lo_11
+        w1, w2 = calc_thumb_branch(source_pc, target_addr)
         return struct.pack("<HH", w1, w2)
 
 

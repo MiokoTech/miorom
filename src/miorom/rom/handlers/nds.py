@@ -4,6 +4,7 @@ from typing import Dict, Any, Optional, List, Tuple
 from miorom.rom.base import BaseRomHandler
 from miorom.core.schema import U16, U32
 from miorom.platforms.nds.rom import NDSFatEntryStruct, NDSFntDirectoryEntryStruct, NDSHeaderCrcStruct, NDSRom
+from miorom.security import sanitize_extract_path
 
 
 def calculate_nds_crc16(data: bytes, init: int = 0xFFFF) -> int:
@@ -30,7 +31,7 @@ def parse_nds_fnt(fnt_data: bytes) -> Dict[int, str]:
     root_start = root.first_entry_offset
     root_top_id = root.first_file_id
     num_dirs = root.parent_directory_id
-    # Clamp num_dirs to reasonable range to prevent corrupted headers from hanging
+    # Clamp num_dirs to prevent corrupted loop
     num_dirs = min(num_dirs & 0x0FFF, len(fnt_data) // 8)
     if num_dirs == 0:
         return {}
@@ -204,7 +205,7 @@ class NDSRomHandler(BaseRomHandler):
         arm9_off = U32().unpack(data, 0x20, "<")[0]
         arm7_off = U32().unpack(data, 0x30, "<")[0]
 
-        # In valid NDS ROMs, ARM9 and ARM7 offsets are at or above 0x200
+        # Valid NDS ROMs have ARM9/ARM7 offsets >= 0x200
         return (0x200 <= arm9_off < len(data)) and (0x200 <= arm7_off < len(data))
 
     def unpack(self, data: bytes, output_dir: str, **kwargs) -> Dict[str, Any]:
@@ -214,7 +215,7 @@ class NDSRomHandler(BaseRomHandler):
         os.makedirs(sys_dir, exist_ok=True)
         os.makedirs(root_dir, exist_ok=True)
 
-        # 1. Extract system files
+        # Extract system files
         hdr_len = min(rom.arm9_offset, 0x4000) if rom.arm9_offset >= 0x200 else 0x200
         with open(os.path.join(sys_dir, "header.bin"), "wb") as f:
             f.write(data[:hdr_len])
@@ -233,7 +234,7 @@ class NDSRomHandler(BaseRomHandler):
             with open(os.path.join(sys_dir, "banner.bin"), "wb") as f:
                 f.write(data[rom.banner_offset : rom.banner_offset + 0x840])
 
-        # 2. Extract File System
+        # Extract filesystem entries
         file_map: Dict[int, str] = {}
         if rom.fnt_offset > 0 and rom.fnt_size >= 8 and rom.fnt_offset + rom.fnt_size <= len(data):
             fnt_data = data[rom.fnt_offset : rom.fnt_offset + rom.fnt_size]
@@ -243,7 +244,7 @@ class NDSRomHandler(BaseRomHandler):
         extracted_count = 0
         for entry in fat_entries:
             rel_path = file_map.get(entry.id, f"file_{entry.id:04d}.bin")
-            dest_path = os.path.join(root_dir, rel_path)
+            dest_path = sanitize_extract_path(root_dir, rel_path)
             os.makedirs(os.path.dirname(dest_path), exist_ok=True)
             with open(dest_path, "wb") as f_out:
                 f_out.write(rom.get_file(entry.id))
@@ -335,26 +336,26 @@ class NDSRomHandler(BaseRomHandler):
 
         rom_out = bytearray(header_raw[:0x4000])
 
-        # 1. ARM9 binary (placed at 0x4000)
+        # ARM9 binary
         arm9_off = 0x4000
         arm9_size = len(arm9_data)
         rom_out[arm9_off : arm9_off + arm9_size] = arm9_data
 
-        # 2. ARM7 binary
+        # ARM7 binary
         cur_offset = align(arm9_off + arm9_size, 512)
         arm7_off = cur_offset
         arm7_size = len(arm7_data)
         rom_out.extend(b"\x00" * (arm7_off - len(rom_out)))
         rom_out.extend(arm7_data)
 
-        # 3. FNT
+        # File Name Table (FNT)
         cur_offset = align(len(rom_out), 512)
         fnt_off = cur_offset
         fnt_size = len(fnt_bytes)
         rom_out.extend(b"\x00" * (fnt_off - len(rom_out)))
         rom_out.extend(fnt_bytes)
 
-        # 4. FAT reservation
+        # File Allocation Table (FAT)
         cur_offset = align(len(rom_out), 512)
         fat_off = cur_offset
         num_files = len(ordered_files)
@@ -362,7 +363,7 @@ class NDSRomHandler(BaseRomHandler):
         fat_end = fat_off + fat_size
         rom_out.extend(b"\x00" * (fat_end - len(rom_out)))
 
-        # 5. Banner (if present)
+        # Icon banner
         banner_off = 0
         if banner_data:
             cur_offset = align(len(rom_out), 512)
@@ -370,7 +371,7 @@ class NDSRomHandler(BaseRomHandler):
             rom_out.extend(b"\x00" * (banner_off - len(rom_out)))
             rom_out.extend(banner_data)
 
-        # 6. File payloads
+        # File payloads
         fat_entries = []
         for _, rel_path in ordered_files:
             data = file_payloads.get(rel_path, b"")

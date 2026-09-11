@@ -339,6 +339,34 @@ class BinaryStruct(metaclass=StructMeta):
 
         return inst
 
+    @classmethod
+    def from_stream(cls, reader: Any, endian: Optional[str] = None) -> "BinaryStruct":
+        """
+        Parses a BinaryStruct directly from a BinaryReader or stream,
+        advancing the stream pointer by precisely the number of bytes consumed.
+        """
+        start_pos = reader.tell()
+        remaining = getattr(reader, "remaining", None)
+        if remaining is not None:
+            data = reader.read_bytes(remaining)
+        else:
+            data = reader.stream.read()
+
+        used_endian = endian or getattr(reader, "endian", None) or cls._endian
+        inst = cls.from_bytes(data, offset=0, endian=used_endian)
+        consumed = inst._current_offset
+        reader.seek(start_pos + consumed)
+        return inst
+
+    def to_stream(self, writer: Any, endian: Optional[str] = None) -> "BinaryStruct":
+        """
+        Serializes this BinaryStruct directly into a BinaryWriter stream.
+        """
+        used_endian = endian or getattr(writer, "endian", None) or self._endian
+        data = self.to_bytes(endian=used_endian)
+        writer.write_bytes(data)
+        return self
+
     def to_bytes(self, endian: Optional[str] = None) -> bytes:
         used_endian = endian or self._endian
         out = bytearray()
@@ -375,10 +403,13 @@ class BinaryStruct(metaclass=StructMeta):
 class PascalString(SchemaField):
     """Length-prefixed string with the prefix type declared explicitly."""
 
-    def __init__(self, length_type: SchemaField, encoding: str = "ascii", default: str = ""):
+    def __init__(self, length_type: Union[SchemaField, Type[SchemaField]], encoding: str = "ascii", default: str = ""):
         self._endian = None
         super().__init__(default=default)
-        self.length_type = length_type
+        if isinstance(length_type, type) and issubclass(length_type, SchemaField):
+            self.length_type = length_type()
+        else:
+            self.length_type = length_type
         self.encoding = encoding
 
     @property

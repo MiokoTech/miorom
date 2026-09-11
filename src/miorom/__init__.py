@@ -1,9 +1,9 @@
 """
 MioROM: A Python library for ROM hacking and game reverse engineering.
-Designed as a modular building block for reverse engineering tools, unpackers, and custom ROM editors (similar to ndspy).
+Designed as a modular building block for reverse engineering tools, unpackers, and custom ROM editors.
 """
 
-__version__ = "0.13.1"
+__version__ = "1.0.0"
 
 from miorom.errors import (
     MioromError,
@@ -40,6 +40,8 @@ from miorom.core.schema import (
 from miorom.core.memory import MemoryMap, MemoryRegion
 from miorom.core.signatures import SignaturePattern, SignatureScanner
 from miorom.core.rom_view import ROM, StringQuery
+from miorom.core.cstruct import CStructOverlay, CStructInstance, CField
+from miorom.core.bitfield import BitField, BitFieldSchema, BitFieldCodec
 from miorom.security import UnsafeArchivePathError, sanitize_extract_path
 
 from miorom.project import (
@@ -78,6 +80,9 @@ from miorom.asm import (
     ARMMovPairPointer,
     ARMInstructionScanner,
     UniversalInstructionScanner,
+    VWFHookEngine,
+    VWFHookConfig,
+    VWFDeploymentReport,
 )
 from miorom.script.vm import ScriptVM
 from miorom.text.pixel_wrapper import FontMetrics, PixelWordWrapper
@@ -116,6 +121,15 @@ from miorom.text.tags import TagManager
 from miorom.text.charmap import CharMap
 from miorom.text.wrapper import WordWrapper
 from miorom.text.font_builder import Glyph, BitmapFont
+from miorom.text.bmfont import (
+    BMFont,
+    BMFontChar,
+    BMFontInfo,
+    BMFontCommon,
+    BMFontPage,
+    BMFontKerning,
+    PNGCodec,
+)
 from miorom.text.aligner import StringAligner, AlignedString
 from miorom.text.tokenizer import ControlCodeDef, ControlCodeSchema, ControlCodeTokenizer
 
@@ -130,9 +144,24 @@ from miorom.graphics.tiles import (
 )
 from miorom.graphics.tilesheet import TileSheet, TileSheetRenderer
 from miorom.graphics.tilemap import Tilemap, TilemapEntry, TileReducer
+from miorom.graphics.tile_dedup import TileDeduplicator, DeduplicatedTileEntry, TileDedupResult
+from miorom.graphics.oam import HardwareOamCodec, SpriteDescriptor
 from miorom.graphics.image_bridge import ImageBridge
 from miorom.graphics.mdec import MdecDecoder
 from miorom.graphics.fast3d import Fast3DParser, F3DTextureDescriptor, Fast3DBuilder
+from miorom.graphics.font_injector import FontGlyphInjector, LATIN_8X8_BITMAPS
+from miorom.graphics.font_dissector import (
+    FontDissector,
+    FontCandidate,
+    FontGeometry,
+    DissectedGlyph,
+    WidthTableCandidate,
+)
+from miorom.graphics.tilemap_dissector import (
+    TilemapDissector,
+    TilemapTextRun,
+    TilemapMenuBox,
+)
 from miorom.graphics.n64_texture import N64TextureDecoder, N64TextureEncoder, N64TextureFormat
 
 from miorom.formats.csv_handler import CsvHandler
@@ -142,6 +171,8 @@ from miorom.formats.script_catalog import DialogueCleaner, ScriptCatalog
 from miorom.patch import (
     IpsPatcher,
     BpsPatcher,
+    UpsPatcher,
+    PPFPatcher,
     XdeltaPatcher,
     SlackSpaceManager,
     SlackBlock,
@@ -164,9 +195,37 @@ from miorom.patch import (
     create_patch,
     apply_patch,
 )
-from miorom.compression import LZ10, LZ11, RLE, Yaz0, Huffman, decompress, compress
+from miorom.compression import (
+    LZ10,
+    LZ11,
+    RLE,
+    Yaz0,
+    Yay0,
+    APLib,
+    RefPack,
+    LZSS,
+    Huffman,
+    KosinskiCodec,
+    Kosinski,
+    NemesisCodec,
+    Nemesis,
+    EnigmaCodec,
+    Enigma,
+    MIO0Codec,
+    MIO0,
+    SaxmanCodec,
+    Saxman,
+    ComperCodec,
+    Comper,
+    TextCompressionHunter,
+    HuffmanTreeCandidate,
+    HuffmanNodeEntry,
+    DteDictionaryCandidate,
+    decompress,
+    compress,
+)
 
-from miorom.platforms.wii import U8Archive, TPLFile, BRFNTFont
+from miorom.platforms.wii import U8Archive, RARCEntry, RARCArchive, TPLFile, BTIImage, BRFNTFont
 from miorom.platforms.nds import (
     NARCArchive,
     NDSRom,
@@ -178,8 +237,21 @@ from miorom.platforms.nds import (
     fix_nds_checksum,
     NFTRFont,
     NFTRGlyph,
+    NCLRFile,
+    NCGRFile,
+    NSCRFile,
+    ScreenEntry,
+    NCERFile,
+    NCERBank,
+    NCERCell,
+    NANRFile,
+    NANRSequence,
+    NANRFrame,
+    NSBTXFile,
+    NSBTXTexture,
+    NSBTXPalette,
 )
-from miorom.platforms.gba import GBARom, fix_gba_checksum
+from miorom.platforms.gba import GBARom, fix_gba_checksum, GBASwiResolver, GBAMultiboot
 from miorom.platforms.gb import GBRom, fix_gb_checksum
 from miorom.platforms.n64 import (
     N64Rom,
@@ -200,9 +272,19 @@ from miorom.platforms.md import (
     deinterleave_smd,
     interleave_smd,
 )
-from miorom.platforms.iso import ISO9660, ISOFileEntry
+from miorom.platforms.iso import ISO9660, ISOFileEntry, Iso9660Builder, CSOImage
 from miorom.platforms.snes import SNESRom
-from miorom.platforms.psx import TIMImage, PSXExe, StrDemuxer, CdSector, StrFrame
+from miorom.platforms.psx import (
+    TIMImage,
+    PSXExe,
+    StrDemuxer,
+    CdSector,
+    StrFrame,
+    PSXMemoryCard,
+    PSXSaveFile,
+    PSXBlockState,
+)
+from miorom.platforms.sega_disc import SaturnDiscHeader, DreamcastIpBin, GDISheet, GDITrack
 
 from miorom.audio import (
     ADPCMCodec,
@@ -214,6 +296,16 @@ from miorom.audio import (
     M64Sequence,
     M64Command,
     N64Audiobank,
+    VAGHeader,
+    VAGCodec,
+    VAGFile,
+    BRRCodec,
+    DSPADPCMCodec,
+    SappyCodec,
+    SappyScanner,
+    SappySample,
+    SappyInstrument,
+    SappySongEntry,
 )
 from miorom.archive import (
     ArchiveContainer,
@@ -236,6 +328,8 @@ from miorom.archive import (
     DmaTableArchive,
     DmaFileEntry,
     DmaTableEntryStruct,
+    AFSEntry,
+    AFSArchive,
 )
 from miorom.pipeline import (
     PipelineRecipe,
@@ -258,6 +352,10 @@ from miorom.save import (
     DiffMatch,
     PointerTrail,
     DiffHunterReport,
+    GBASaveType,
+    GBASaveInfo,
+    GBASaveDetector,
+    GBASavePatcher,
 )
 from miorom.asm import (
     ARMBranch,
@@ -288,6 +386,9 @@ from miorom.asm import (
     APMatch,
     APBypassReport,
     GlobalXrefEngine,
+    SymbolicXrefEngine,
+    XRefDatabase,
+    XRefRecord,
     XRef,
     XRefType,
     CallerGraph,
@@ -298,10 +399,17 @@ from miorom.asm import (
     OpcodeTransmuter,
     AsmSnippet,
     ArmSnippet,
+    ThumbSnippet,
     MipsSnippet,
+    PpcSnippet,
     SM83Snippet,
+    SnesSnippet,
+    M68kSnippet,
+    Mos6502Snippet,
     FunctionPrologueScanner,
     DiscoveredFunction,
+    BranchRelocator,
+    BranchRelocation,
 )
 from miorom.script import (
     BytecodeEngine,
@@ -341,6 +449,15 @@ from miorom.script import (
     PagingWeaveConfig,
     BytecodeStreamSplicer,
     SpliceTarget,
+    DialogueDissector,
+    DialogueBlock,
+    DialogueEntry,
+    DissectionPatchReport,
+    ScriptVMDissector,
+    DissectedScriptVM,
+    DissectedInstruction,
+    VMInstructionDef,
+    VMOpcodeType,
 )
 
 from miorom.link import (
@@ -381,6 +498,8 @@ from miorom.scanner import (
     AssetType,
     HeuristicTableDetector,
     TableCandidate,
+    TextStreamScanner,
+    TextStreamSpan,
 )
 from miorom.platforms.cdrom import (
     CueSheet,
@@ -431,6 +550,13 @@ from miorom.text import (
     TagSyntaxValidator,
     TagValidationReport,
     GameTextTemplate,
+    BMGFile,
+    BMGMessage,
+    MSBTFile,
+    MSBTEntry,
+    JapaneseCharMapMiner,
+    JapaneseMiningCluster,
+    JapaneseWordMatch,
 )
 from miorom.project import (
     ProjectManifest,
@@ -519,6 +645,20 @@ __all__ = [
     "WordWrapper",
     "Glyph",
     "BitmapFont",
+    "BMFont",
+    "BMFontChar",
+    "BMFontInfo",
+    "BMFontCommon",
+    "BMFontPage",
+    "BMFontKerning",
+    "PNGCodec",
+    "CStructOverlay",
+    "CStructInstance",
+    "CField",
+    "SymbolicXrefEngine",
+    "XRefDatabase",
+    "XRefRecord",
+    "XRefDirection",
     "StringAligner",
     "AlignedString",
     "Color",
@@ -533,6 +673,8 @@ __all__ = [
     "Tilemap",
     "TilemapEntry",
     "TileReducer",
+    "FontGlyphInjector",
+    "LATIN_8X8_BITMAPS",
     "ImageBridge",
     "MdecDecoder",
     "CsvHandler",
@@ -540,6 +682,8 @@ __all__ = [
     "BatchMerger",
     "IpsPatcher",
     "BpsPatcher",
+    "UpsPatcher",
+    "PPFPatcher",
     "XdeltaPatcher",
     "SlackSpaceManager",
     "SlackBlock",
@@ -553,13 +697,30 @@ __all__ = [
     "LZ11",
     "RLE",
     "Yaz0",
+    "Yay0",
+    "APLib",
+    "RefPack",
+    "LZSS",
     "Huffman",
+    "KosinskiCodec",
+    "Kosinski",
+    "NemesisCodec",
+    "Nemesis",
+    "EnigmaCodec",
+    "Enigma",
+    "MIO0Codec",
+    "MIO0",
+    "SaxmanCodec",
+    "Saxman",
+    "ComperCodec",
+    "Comper",
     "decompress",
     "compress",
     "StringScanner",
     "PointerScanner",
     "U8Archive",
     "TPLFile",
+    "BTIImage",
     "BRFNTFont",
     "NARCArchive",
     "NARCEntry",
@@ -572,7 +733,16 @@ __all__ = [
     "fix_nds_checksum",
     "NFTRFont",
     "NFTRGlyph",
+    "NCLRFile",
+    "NCGRFile",
+    "NSCRFile",
+    "ScreenEntry",
+    "NSBTXFile",
+    "NSBTXTexture",
+    "NSBTXPalette",
     "GBARom",
+    "GBASwiResolver",
+    "GBAMultiboot",
     "fix_gba_checksum",
     "GBRom",
     "fix_gb_checksum",
@@ -593,9 +763,22 @@ __all__ = [
     "interleave_smd",
     "ISO9660",
     "ISOFileEntry",
+    "Iso9660Builder",
+    "CSOImage",
     "SNESRom",
+    "NESRom",
+    "NESHeaderStruct",
     "TIMImage",
     "PSXExe",
+    "PSXMemoryCard",
+    "PSXSaveFile",
+    "PSXBlockState",
+    "PBPFile",
+    "SFOFile",
+    "SaturnDiscHeader",
+    "DreamcastIpBin",
+    "GDISheet",
+    "GDITrack",
     "StrDemuxer",
     "CdSector",
     "StrFrame",
@@ -605,6 +788,16 @@ __all__ = [
     "CdXaDecoder",
     "decode_cdxa_sector",
     "cdxa_to_wav",
+    "VAGHeader",
+    "VAGCodec",
+    "VAGFile",
+    "BRRCodec",
+    "DSPADPCMCodec",
+    "SappyCodec",
+    "SappyScanner",
+    "SappySample",
+    "SappyInstrument",
+    "SappySongEntry",
     "ArchiveContainer",
     "ArchiveEntry",
     "MasterTableArchive",
@@ -904,6 +1097,10 @@ __all__ = [
     "MultiPointerRemapper",
     "BytecodeStreamSplicer",
     "SpliceTarget",
+    "DialogueDissector",
+    "DialogueBlock",
+    "DialogueEntry",
+    "DissectionPatchReport",
     "PixelTextMeasurer",
     "WordWrapSplitter",
     "DialoguePagePartitioner",
@@ -919,13 +1116,68 @@ __all__ = [
     "PatchRecord",
     "AsmSnippet",
     "ArmSnippet",
+    "ThumbSnippet",
     "MipsSnippet",
+    "PpcSnippet",
     "SM83Snippet",
+    "SnesSnippet",
+    "M68kSnippet",
+    "Mos6502Snippet",
+    "NANRFile",
+    "NANRSequence",
+    "NANRFrame",
+    "RARCArchive",
+    "RARCEntry",
+    "BMGFile",
+    "BMGMessage",
+    "MSBTFile",
+    "MSBTEntry",
     "RecordBuilder",
     "SymbolMap",
     "SymbolEntry",
     "HexDiffHighlighter",
     "GameTextTemplate",
+    "BranchRelocator",
+    "BranchRelocation",
+    "TextStreamScanner",
+    "TextStreamSpan",
+    "BitField",
+    "BitFieldSchema",
+    "BitFieldCodec",
+    "TileDeduplicator",
+    "DeduplicatedTileEntry",
+    "TileDedupResult",
+    "HardwareOamCodec",
+    "SpriteDescriptor",
+    "AFSEntry",
+    "AFSArchive",
+    "GBASaveType",
+    "GBASaveInfo",
+    "GBASaveDetector",
+    "GBASavePatcher",
+    "JapaneseCharMapMiner",
+    "JapaneseMiningCluster",
+    "JapaneseWordMatch",
+    "FontDissector",
+    "FontCandidate",
+    "FontGeometry",
+    "DissectedGlyph",
+    "WidthTableCandidate",
+    "TextCompressionHunter",
+    "HuffmanTreeCandidate",
+    "HuffmanNodeEntry",
+    "DteDictionaryCandidate",
+    "ScriptVMDissector",
+    "DissectedScriptVM",
+    "DissectedInstruction",
+    "VMInstructionDef",
+    "VMOpcodeType",
+    "TilemapDissector",
+    "TilemapTextRun",
+    "TilemapMenuBox",
+    "VWFHookEngine",
+    "VWFHookConfig",
+    "VWFDeploymentReport",
 ]
 
 from miorom.scanner.xref import XRefGraph, XRefAnalyzer

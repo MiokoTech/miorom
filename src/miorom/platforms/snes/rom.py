@@ -143,7 +143,7 @@ class SNESRom:
         if size == 0:
             return 0
 
-        # Temporarily zero out complement and checksum bytes in calculation
+        # Zero checksum bytes for calculation
         base_off = self.header_offset - (self.SMC_HEADER_SIZE if self.has_smc else 0)
         if base_off + 0x20 <= size:
             rom_data[base_off + 0x1C : base_off + 0x20] = b"\x00\x00\x00\x00"
@@ -162,7 +162,7 @@ class SNESRom:
             mult = p2 // remainder
             chk += sum(rem_data) * mult
 
-        # Add invariant 0x1FE (sum of 4 bytes: complement_lo + complement_hi + checksum_lo + checksum_hi)
+        # Checksum invariant (0x1FE)
         return (chk + 0x1FE) & 0xFFFF
 
     def fix_checksum(self):

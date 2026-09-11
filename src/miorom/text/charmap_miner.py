@@ -23,7 +23,7 @@ class CharMapMiner:
     using frequency analysis and n-gram natural language distribution matching.
     """
 
-    # English frequency ranking: space, E, T, A, O, I, N, S, H, R, D, L, C, U, M, W, F, G, Y, P, B, V, K, J, X, Q, Z
+    # English letter frequency ranking
     ENGLISH_FREQ_ORDER = " etaoihnrsdlcumwfgypbvkjxqz"
 
     @classmethod
@@ -49,7 +49,7 @@ class CharMapMiner:
 
         sorted_bytes = [b for b, c in sorted(filtered_counts.items(), key=lambda x: x[1], reverse=True)]
 
-        # Score candidate offsets based on English text character distribution
+        # Score candidate offsets
         best_offset = None
         best_score = -float("inf")
 

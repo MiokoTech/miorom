@@ -218,14 +218,14 @@ class HeuristicLZSolver:
 
             score = 0.0
 
-            # 1. Expected prefix match
+            # Verify expected prefix
             if expected_prefix:
                 if decomp.startswith(expected_prefix):
                     score += 1000.0
                 else:
                     continue
 
-            # 2. Entropy evaluation
+            # Evaluate entropy
             # Natural text/data entropy is typically between 3.0 and 6.0
             counts = Counter(decomp)
             length = len(decomp)
@@ -236,12 +236,12 @@ class HeuristicLZSolver:
             else:
                 score -= 50.0
 
-            # 3. Printable ASCII check
+            # Sample printable ASCII density
             printable_count = sum(1 for b in decomp if 32 <= b <= 126 or b in (10, 13, 9))
             ascii_ratio = printable_count / length
             score += ascii_ratio * 100.0
 
-            # 4. Expansion ratio
+            # Validate expansion ratio
             expansion = length / len(compressed_data)
             score += min(50.0, expansion * 10.0)
 

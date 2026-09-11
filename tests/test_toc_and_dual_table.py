@@ -38,25 +38,25 @@ def test_toc_pair_nlcm_lifecycle():
         with open(bin_file, "wb") as f:
             f.write(bin_data)
 
-        # 1. Load and inspect
+        # Load and inspect
         toc = TocPair.load(bin_file, dat_file)
         assert len(toc) == 2
         assert toc.format_type == "nlcm"
         assert toc.get_entry(0).size == len(file0)
         assert toc.get_entry(1).offset == f1_off
 
-        # 2. Extract
+        # Extract
         ext0 = toc.extract(0)
         assert ext0 == file0
         ext1 = toc.extract(1)
         assert ext1 == file1
 
-        # 3. In-place inject (smaller or equal)
+        # In-place inject (smaller or equal)
         toc.inject(0, b"Short")
         assert toc.extract(0) == b"Short"
         assert toc.get_entry(0).size == 5
 
-        # 4. Expanding inject (larger -> append at EOF aligned to 32)
+        # Expanding inject (larger -> append at EOF aligned to 32)
         big_data = b"X" * 100
         toc.inject(1, big_data)
         assert toc.extract(1) == big_data
@@ -65,7 +65,7 @@ def test_toc_pair_nlcm_lifecycle():
 
 
 def test_deep_scanner_neverland_signatures():
-    # 1. NLCM archive header
+    # NLCM archive header
     nlcm_buf = bytearray(0x38)
     nlcm_buf[0:4] = b"NLCM"
     struct.pack_into(">I", nlcm_buf, 0x0C, 100)
@@ -73,7 +73,7 @@ def test_deep_scanner_neverland_signatures():
     fp_names = [fp.format_name for fp in report.fingerprints]
     assert "Neverland_NLCM" in fp_names
 
-    # 2. Multi-section Script binary header
+    # Multi-section Script binary header
     script_sz = 0x1000
     script_buf = bytearray(script_sz)
     script_buf[0:4] = b"\x00\x00\x00\x00"

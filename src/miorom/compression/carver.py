@@ -74,7 +74,7 @@ class CompressionCarver:
 
         i = 0
         while i <= data_len - 8:
-            # 1. Check Yaz0
+            # Yaz0 header check
             if "yaz0" in target_formats and data[i : i + 4] == b"Yaz0":
                 try:
                     dec_sz = struct.unpack(">I", data[i + 4 : i + 8])[0]
@@ -94,7 +94,7 @@ class CompressionCarver:
                 except Exception:
                     pass
 
-            # 2. Check Nintendo 4-byte header: magic byte + 24-bit LE decompressed size
+            # Nintendo standard compression header check
             magic = data[i]
 
             # Parse expected size

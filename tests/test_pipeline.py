@@ -20,12 +20,12 @@ def test_pipeline_execution_and_serialization():
         rom_file = os.path.join(tmpdir, "test.md")
         patch_file = os.path.join(tmpdir, "test.bps")
 
-        # 1. Prepare raw test file
+        # Prepare raw test file
         test_payload = b"MioROM Pipeline Workflow Automated Data " * 10
         with open(raw_file, "wb") as f:
             f.write(test_payload)
 
-        # 2. Prepare dummy Mega Drive ROM
+        # Prepare dummy Mega Drive ROM
         rom_data = bytearray(0x0400)
         hdr = MDHeader(
             system_type="SEGA MEGA DRIVE",

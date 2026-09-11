@@ -157,23 +157,23 @@ def test_scan_embedded_containers():
     # 0x100: WAV file
     buf = bytearray(512)
 
-    # 1. NARC at 0x20
+    # NARC at 0x20
     buf[0x20:0x24] = b"NARC"
     struct.pack_into("<H", buf, 0x24, 0xFFFE)
     struct.pack_into("<I", buf, 0x28, 0x100)
 
-    # 2. Yaz0 at 0x60
+    # Yaz0 at 0x60
     buf[0x60:0x64] = b"Yaz0"
     struct.pack_into(">I", buf, 0x64, 4096)
 
-    # 3. TPL at 0x80
+    # TPL at 0x80
     buf[0x80:0x84] = b"\x00\x20\xAF\x30"
 
-    # 4. SDAT at 0xC0
+    # SDAT at 0xC0
     buf[0xC0:0xC4] = b"SDAT"
     struct.pack_into("<I", buf, 0xC8, 2048)
 
-    # 5. WAV at 0x100
+    # WAV at 0x100
     buf[0x100:0x104] = b"RIFF"
     struct.pack_into("<I", buf, 0x104, 100)
     buf[0x108:0x10C] = b"WAVE"

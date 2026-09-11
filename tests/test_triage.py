@@ -6,28 +6,28 @@ from miorom.scanner.triage import RomTriageEngine, AssetType, TriageReport, File
 
 
 def test_triage_buffer_categories():
-    # 1. Padding
+    # Padding
     pad_data = b"\x00" * 1024
     rec_pad = RomTriageEngine.triage_buffer(pad_data, name="padding.bin")
     assert rec_pad.asset_type == AssetType.PADDING_EMPTY
 
-    # 2. Text
+    # Text
     text_data = b"Hello warrior! Welcome to the fantasy kingdom. Are you ready to embark on your quest?\n" * 10
     rec_text = RomTriageEngine.triage_buffer(text_data, name="story.txt")
     assert rec_text.asset_type == AssetType.TEXT_SCRIPT
 
-    # 3. Known Archives
+    # Known Archives
     narc_data = b"NARC\xFE\xFF\x00\x01" + b"\x00" * 32
     rec_narc = RomTriageEngine.triage_buffer(narc_data, name="archive.narc")
     assert rec_narc.asset_type == AssetType.ARCHIVE_CONTAINER
     assert rec_narc.format_detected == "NARC"
 
-    # 4. Known Audio
+    # Known Audio
     sseq_data = b"SSEQ\xFE\xFF\x00\x01" + b"\x00" * 32
     rec_sseq = RomTriageEngine.triage_buffer(sseq_data, name="bgm.sseq")
     assert rec_sseq.asset_type == AssetType.AUDIO_MUSIC
 
-    # 5. Known Font
+    # Known Font
     nftr_data = b"NFTR\xFE\xFF\x00\x01" + b"\x00" * 32
     rec_nftr = RomTriageEngine.triage_buffer(nftr_data, name="font.nftr")
     assert rec_nftr.asset_type == AssetType.TEXTURE_GRAPHICS

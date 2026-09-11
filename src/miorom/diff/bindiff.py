@@ -160,7 +160,7 @@ class BinDiffEngine:
         Calculates similarity score (0.0 to 1.0) between two function fingerprints
         using CFG graph topology and opcode histogram cosine similarity.
         """
-        # 1. Exact match
+        # Exact match
         if (
             f1.block_count == f2.block_count
             and f1.edge_count == f2.edge_count
@@ -169,7 +169,7 @@ class BinDiffEngine:
         ):
             return 1.0
 
-        # 2. Graph topology score
+        # Control flow graph topology similarity
         max_b = max(f1.block_count, f2.block_count, 1)
         b_sim = 1.0 - (abs(f1.block_count - f2.block_count) / max_b)
 
@@ -181,7 +181,7 @@ class BinDiffEngine:
 
         topo_score = (b_sim + e_sim + c_sim) / 3.0
 
-        # 3. Mnemonic histogram cosine similarity
+        # Mnemonic frequency histogram similarity
         all_ops = set(f1.mnemonic_histogram.keys()) | set(f2.mnemonic_histogram.keys())
         dot = sum(f1.mnemonic_histogram.get(op, 0) * f2.mnemonic_histogram.get(op, 0) for op in all_ops)
         norm1 = math.sqrt(sum(v * v for v in f1.mnemonic_histogram.values()))

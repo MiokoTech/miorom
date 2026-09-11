@@ -218,7 +218,7 @@ class PatchWriter:
         for rec in self._records:
             off = rec.offset
             sz = len(rec.data)
-            # IPS record format: 3-byte offset (BE), 2-byte size (BE), payload
+            # IPS record: 3-byte offset, 2-byte size, payload
             out.extend(bytes([(off >> 16) & 0xFF, (off >> 8) & 0xFF, off & 0xFF]))
             out.extend(struct.pack(">H", sz))
             out.extend(rec.data)

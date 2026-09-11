@@ -192,7 +192,7 @@ class ISO9660:
             self.data.extend(new_content)
             self.data.extend(b"\x00" * padding)
 
-            # Update volume space size in PVD (offset 80: uint32 LE + uint32 BE)
+            # Update PVD volume space size
             new_total_sectors = len(self.data) // self.SECTOR_SIZE
             self.data[self.pvd_offset + 80 : self.pvd_offset + 88] = ISOBothU32Struct(
                 little=new_total_sectors,

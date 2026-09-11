@@ -15,7 +15,7 @@ class FontMetrics:
     Holds per-character pixel width metrics for proportional/VWF game fonts.
     """
 
-    # Proportional standard Latin font width heuristics (relative scale)
+    # Standard Latin glyph widths
     DEFAULT_WIDTHS = {
         "i": 4, "l": 4, "j": 5, "f": 5, "t": 5, "r": 6, "1": 6, "!": 4, ".": 4, ",": 4, ":": 4,
         "m": 12, "w": 12, "M": 14, "W": 14, "@": 14, "%": 12,
@@ -75,36 +75,11 @@ class PixelWordWrapper:
             newline: Line separator string (default: '\\n').
             strip_lines: Strip whitespace on each wrapped line (default: True).
         """
+        from miorom.text.line_wrapper import VwfLineWrapper
+
         target_width = max_pixel_width if max_pixel_width is not None else self.max_pixel_width
-        paragraphs = text.split("\n")
-        wrapped_paragraphs = []
-
-        for p in paragraphs:
-            words = p.split(" ")
-            lines: List[str] = []
-            cur_line = []
-
-            for w in words:
-                candidate = " ".join(cur_line + [w]) if cur_line else w
-                if self.metrics.measure_text(candidate) <= target_width:
-                    cur_line.append(w)
-                else:
-                    if cur_line:
-                        line_str = " ".join(cur_line)
-                        lines.append(line_str.strip() if strip_lines else line_str)
-                        cur_line = [w]
-                    else:
-                        # Single word exceeds max pixel width
-                        lines.append(w.strip() if strip_lines else w)
-                        cur_line = []
-
-            if cur_line:
-                line_str = " ".join(cur_line)
-                lines.append(line_str.strip() if strip_lines else line_str)
-
-            wrapped_paragraphs.append(newline.join(lines))
-
-        return newline.join(wrapped_paragraphs)
+        vwf = VwfLineWrapper(width_source=self.metrics, max_pixel_width=target_width)
+        return vwf.wrap(text, max_pixel_width=target_width, newline=newline, strip_lines=strip_lines)
 
     def validate(
         self,

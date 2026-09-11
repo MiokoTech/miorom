@@ -1,6 +1,7 @@
 import argparse
 import sys
 import os
+import struct
 
 from miorom import __version__
 from miorom.formats.batch import BatchSplitter, BatchMerger
@@ -141,7 +142,7 @@ def cmd_scan(args):
         footer_tables = PointerScanner.find_footer_pointer_tables(
             data, offsets, footer_scan_bytes=args.footer_scan
         )
-        # Filter: only show footer tables that are at different offset from Table1 tables
+        # Filter out primary table duplicates
         t1_offsets = {t.table_offset for t in tables}
         footer_tables = [t for t in footer_tables if t.table_offset not in t1_offsets]
         if footer_tables:
@@ -155,7 +156,7 @@ def cmd_scan(args):
             print("[i] Hint: secondary tables often contain Yes/No choices or short stat labels.")
 
         if args.orphans:
-            # Kumpulkan semua offset yang direferensi oleh SEMUA pointer tables (T1 + footer)
+            # Collect referenced pointer targets
             referenced_offsets = set()
             for t in tables + footer_tables:
                 for _, target in t.entries:
@@ -450,6 +451,153 @@ def cmd_inject_elf(args):
     print(f"[✓] Successfully injected payload into '{out_file}'!")
 
 
+def cmd_scan_text(args):
+    print(f"[*] Scanning binary text streams in '{args.input_file}'...")
+    import json
+    from miorom.scanner.text_stream import TextStreamScanner
+
+    with open(args.input_file, "rb") as f:
+        data = f.read()
+
+    encs = [e.strip().lower() for e in args.encodings.split(",")] if args.encodings else ["sjis", "euc_jp", "ascii"]
+    scanner = TextStreamScanner(min_length=args.min_len, min_confidence=args.min_conf)
+
+    if args.table:
+        tables = scanner.scan_string_table(data, encodings=encs)
+        print(f"[✓] Found {len(tables)} string table clusters:")
+        for idx, t in enumerate(tables):
+            print(f"  - Table {idx + 1}: 0x{t['start']:06X}..0x{t['end']:06X} ({t['count']} strings, enc: {t['encoding']})")
+        if args.output:
+            with open(args.output, "w", encoding="utf-8") as out_f:
+                json.dump(tables, out_f, indent=2, ensure_ascii=False, default=lambda o: o.to_dict() if hasattr(o, "to_dict") else str(o))
+            print(f"[✓] Saved string tables to '{args.output}'")
+    else:
+        spans = scanner.scan(data, encodings=encs)
+        print(f"[✓] Discovered {len(spans)} text spans:")
+        limit = getattr(args, "limit", 20) or 20
+        for s in spans[:limit]:
+            preview = s.text.replace("\n", " ").strip()
+            print(f"  [0x{s.start:06X}..0x{s.end:06X}] ({s.encoding}, conf: {s.confidence:.2f}): {preview}")
+        if len(spans) > limit:
+            print(f"  ... and {len(spans) - limit} more")
+        if args.output:
+            with open(args.output, "w", encoding="utf-8") as out_f:
+                json.dump([s.to_dict() for s in spans], out_f, indent=2, ensure_ascii=False)
+            print(f"[✓] Saved text spans to '{args.output}'")
+
+
+def cmd_disasm(args):
+    print(f"[*] Disassembling '{args.input_file}' (arch: {args.arch}, offset: {args.offset})...")
+    from miorom.asm.disasm import UniversalDisassembler
+    from miorom.asm.m68k import M68kDisassembler
+
+    with open(args.input_file, "rb") as f:
+        f.seek(args.offset)
+        raw_code = f.read(args.count * 8)
+
+    base = args.base if args.base is not None else args.offset
+
+    if args.arch.lower() in ("m68k", "genesis", "md"):
+        dis = M68kDisassembler()
+        instructions = dis.disassemble(raw_code, count=args.count)
+        for inst in instructions:
+            print(f"0x{base + inst.offset:06X}:  {inst.text}")
+    else:
+        dis = UniversalDisassembler(arch=args.arch)
+        instructions = dis.disassemble_stream(raw_code, base_pc=base, count=args.count)
+        for inst in instructions:
+            hex_bytes = " ".join(f"{b:02X}" for b in inst.bytes_)
+            print(f"0x{inst.offset:08X}:  {hex_bytes:<12}  {inst.mnemonic:<8} {inst.operands}")
+
+
+def cmd_checksum(args):
+    print(f"[*] Analyzing checksum for '{args.input_file}'...")
+    from miorom.core.checksum import RetroChecksum
+
+    with open(args.input_file, "rb") as f:
+        data = f.read()
+
+    crc32_val = RetroChecksum.crc32_pure(data)
+    print(f"  File size   : {len(data)} bytes")
+    print(f"  CRC-32      : 0x{crc32_val:08X}")
+    print(f"  CRC-16-CCITT: 0x{RetroChecksum.crc16_ccitt(data):04X}")
+
+    if args.system in ("genesis", "md", "all") and len(data) >= 0x200:
+        actual_sum = struct.unpack(">H", data[0x18E:0x190])[0]
+        calc_sum = RetroChecksum.genesis_checksum(data)
+        status = "VALID" if actual_sum == calc_sum else f"MISMATCH (expected 0x{calc_sum:04X})"
+        print(f"  Genesis Sum : 0x{actual_sum:04X} [{status}]")
+        if args.fix and actual_sum != calc_sum:
+            buf = bytearray(data)
+            buf[0x18E:0x190] = struct.pack(">H", calc_sum)
+            with open(args.input_file, "wb") as f:
+                f.write(buf)
+            print(f"[✓] Patched Genesis checksum to 0x{calc_sum:04X} in '{args.input_file}'!")
+
+    if args.system in ("gb", "gbc", "all") and len(data) >= 0x150:
+        hdr_chk = data[0x14D]
+        calc_hdr = RetroChecksum.gameboy_header_checksum(data)
+        status = "VALID" if hdr_chk == calc_hdr else f"MISMATCH (expected 0x{calc_hdr:02X})"
+        print(f"  GB Header   : 0x{hdr_chk:02X} [{status}]")
+        if args.fix and hdr_chk != calc_hdr:
+            buf = bytearray(data)
+            buf[0x14D] = calc_hdr
+            with open(args.input_file, "wb") as f:
+                f.write(buf)
+            print(f"[✓] Patched GB header checksum to 0x{calc_hdr:02X} in '{args.input_file}'!")
+
+
+def cmd_reloc_branch(args):
+    print(f"[*] Rebasing relative branches in '{args.input_file}' from 0x{args.orig_base:X} to 0x{args.new_base:X}...")
+    from miorom.asm.reloc_calc import BranchRelocator
+
+    with open(args.input_file, "rb") as f:
+        code = f.read()
+
+    reloc = BranchRelocator()
+    patched, items = reloc.rebase_block(code, orig_base=args.orig_base, new_base=args.new_base, arch=args.arch)
+    print(f"[✓] Inspected {len(items)} branch instructions:")
+    for item in items:
+        status = "OK" if item.in_range else "OVERFLOW"
+        print(f"  [+0x{item.offset:04X}] {item.mnemonic} -> 0x{item.target_addr:X} (disp: {item.displacement}) [{status}]")
+
+    out_path = args.output or args.input_file
+    with open(out_path, "wb") as f:
+        f.write(patched)
+    print(f"[✓] Saved rebased binary to '{out_path}' ({len(patched)} bytes)!")
+
+
+def cmd_tile_dedup(args):
+    print(f"[*] Optimizing and deduplicating 8x8 tiles in '{args.input_file}'...")
+    from miorom.graphics.tile_dedup import TileDeduplicator
+
+    with open(args.input_file, "rb") as f:
+        raw_tiles = f.read()
+
+    opt_bytes, entries = TileDeduplicator.deduplicate_raw_bpp(
+        raw_tiles,
+        bpp=args.bpp,
+        format=args.format,
+        allow_flip_h=not args.no_h_flip,
+        allow_flip_v=not args.no_v_flip,
+    )
+
+    orig_tile_cnt = len(entries)
+    uniq_tile_cnt = len(opt_bytes) // (args.bpp * 8)
+    saved = orig_tile_cnt - uniq_tile_cnt
+    pct = (saved / orig_tile_cnt * 100) if orig_tile_cnt > 0 else 0
+
+    print(f"[✓] Optimization Results:")
+    print(f"  Original tiles : {orig_tile_cnt} ({len(raw_tiles)} bytes)")
+    print(f"  Unique tiles   : {uniq_tile_cnt} ({len(opt_bytes)} bytes)")
+    print(f"  Tiles saved    : {saved} ({pct:.1f}% reduction)")
+
+    out_file = args.output or f"{args.input_file}.opt"
+    with open(out_file, "wb") as f:
+        f.write(opt_bytes)
+    print(f"[✓] Saved deduplicated tiles to '{out_file}'!")
+
+
 def main():
     argv = sys.argv
     parser = argparse.ArgumentParser(
@@ -480,27 +628,27 @@ def main():
     p_val.add_argument("-l", "--max-lines", type=int, default=3, help="Max lines per textbox (default: 3)")
 
     # Patch Create command
-    p_pcreate = subparsers.add_parser("patch-create", help="Create an IPS, BPS, or Xdelta patch between original and modified ROM")
+    p_pcreate = subparsers.add_parser("patch-create", help="Create an IPS, BPS, UPS, or Xdelta patch between original and modified ROM")
     p_pcreate.add_argument("original", help="Path to original / unmodified ROM/ISO")
     p_pcreate.add_argument("modified", help="Path to modified / translated ROM/ISO")
-    p_pcreate.add_argument("-o", "--output", required=True, help="Path to output patch file (.xdelta, .bps, .ips)")
-    p_pcreate.add_argument("-f", "--format", choices=["xdelta", "bps", "ips"], default="bps", help="Patch format (default: bps)")
+    p_pcreate.add_argument("-o", "--output", required=True, help="Path to output patch file (.xdelta, .bps, .ips, .ups)")
+    p_pcreate.add_argument("-f", "--format", choices=["xdelta", "bps", "ips", "ups"], default="bps", help="Patch format (default: bps)")
 
     # Patch Apply command
-    p_papply = subparsers.add_parser("patch-apply", help="Apply an IPS, BPS, or Xdelta patch to an original ROM")
+    p_papply = subparsers.add_parser("patch-apply", help="Apply an IPS, BPS, UPS, or Xdelta patch to an original ROM")
     p_papply.add_argument("original", help="Path to original / unmodified ROM/ISO")
-    p_papply.add_argument("patch", help="Path to patch file (.xdelta, .bps, .ips)")
+    p_papply.add_argument("patch", help="Path to patch file (.xdelta, .bps, .ips, .ups)")
     p_papply.add_argument("-o", "--output", required=True, help="Path to output patched ROM/ISO")
-    p_papply.add_argument("-f", "--format", choices=["xdelta", "bps", "ips"], default=None, help="Force patch format")
+    p_papply.add_argument("-f", "--format", choices=["xdelta", "bps", "ips", "ups"], default=None, help="Force patch format")
 
     # Compress command
-    p_comp = subparsers.add_parser("compress", help="Compress a file using Nintendo compression (LZ10, LZ11, RLE)")
+    p_comp = subparsers.add_parser("compress", help="Compress a file using console compression (LZ10, LZ11, RLE, Yaz0, Yay0, aPLib, Huffman)")
     p_comp.add_argument("input_file", help="Path to uncompressed input file")
     p_comp.add_argument("-o", "--output", required=True, help="Path to output compressed file")
-    p_comp.add_argument("-f", "--format", choices=["lz10", "lz11", "rle"], default="lz11", help="Compression algorithm (default: lz11)")
+    p_comp.add_argument("-f", "--format", choices=["lz10", "lz11", "rle", "yaz0", "yay0", "aplib", "huffman4", "huffman8", "huffman"], default="lz11", help="Compression algorithm (default: lz11)")
 
     # Decompress command
-    p_decomp = subparsers.add_parser("decompress", help="Auto-detect and decompress Nintendo compressed file (LZ10, LZ11, RLE)")
+    p_decomp = subparsers.add_parser("decompress", help="Auto-detect and decompress console compressed file (LZ10, LZ11, RLE, Yaz0, Yay0, aPLib, Huffman)")
     p_decomp.add_argument("input_file", help="Path to compressed input file")
     p_decomp.add_argument("-o", "--output", required=True, help="Path to output decompressed file")
 
@@ -618,6 +766,47 @@ def main():
     p_port_patch.add_argument("-a", "--arch", choices=["ppc", "arm", "thumb", "mips_le", "mips_be"], default="ppc", help="Lifter architecture")
     p_port_patch.add_argument("--threshold", type=float, default=0.75, help="BinDiff match threshold")
 
+    # Scan-Text command
+    p_scan_text = subparsers.add_parser("scan-text", help="Scan a binary file for multi-byte text streams (Shift-JIS, EUC-JP, UTF-16, ASCII)")
+    p_scan_text.add_argument("input_file", help="Path to binary file to scan")
+    p_scan_text.add_argument("-e", "--encodings", help="Comma-separated encodings (default: sjis,euc_jp,ascii)")
+    p_scan_text.add_argument("-l", "--min-len", type=int, default=4, help="Minimum string length (default: 4)")
+    p_scan_text.add_argument("-c", "--min-conf", type=float, default=0.65, help="Minimum confidence threshold (default: 0.65)")
+    p_scan_text.add_argument("--table", action="store_true", help="Detect contiguous string table clusters")
+    p_scan_text.add_argument("-n", "--limit", type=int, default=20, help="Max results to print (default: 20)")
+    p_scan_text.add_argument("-o", "--output", help="Optional output JSON path")
+
+    # Disasm command
+    p_disasm = subparsers.add_parser("disasm", help="Disassemble machine code for 8 retro architectures")
+    p_disasm.add_argument("input_file", help="Path to binary file containing code")
+    p_disasm.add_argument("-a", "--arch", choices=["6502", "65816", "z80", "sm83", "m68k", "arm", "thumb", "mips", "ppc"], default="m68k", help="CPU Architecture (default: m68k)")
+    p_disasm.add_argument("-o", "--offset", type=lambda value: int(value, 0), default=0, help="Start file offset (default: 0)")
+    p_disasm.add_argument("-n", "--count", type=int, default=32, help="Number of instructions to disassemble (default: 32)")
+    p_disasm.add_argument("-b", "--base", type=lambda value: int(value, 0), default=None, help="Base memory PC address (default: offset)")
+
+    # Checksum command
+    p_checksum = subparsers.add_parser("checksum", help="Verify or patch console header/file checksums")
+    p_checksum.add_argument("input_file", help="Path to ROM file")
+    p_checksum.add_argument("-s", "--system", choices=["snes", "genesis", "gb", "all"], default="all", help="Console checksum algorithm (default: all)")
+    p_checksum.add_argument("--fix", action="store_true", help="Fix/patch checksum in-place if mismatched")
+
+    # Reloc-Branch command
+    p_reloc_branch = subparsers.add_parser("reloc-branch", help="Rebase PC-relative branch instructions when relocating code")
+    p_reloc_branch.add_argument("input_file", help="Path to binary file containing code routine")
+    p_reloc_branch.add_argument("-a", "--arch", choices=["6502", "65816", "z80", "sm83", "m68k", "arm", "thumb", "mips"], required=True, help="CPU Architecture")
+    p_reloc_branch.add_argument("--orig-base", type=lambda value: int(value, 0), required=True, help="Original base PC address")
+    p_reloc_branch.add_argument("--new-base", type=lambda value: int(value, 0), required=True, help="New base PC address")
+    p_reloc_branch.add_argument("-o", "--output", help="Output file path (default: overwrite input)")
+
+    # Tile-Dedup command
+    p_tile_dedup = subparsers.add_parser("tile-dedup", help="Deduplicate 8x8 tiles and optimize VRAM tile banks")
+    p_tile_dedup.add_argument("input_file", help="Path to raw tile binary file")
+    p_tile_dedup.add_argument("--bpp", type=int, choices=[1, 2, 4], default=4, help="Bits per pixel (default: 4)")
+    p_tile_dedup.add_argument("-f", "--format", help="Optional specific format (e.g., 2bpp, 4bpp_planar, genesis_4bpp)")
+    p_tile_dedup.add_argument("--no-h-flip", action="store_true", help="Disable horizontal flip matching")
+    p_tile_dedup.add_argument("--no-v-flip", action="store_true", help="Disable vertical flip matching")
+    p_tile_dedup.add_argument("-o", "--output", help="Output deduplicated tile binary path")
+
     args = parser.parse_args(argv[1:])
 
     if args.command == "split":
@@ -658,6 +847,16 @@ def main():
         cmd_port_patch(args)
     elif args.command == "inject-elf":
         cmd_inject_elf(args)
+    elif args.command == "scan-text":
+        cmd_scan_text(args)
+    elif args.command == "disasm":
+        cmd_disasm(args)
+    elif args.command == "checksum":
+        cmd_checksum(args)
+    elif args.command == "reloc-branch":
+        cmd_reloc_branch(args)
+    elif args.command == "tile-dedup":
+        cmd_tile_dedup(args)
     else:
         parser.print_help()
 

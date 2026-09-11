@@ -49,6 +49,34 @@ from miorom.script.branch import (
     SwitchTable,
     SwitchCase,
 )
+from miorom.script.extractor import (
+    ExtractedEntry,
+    ExtractionResult,
+    InsertionReport,
+    ScriptExtractor,
+)
+from miorom.script.boundary_detector import (
+    DelimiterCandidate,
+    ControlCodeCandidate,
+    ScriptBoundaryReport,
+    detect_delimiters,
+    detect_control_codes,
+    analyze_script_boundaries,
+    slice_script_entries,
+)
+from miorom.script.dialogue_dissector import (
+    DialogueDissector,
+    DialogueBlock,
+    DialogueEntry,
+    DissectionPatchReport,
+)
+from miorom.script.script_dissector import (
+    ScriptVMDissector,
+    DissectedScriptVM,
+    DissectedInstruction,
+    VMInstructionDef,
+    VMOpcodeType,
+)
 
 __all__ = [
     "BytecodeBranchScanner",
@@ -101,5 +129,25 @@ __all__ = [
     "PagingWeaveConfig",
     "BytecodeStreamSplicer",
     "SpliceTarget",
+    "ExtractedEntry",
+    "ExtractionResult",
+    "InsertionReport",
+    "ScriptExtractor",
+    "DelimiterCandidate",
+    "ControlCodeCandidate",
+    "ScriptBoundaryReport",
+    "detect_delimiters",
+    "detect_control_codes",
+    "analyze_script_boundaries",
+    "slice_script_entries",
+    "DialogueDissector",
+    "DialogueBlock",
+    "DialogueEntry",
+    "DissectionPatchReport",
+    "ScriptVMDissector",
+    "DissectedScriptVM",
+    "DissectedInstruction",
+    "VMInstructionDef",
+    "VMOpcodeType",
 ]
 

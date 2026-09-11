@@ -66,10 +66,7 @@ def test_trampoline_hook_arm():
     target, _, _ = ARMBranch.decode_b(hook_addr, hook_bytes)
     assert target == cave_addr
 
-    # cave_bytes structure:
-    # 1. custom payload (4 bytes)
-    # 2. original instruction (4 bytes)
-    # 3. return branch to hook_addr + 4 (4 bytes)
+    # cave_bytes structure: custom payload (4B), original instruction (4B), return branch (4B)
     assert len(cave_bytes) == 12
     assert cave_bytes[:4] == custom_payload
     assert cave_bytes[4:8] == orig_instr

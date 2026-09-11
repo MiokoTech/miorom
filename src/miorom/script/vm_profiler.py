@@ -10,7 +10,7 @@ for BytecodeEngine and ScriptDecompiler.
 from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from enum import Enum
-import struct
+from miorom.core.binary import BinaryReader
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from miorom.asm.disasm import UniversalDisassembler, DisasmInstruction
@@ -116,8 +116,7 @@ class VMBytecodeSynthesizer:
 
             dis = ins.disassembly.lower()
 
-            # Analyze PC advance / argument reads from script pointer
-            # In ARM: LDRB Rn, [Rm], #1 / LDRH Rn, [Rm], #2 / LDR Rn, [Rm], #4
+            # ARM post-indexed LDR instruction pattern
             if "#1" in dis or "ldrb" in dis:
                 arg_bytes = max(arg_bytes, 1)
             elif "#2" in dis or "ldrh" in dis:
@@ -217,9 +216,9 @@ class VMBytecodeSynthesizer:
             count = 0
             curr = i
             while curr + stride <= len(code):
-                val = struct.unpack_from(fmt, code, curr)[0]
+                val = BinaryReader.unpack_from(fmt, code, curr)[0]
                 target_off = val - base_address
-                # Must target code outside the table itself within buffer bounds and non-zero
+                # Target code bounds validation
                 if val != 0 and 0 <= target_off < len(code) and not (i <= target_off < curr + stride):
                     count += 1
                     curr += stride

@@ -1,7 +1,7 @@
 import os
-import struct
 import json
 from typing import Dict, Any, Optional
+from miorom.core.binary import BinaryReader
 
 from miorom.rom.base import BaseRomHandler
 from miorom.platforms.gba import GBARom, fix_gba_checksum
@@ -26,30 +26,30 @@ class CartridgeRomHandler(BaseRomHandler):
     def _detect_subplatform(self, data: bytes, filepath: Optional[str] = None) -> Optional[str]:
         ext = os.path.splitext(filepath)[1].lower() if filepath else ""
 
-        # 1. GBA
+        # Game Boy Advance
         if ext == ".gba" or (len(data) >= 0xC0 and data[4:20] == GBARom.NINTENDO_LOGO[:16]):
             return "gba"
 
-        # 2. N64
-        if ext in (".z64", ".n64", ".v64") or (len(data) >= 4 and struct.unpack(">I", data[:4])[0] in (0x80371240, 0x37804012, 0x40123780, 0x12408037)):
+        # Nintendo 64
+        if ext in (".z64", ".n64", ".v64") or (len(data) >= 4 and BinaryReader.unpack_u32(data, 0, endian=">") in (0x80371240, 0x37804012, 0x40123780, 0x12408037)):
             return "n64"
 
-        # 3. Game Boy / Color
+        # Game Boy / Color
         if ext in (".gb", ".gbc") or (len(data) >= 0x150 and data[0x104:0x114] == GBRom.NINTENDO_LOGO[:16]):
             return "gb"
 
-        # 4. Mega Drive / Genesis
+        # Sega Mega Drive / Genesis
         if ext in (".md", ".gen") or (len(data) >= 0x104 and data[0x100:0x104] == b"SEGA"):
             return "md"
 
-        # 5. SNES
+        # Super Nintendo
         if ext in (".sfc", ".smc"):
             return "snes"
 
         if len(data) >= 0x8000:
             for hdr_off in (0x7FC0, 0xFFC0):
                 if hdr_off + 32 <= len(data):
-                    comp, chk = struct.unpack_from("<HH", data, hdr_off + 0x1C)
+                    comp, chk = BinaryReader.unpack_from("<HH", data, hdr_off + 0x1C)
                     if (comp ^ chk) == 0xFFFF:
                         return "snes"
 

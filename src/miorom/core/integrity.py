@@ -53,7 +53,7 @@ class RomIntegrityManager:
         if len(data) < 0xC0:
             return None
 
-        # 1. Nintendo 64 (Big-endian .z64, Byte-swapped .v64, Little-endian .n64)
+        # Nintendo 64 (.z64, .v64, .n64)
         if len(data) >= 4 and data[:4] in (
             b"\x80\x37\x12\x40",
             b"\x37\x80\x40\x12",
@@ -61,20 +61,20 @@ class RomIntegrityManager:
         ):
             return "N64"
 
-        # 2. Sega Mega Drive / Genesis
+        # Sega Mega Drive / Genesis
         if len(data) >= 0x200:
             if data[0x100:0x104] == b"SEGA":
                 return "MD"
             if len(data) >= 512 and is_smd(data):
                 return "MD"
 
-        # 3. Nintendo DS (.nds)
+        # Nintendo DS (.nds)
         if len(data) >= 0x200:
             # Check unit_code at 0x12 and game_code at 0x0C
             if data[0x12] in (0, 2, 3) and data[0x0C:0x10].isalnum():
                 return "NDS"
 
-        # 4. Game Boy Advance (.gba)
+        # Game Boy Advance (.gba)
         if len(data) >= 0xC0:
             # Check logo prefix or complement check
             if data[0x04:0x20] == GBARom.NINTENDO_LOGO[:0x1C]:
@@ -82,7 +82,7 @@ class RomIntegrityManager:
             if data[0xB2:0xB4] == b"\x96\x00" and data[0xAC:0xB0].isalnum():
                 return "GBA"
 
-        # 5. Game Boy / Game Boy Color (.gb, .gbc)
+        # Game Boy and Game Boy Color (.gb, .gbc)
         if len(data) >= 0x150:
             if data[0x104:0x120] == GBRom.NINTENDO_LOGO[:0x1C]:
                 return "GB"
@@ -93,7 +93,7 @@ class RomIntegrityManager:
             except Exception:
                 pass
 
-        # 6. Super Nintendo (.sfc, .smc)
+        # Super Nintendo (.sfc, .smc)
         if len(data) >= 0x8000:
             try:
                 snes = SNESRom(data)

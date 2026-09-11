@@ -177,3 +177,43 @@ def test_nds_extract_and_repack_helpers(tmp_path):
     assert repack_rom is repack_nds_rom
 
 
+def test_nds_patch_arm9_vaddr():
+    raw = bytearray(0x800)
+    struct.pack_into("<I", raw, 0x20, 0x200)       # arm9_offset = 0x200
+    struct.pack_into("<I", raw, 0x28, 0x02000000)  # arm9_ram = 0x02000000
+    struct.pack_into("<I", raw, 0x2C, 0x200)       # arm9_size = 0x200
+
+    # Place an original instruction at virtual RAM 0x02000100 (file offset 0x300)
+    # E1DD10F8: ldrsh r1, [sp, #8]
+    struct.pack_into("<I", raw, 0x300, 0xE1DD10F8)
+
+    rom = NDSRom(bytes(raw))
+    # Test vaddr offset mapping
+    assert rom.get_arm9_vaddr_offset(0x02000100) == 0x300
+
+    # Test patch with wrong expected fails
+    assert not rom.patch_arm9_vaddr(0x02000100, 0xE1DD10B8, expected=0x12345678)
+
+    # Test patch with correct expected succeeds
+    success = rom.patch_arm9_vaddr(0x02000100, 0xE1DD10B8, expected=0xE1DD10F8)
+    assert success
+    assert struct.unpack_from("<I", rom.data, 0x300)[0] == 0xE1DD10B8
+    assert rom.verify_header_checksum()
+
+
+def test_nds_patch_arm7_vaddr():
+    raw = bytearray(0x800)
+    struct.pack_into("<I", raw, 0x30, 0x400)       # arm7_offset = 0x400
+    struct.pack_into("<I", raw, 0x38, 0x02380000)  # arm7_ram = 0x02380000
+    struct.pack_into("<I", raw, 0x3C, 0x100)       # arm7_size = 0x100
+
+    # Place instruction at 0x02380020 (file offset 0x420)
+    struct.pack_into("<I", raw, 0x420, 0xDEADBEEF)
+
+    rom = NDSRom(bytes(raw))
+    assert rom.get_arm7_vaddr_offset(0x02380020) == 0x420
+    assert rom.patch_arm7_vaddr(0x02380020, 0xCAFEBABE, expected=0xDEADBEEF)
+    assert struct.unpack_from("<I", rom.data, 0x420)[0] == 0xCAFEBABE
+
+
+

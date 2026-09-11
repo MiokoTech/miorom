@@ -10,7 +10,6 @@ pointer table rewriting.
 
 from miorom.result import MioRomResult
 from dataclasses import dataclass, field
-import struct
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 from miorom.script.engine import BytecodeEngine, DisassembledScript, Instruction
@@ -154,7 +153,7 @@ class SmartScriptRepacker:
                         ins.label = ep_lbl
                         break
 
-        # Pass 1: Measure new instruction lengths and record updated label offsets
+        # Pass 1: compute lengths and label offsets
         new_label_offsets: Dict[str, int] = {}
         curr_offset = 0
 

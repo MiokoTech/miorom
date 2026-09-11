@@ -8,23 +8,23 @@ def test_jump_table_detector_arm_add_pc():
     base_addr = 0x08000100
     code = bytearray()
 
-    # 1. CMP R0, #3 (0x08000100) -> 4 cases (0, 1, 2, 3)
+    # CMP R0, #3 (0x08000100) -> 4 cases (0, 1, 2, 3)
     # CMP R0, #3: 0xE3500003
     code.extend(struct.pack("<I", 0xE3500003))
 
-    # 2. BHI default_label (0x08000104)
+    # BHI default_label (0x08000104)
     # Target: 0x08000140. Offset = 0x08000140 - (0x08000104 + 8) = 0x34 bytes = 13 words = 0x0D
     # BHI opcode: 0x8A00000D
     code.extend(struct.pack("<I", 0x8A00000D))
 
-    # 3. ADD PC, PC, R0, LSL #2 (0x08000108)
+    # ADD PC, PC, R0, LSL #2 (0x08000108)
     # Opcode: 0xE08FF100
     code.extend(struct.pack("<I", 0xE08FF100))
 
-    # 4. In ARM state, PC is +8 (0x08000110). Next word at 0x0800010C is padding / prefetch
+    # ARM state PC is +8 (0x08000110); next word at 0x0800010C is padding / prefetch
     code.extend(struct.pack("<I", 0xE1A00000))  # NOP
 
-    # 5. Jump table starts at 0x08000110 (PC+8)
+    # Jump table starts at 0x08000110 (PC+8)
     # 4 entries of absolute target addresses
     targets = [0x08000200, 0x08000250, 0x08000300, 0x08000350]
     for t in targets:

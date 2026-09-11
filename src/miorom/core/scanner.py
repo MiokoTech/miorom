@@ -485,8 +485,7 @@ class PointerScanner:
         start_offset: int = 0,
     ) -> List[CandidatePointerTable]:
         results: List[CandidatePointerTable] = []
-        fmt = f"{endian}{'H' if stride == 2 else 'I'}"
-        read_bytes = 2 if stride == 2 else 4
+        from miorom.core.pointer_analyzer import unpack_pointer
 
         pos = start_offset
         limit = min(len(data) - stride, max_search_offset)
@@ -496,12 +495,16 @@ class PointerScanner:
             run_entries: List[Tuple[int, int]] = []
 
             while curr_pos + stride <= len(data):
-                raw = data[curr_pos:curr_pos + read_bytes]
-                val = struct.unpack(fmt, raw)[0]
+                if stride in (2, 3, 4):
+                    val = unpack_pointer(data, curr_pos, stride=stride, endian=endian)
+                else:
+                    read_bytes = 2 if stride == 2 else 4
+                    raw = data[curr_pos : curr_pos + read_bytes]
+                    val = struct.unpack(f"{endian}{'H' if stride == 2 else 'I'}", raw)[0]
                 target = val + base
 
                 if target in target_set:
-                    # Prevent zero-fill or identical padding from forming fake pointer runs
+                    # Prevent identical padding runs
                     if (len(run_entries) >= 2 and
                         run_entries[-1][1] == target and
                         run_entries[-2][1] == target):
@@ -512,7 +515,7 @@ class PointerScanner:
                     break
 
             unique_targets = len(set(t for _, t in run_entries))
-            # Require at least min_pointers and diversity of targets (prevents zero-fill false positives)
+            # Require min pointer count and target diversity
             min_unique = min(3, min_pointers)
             if len(run_entries) >= min_pointers and unique_targets >= min_unique:
                 is_monotonic = True
@@ -533,7 +536,7 @@ class PointerScanner:
                 ))
                 pos = curr_pos
             else:
-                pos += stride if stride in (2, 4) else 4
+                pos += stride if stride in (2, 3, 4) else 4
 
         return results
 

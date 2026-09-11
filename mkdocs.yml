@@ -61,6 +61,7 @@ nav:
       - Command Line Interface: CLI_REFERENCE.md
       - Platform Specifications: PLATFORMS.md
       - Adding Platforms (Plugins): PLUGIN_GUIDE.md
+  - Cookbook: COOKBOOK.md
   - Architecture:
       - API Reference: API_REFERENCE.md
       - Library Contracts: LIBRARY_CONTRACTS.md

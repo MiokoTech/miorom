@@ -14,6 +14,7 @@ from miorom.archive.cascading import (
 )
 from miorom.archive.master_table import MasterTableArchive
 from miorom.archive.dma import DmaTableEntryStruct, DmaFileEntry, DmaTableArchive
+from miorom.archive.afs import AFSEntry, AFSArchive
 
 __all__ = [
     "ArchiveEntry",
@@ -36,4 +37,6 @@ __all__ = [
     "DmaTableEntryStruct",
     "DmaFileEntry",
     "DmaTableArchive",
+    "AFSEntry",
+    "AFSArchive",
 ]

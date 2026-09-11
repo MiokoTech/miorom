@@ -44,7 +44,8 @@ class DynamicVWFInjector:
         for i in range(count):
             char_code = start_char + i
             if isinstance(glyph_widths, GlyphWidthTable):
-                w = glyph_widths.get_char_width(chr(char_code))
+                fn = getattr(glyph_widths, "get_char_width", getattr(glyph_widths, "get_width", None))
+                w = fn(chr(char_code)) if fn else default_width
             else:
                 w = glyph_widths.get(char_code, default_width)
 
@@ -73,7 +74,7 @@ class DynamicVWFInjector:
         # 0x14: ADD r1, r1, r3                (0xE0811003)
         # 0x18: BX lr                         (0xE12FFF1E)
         # fallback:
-        # 0x1C: ADD r1, r1, #fallback_width   (0xE2811000 | fallback_width)
+        # 0x1C: ADD r1, r1, #fallback_width
         # 0x20: BX lr                         (0xE12FFF1E)
         # pool:
         # 0x24: table_vaddr (32-bit literal)

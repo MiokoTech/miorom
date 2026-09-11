@@ -67,7 +67,9 @@ class BitmapFont:
             #...#
             '''
         """
-        lines = [line for line in art.strip("\n").split("\n")]
+        import textwrap
+        dedented = textwrap.dedent(art).strip("\n")
+        lines = [line for line in dedented.split("\n")]
         # Remove common indentation
         if not lines:
             return self.add_glyph(char, 0, 0, advance or self.default_advance, [])

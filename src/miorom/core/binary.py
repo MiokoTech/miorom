@@ -3,7 +3,7 @@ import os
 import struct
 from contextlib import contextmanager
 from io import BytesIO
-from typing import Union, Optional, BinaryIO
+from typing import Any, BinaryIO, Optional, Tuple, Type, Union
 
 
 class BinaryReader:
@@ -71,6 +71,24 @@ class BinaryReader:
 
     def seek(self, offset: int, whence: int = 0) -> int:
         return self.stream.seek(offset, whence)
+
+    def skip(self, count: int) -> int:
+        """Advance current position by count bytes."""
+        return self.stream.seek(count, os.SEEK_CUR)
+
+    @property
+    def size(self) -> int:
+        """Returns total size of the stream."""
+        saved = self.tell()
+        self.stream.seek(0, os.SEEK_END)
+        total = self.stream.tell()
+        self.stream.seek(saved)
+        return total
+
+    @property
+    def remaining(self) -> int:
+        """Returns number of unread bytes remaining in the stream."""
+        return max(0, self.size - self.tell())
 
     @contextmanager
     def at(self, offset: int):
@@ -157,6 +175,82 @@ class BinaryReader:
 
         return raw.decode(encoding, errors="replace")
 
+    def read_struct(self, struct_cls: Type[Any], endian: Optional[str] = None) -> Any:
+        """
+        Reads and unpacks a declarative BinaryStruct directly from the current stream position,
+        advancing the stream offset by the struct's consumed bytes.
+        """
+        return struct_cls.from_stream(self, endian=endian)
+
+    # ----------------------------------------------------------------------
+    # Static zero-allocation unpacking helpers
+    # ----------------------------------------------------------------------
+
+    @staticmethod
+    def unpack_u8(data: Union[bytes, bytearray, memoryview], offset: int = 0) -> int:
+        """Unpack an unsigned 8-bit integer from buffer at offset."""
+        return data[offset]
+
+    @staticmethod
+    def unpack_s8(data: Union[bytes, bytearray, memoryview], offset: int = 0) -> int:
+        """Unpack a signed 8-bit integer from buffer at offset."""
+        return struct.unpack_from("b", data, offset)[0]
+
+    @staticmethod
+    def unpack_u16(data: Union[bytes, bytearray, memoryview], offset: int = 0, endian: str = ">") -> int:
+        """Unpack an unsigned 16-bit integer from buffer at offset."""
+        return struct.unpack_from(f"{endian}H", data, offset)[0]
+
+    @staticmethod
+    def unpack_s16(data: Union[bytes, bytearray, memoryview], offset: int = 0, endian: str = ">") -> int:
+        """Unpack a signed 16-bit integer from buffer at offset."""
+        return struct.unpack_from(f"{endian}h", data, offset)[0]
+
+    @staticmethod
+    def unpack_u32(data: Union[bytes, bytearray, memoryview], offset: int = 0, endian: str = ">") -> int:
+        """Unpack an unsigned 32-bit integer from buffer at offset."""
+        return struct.unpack_from(f"{endian}I", data, offset)[0]
+
+    @staticmethod
+    def unpack_s32(data: Union[bytes, bytearray, memoryview], offset: int = 0, endian: str = ">") -> int:
+        """Unpack a signed 32-bit integer from buffer at offset."""
+        return struct.unpack_from(f"{endian}i", data, offset)[0]
+
+    @staticmethod
+    def unpack_u64(data: Union[bytes, bytearray, memoryview], offset: int = 0, endian: str = ">") -> int:
+        """Unpack an unsigned 64-bit integer from buffer at offset."""
+        return struct.unpack_from(f"{endian}Q", data, offset)[0]
+
+    @staticmethod
+    def unpack_s64(data: Union[bytes, bytearray, memoryview], offset: int = 0, endian: str = ">") -> int:
+        """Unpack a signed 64-bit integer from buffer at offset."""
+        return struct.unpack_from(f"{endian}q", data, offset)[0]
+
+    @staticmethod
+    def unpack_float(data: Union[bytes, bytearray, memoryview], offset: int = 0, endian: str = ">") -> float:
+        """Unpack a 32-bit single-precision float from buffer at offset."""
+        return struct.unpack_from(f"{endian}f", data, offset)[0]
+
+    @staticmethod
+    def unpack_double(data: Union[bytes, bytearray, memoryview], offset: int = 0, endian: str = ">") -> float:
+        """Unpack a 64-bit double-precision float from buffer at offset."""
+        return struct.unpack_from(f"{endian}d", data, offset)[0]
+
+    @staticmethod
+    def calcsize(fmt: str) -> int:
+        """Calculate the size of struct format string."""
+        return struct.calcsize(fmt)
+
+    @staticmethod
+    def unpack(fmt: str, data: Union[bytes, bytearray, memoryview]) -> Tuple[Any, ...]:
+        """Unpack binary data according to format string."""
+        return struct.unpack(fmt, data)
+
+    @staticmethod
+    def unpack_from(fmt: str, buffer: Union[bytes, bytearray, memoryview], offset: int = 0) -> Tuple[Any, ...]:
+        """Unpack binary data from buffer at offset according to format string."""
+        return struct.unpack_from(fmt, buffer, offset)
+
 
 class BinaryWriter:
     """A fluent, endian-aware binary writer for building and repacking game ROMs and archives."""
@@ -177,6 +271,17 @@ class BinaryWriter:
 
     def seek(self, offset: int, whence: int = 0) -> int:
         return self.stream.seek(offset, whence)
+
+    @property
+    def size(self) -> int:
+        """Returns current total size of written bytes."""
+        if isinstance(self.stream, BytesIO):
+            return len(self.stream.getvalue())
+        saved = self.tell()
+        self.stream.seek(0, os.SEEK_END)
+        total = self.stream.tell()
+        self.stream.seek(saved)
+        return total
 
     @contextmanager
     def at(self, offset: int):
@@ -252,6 +357,13 @@ class BinaryWriter:
         self.stream.write(bytes([pad_byte]) * length)
         return self
 
+    def write_struct(self, struct_inst: Any, endian: Optional[str] = None) -> "BinaryWriter":
+        """
+        Serializes and writes a declarative BinaryStruct instance directly into the stream.
+        """
+        struct_inst.to_stream(self, endian=endian)
+        return self
+
     def to_bytes(self) -> bytes:
         if isinstance(self.stream, BytesIO):
             return self.stream.getvalue()
@@ -260,3 +372,111 @@ class BinaryWriter:
         data = self.stream.read()
         self.seek(saved)
         return data
+
+    # ----------------------------------------------------------------------
+    # Static atomic packing helpers
+    # ----------------------------------------------------------------------
+
+    @staticmethod
+    def pack_u8(val: int) -> bytes:
+        """Pack an unsigned 8-bit integer into bytes."""
+        return bytes([val & 0xFF])
+
+    @staticmethod
+    def pack_s8(val: int) -> bytes:
+        """Pack a signed 8-bit integer into bytes."""
+        return struct.pack("b", val)
+
+    @staticmethod
+    def pack_u16(val: int, endian: str = ">") -> bytes:
+        """Pack an unsigned 16-bit integer into bytes."""
+        return struct.pack(f"{endian}H", val)
+
+    @staticmethod
+    def pack_s16(val: int, endian: str = ">") -> bytes:
+        """Pack a signed 16-bit integer into bytes."""
+        return struct.pack(f"{endian}h", val)
+
+    @staticmethod
+    def pack_u32(val: int, endian: str = ">") -> bytes:
+        """Pack an unsigned 32-bit integer into bytes."""
+        return struct.pack(f"{endian}I", val)
+
+    @staticmethod
+    def pack_s32(val: int, endian: str = ">") -> bytes:
+        """Pack a signed 32-bit integer into bytes."""
+        return struct.pack(f"{endian}i", val)
+
+    @staticmethod
+    def pack_u64(val: int, endian: str = ">") -> bytes:
+        """Pack an unsigned 64-bit integer into bytes."""
+        return struct.pack(f"{endian}Q", val)
+
+    @staticmethod
+    def pack_s64(val: int, endian: str = ">") -> bytes:
+        """Pack a signed 64-bit integer into bytes."""
+        return struct.pack(f"{endian}q", val)
+
+    @staticmethod
+    def pack_float(val: float, endian: str = ">") -> bytes:
+        """Pack a 32-bit single-precision float into bytes."""
+        return struct.pack(f"{endian}f", val)
+
+    @staticmethod
+    def pack_double(val: float, endian: str = ">") -> bytes:
+        """Pack a 64-bit double-precision float into bytes."""
+        return struct.pack(f"{endian}d", val)
+
+    # ----------------------------------------------------------------------
+    # Static buffer in-place packing helpers (pack_into)
+    # ----------------------------------------------------------------------
+
+    @staticmethod
+    def pack_into_u8(buf: Union[bytearray, memoryview], offset: int, val: int) -> None:
+        """Pack an unsigned 8-bit integer into a mutable buffer at offset."""
+        buf[offset] = val & 0xFF
+
+    @staticmethod
+    def pack_into_s8(buf: Union[bytearray, memoryview], offset: int, val: int) -> None:
+        """Pack a signed 8-bit integer into a mutable buffer at offset."""
+        struct.pack_into("b", buf, offset, val)
+
+    @staticmethod
+    def pack_into_u16(buf: Union[bytearray, memoryview], offset: int, val: int, endian: str = ">") -> None:
+        """Pack an unsigned 16-bit integer into a mutable buffer at offset."""
+        struct.pack_into(f"{endian}H", buf, offset, val)
+
+    @staticmethod
+    def pack_into_s16(buf: Union[bytearray, memoryview], offset: int, val: int, endian: str = ">") -> None:
+        """Pack a signed 16-bit integer into a mutable buffer at offset."""
+        struct.pack_into(f"{endian}h", buf, offset, val)
+
+    @staticmethod
+    def pack_into_u32(buf: Union[bytearray, memoryview], offset: int, val: int, endian: str = ">") -> None:
+        """Pack an unsigned 32-bit integer into a mutable buffer at offset."""
+        struct.pack_into(f"{endian}I", buf, offset, val)
+
+    @staticmethod
+    def pack_into_s32(buf: Union[bytearray, memoryview], offset: int, val: int, endian: str = ">") -> None:
+        """Pack a signed 32-bit integer into a mutable buffer at offset."""
+        struct.pack_into(f"{endian}i", buf, offset, val)
+
+    @staticmethod
+    def pack_into_u64(buf: Union[bytearray, memoryview], offset: int, val: int, endian: str = ">") -> None:
+        """Pack an unsigned 64-bit integer into a mutable buffer at offset."""
+        struct.pack_into(f"{endian}Q", buf, offset, val)
+
+    @staticmethod
+    def pack_into_s64(buf: Union[bytearray, memoryview], offset: int, val: int, endian: str = ">") -> None:
+        """Pack a signed 64-bit integer into a mutable buffer at offset."""
+        struct.pack_into(f"{endian}q", buf, offset, val)
+
+    @staticmethod
+    def pack(fmt: str, *values: Any) -> bytes:
+        """Pack values into bytes according to format string."""
+        return struct.pack(fmt, *values)
+
+    @staticmethod
+    def pack_into(fmt: str, buffer: Union[bytearray, memoryview], offset: int, *values: Any) -> None:
+        """Pack values into mutable buffer at offset according to format string."""
+        struct.pack_into(fmt, buffer, offset, *values)

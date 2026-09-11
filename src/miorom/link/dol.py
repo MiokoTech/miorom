@@ -56,7 +56,7 @@ class DolBinary:
         first_text_offset = struct.unpack_from(">I", data, 0)[0]
         first_text_address = struct.unpack_from(">I", data, 0x48)[0]
 
-        # Valid GC/Wii RAM addresses are in 0x80000000..0x81800000 or 0x90000000..0x94000000
+        # Valid GC/Wii RAM address range
         is_ram_valid = (
             (0x80000000 <= first_text_address <= 0x81800000)
             or (0x90000000 <= first_text_address <= 0x94000000)

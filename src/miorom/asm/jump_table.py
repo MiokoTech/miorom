@@ -51,7 +51,7 @@ class JumpTableDetector:
                 table_addr = addr + 8
                 table_off = (i + 2) * 4
 
-                # Scan backwards for CMP Rm, #N (bounds check) and conditional branch to default
+                # Scan backwards for bounds check and default branch
                 case_count = 4  # Default reasonable estimate
                 default_target = None
 

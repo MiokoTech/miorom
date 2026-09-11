@@ -71,10 +71,10 @@ class DeepScanner:
         """
         fingerprints: List[BinaryFingerprint] = []
 
-        # 1. Primary container / ROM header checks (at offset 0 or standard offsets)
+        # Header signatures
         self._check_primary_rom_headers(data, fingerprints)
 
-        # 2. Embedded asset / container signatures
+        # Embedded container signatures
         if scan_embedded and len(data) > 0:
             self._scan_embedded_signatures(data, fingerprints)
 
@@ -83,7 +83,7 @@ class DeepScanner:
         # Sort by offset
         fingerprints.sort(key=lambda fp: fp.offset)
 
-        # 3. Shannon entropy analysis
+        # Shannon entropy analysis
         overall_entropy = calculate_entropy(data)
         entropy_blocks = calculate_block_entropy(data, block_size=block_size)
 
@@ -206,7 +206,7 @@ class DeepScanner:
                     metadata={"title": title, "is_cgb": is_cgb, "cartridge_type": data[0x147]}
                 ))
 
-        # SNES (Check LoROM 0x7FB0 / 0x7FC0 or HiROM 0xFFB0 / 0xFFC0)
+        # SNES header check (LoROM/HiROM)
         for snes_off, name in [(0x7FC0, "SNES (LoROM)"), (0xFFC0, "SNES (HiROM)")]:
             if sz >= snes_off + 0x30:
                 csum, comp = struct.unpack_from("<HH", data, snes_off + 0x1C)
@@ -398,26 +398,21 @@ class DeepScanner:
                 d_sz = data[off + 1] | (data[off + 2] << 8) | (data[off + 3] << 16)
                 if 16 <= d_sz <= 16 * 1024 * 1024:  # Reasonable range: 16B - 16MB
                     name = "LZ10" if comp_type == 0x10 else "LZ11"
-                    # We assign lower confidence as single-byte check has false positives
+                    # Lower confidence for single-byte matches
                     out.append(BinaryFingerprint(
                         offset=off, category="compression", format_name=name,
                         confidence=0.60, description=f"BIOS {name} Stream (Target: {d_sz} bytes)",
                         metadata={"decompressed_size": d_sz}
                     ))
 
-            # --- Neverland / Marvelous Text Containers ---
-            # Dual-table fefe format: 16-byte header + Table1 at 0x10, Table2 at footer.
-            # Found in: Rune Factory series (Wii/DS), Harvest Moon (Marvelous titles).
-            # Heuristic: bytes[0..3] == 0x00000000, bytes[8..11] == 0x00000001,
-            #             bytes[12..15] == 0x00000000, bytes[4..7] = ptr to Table2 (> 0).
+            # FEFE dual-table container check
             elif (off + 16 <= length and
                   data[off:off + 4] == b"\x00\x00\x00\x00" and
                   data[off + 8:off + 12] == b"\x00\x00\x00\x01" and
                   data[off + 12:off + 16] == b"\x00\x00\x00\x00"):
                 t2_offset = struct.unpack_from(">I", data, off + 4)[0]
                 file_sz = length - off
-                # FEFE containers are text sub-files (< 2MB) where t2_offset is before EOF
-                # and bytes 0x10..0x18 are NOT a script section table (section count is usually at 0x14 in scripts)
+                # FEFE containers are text sub-files (< 2MB)
                 is_script = (off == 0 and length > 0x60 and
                              struct.unpack_from(">I", data, 4)[0] == length and
                              1 <= struct.unpack_from(">I", data, 0x14)[0] <= 32)

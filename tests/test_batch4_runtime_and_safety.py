@@ -26,7 +26,7 @@ from miorom import (
 
 
 # =====================================================================
-# 1. Dynamic In-ROM Heap Allocator (MioRomHeap) Tests
+# Dynamic In-ROM Heap Allocator (MioRomHeap) Tests
 # =====================================================================
 def test_miorom_heap_alloc_free_coalesce():
     base_ram = 0x80500000
@@ -76,7 +76,7 @@ def test_miorom_heap_alloc_free_coalesce():
 
 
 # =====================================================================
-# 2. Anti-Piracy & Integrity Bypass Engine Tests
+# Anti-Piracy & Integrity Bypass Engine Tests
 # =====================================================================
 def test_anti_piracy_bypasser_nds_and_ppc():
     # Construct synthetic ARM code containing NDS ROMCTRL pattern
@@ -110,10 +110,10 @@ def test_anti_piracy_bypasser_nds_and_ppc():
 
 
 # =====================================================================
-# 3. ROM Layout Expander & Far Memory Relocator Tests
+# ROM Layout Expander & Far Memory Relocator Tests
 # =====================================================================
 def test_rom_layout_expander():
-    # 1. GBA expansion (4MB -> 8MB)
+    # GBA expansion (4MB -> 8MB)
     orig_gba = bytearray(4 * 1024 * 1024)
     orig_gba[0:4] = b"GBA!"
     expanded_gba, rep_gba = RomLayoutExpander.expand_gba(
@@ -124,7 +124,7 @@ def test_rom_layout_expander():
     assert rep_gba.expanded_bytes == 4 * 1024 * 1024
     assert "ROM Layout Expansion Report" in rep_gba.summary()
 
-    # 2. NDS expansion (512KB -> 1MB)
+    # NDS expansion (512KB -> 1MB)
     nds_buf = bytearray(0x80000)
     nds_buf[0x14] = 0x07  # old capacity
     struct.pack_into("<I", nds_buf, 0x80, 0x80000)
@@ -135,7 +135,7 @@ def test_rom_layout_expander():
     new_total_size = struct.unpack_from("<I", expanded_nds, 0x80)[0]
     assert new_total_size == 0x100000
 
-    # 3. Far memory relocation
+    # Far memory relocation
     rom = bytearray(0x1000)
     # Put text payload at 0x100
     rom[0x100:0x108] = b"FAR_DATA"
@@ -161,7 +161,7 @@ def test_rom_layout_expander():
 
 
 # =====================================================================
-# 4. Fuzzing & Memory Safety Sanitizer (ROM-ASan) Tests
+# Fuzzing & Memory Safety Sanitizer (ROM-ASan) Tests
 # =====================================================================
 def test_rom_address_sanitizer():
     sanitizer = RomAddressSanitizer(default_tag=ShadowTag.UNMAPPED)
@@ -201,7 +201,7 @@ def test_rom_address_sanitizer():
 
 
 # =====================================================================
-# 5. Save-State Diff-Fuzzing & Pointer Trail Hunter Tests
+# Save-State Diff-Fuzzing & Pointer Trail Hunter Tests
 # =====================================================================
 def test_save_state_diff_and_pointer_trail_hunter():
     # Construct 3 memory snapshots (e.g. health increasing: 100 -> 150 -> 200)

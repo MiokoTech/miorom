@@ -104,6 +104,97 @@ class MasterTableArchive:
         for i in range(from_index, end_idx):
             self.table[i][offset_field_idx] += delta
 
+    def entry_bounds(
+        self,
+        index: int,
+        offset_field_idx: int = 1,
+        size_field_idx: Optional[int] = None,
+        default_end: Optional[int] = None,
+    ) -> Tuple[int, int, int]:
+        """
+        Calculates [start, end, size] of entry `index` from the table.
+        Supports:
+        - offset_size mode (when size_field_idx is specified)
+        - contiguous sequential mode (end = next entry start or default_end)
+        """
+        if not (0 <= index < self.table_entries):
+            raise IndexError(f"Entry index {index} out of range (0..{self.table_entries-1})")
+
+        rec = self.table[index]
+        start = rec[offset_field_idx]
+
+        if size_field_idx is not None:
+            size = rec[size_field_idx]
+            end = start + size
+            return start, end, size
+
+        if index + 1 < self.table_entries:
+            next_start = self.table[index + 1][offset_field_idx]
+            size = max(0, next_start - start)
+            return start, next_start, size
+
+        end = default_end if default_end is not None else len(self.data)
+        size = max(0, end - start)
+        return start, end, size
+
+    def get_entry(self, index: int, **kwargs) -> bytes:
+        """Extracts the slice for entry `index` based on calculated bounds."""
+        start, end, _ = self.entry_bounds(index, **kwargs)
+        return self.get_slice(start, end)
+
+    def get_pristine_entry(self, index: int, offset_field_idx: int = 1, size_field_idx: Optional[int] = None) -> bytes:
+        """Extracts the pristine slice for entry `index`."""
+        if not (0 <= index < self.table_entries):
+            raise IndexError(f"Entry index {index} out of range (0..{self.table_entries-1})")
+
+        rec = self._pristine_table[index]
+        start = rec[offset_field_idx]
+
+        if size_field_idx is not None:
+            size = rec[size_field_idx]
+            end = start + size
+        elif index + 1 < self.table_entries:
+            end = self._pristine_table[index + 1][offset_field_idx]
+        else:
+            end = len(self._pristine_data)
+
+        return self.get_pristine_slice(start, end)
+
+    def set_entry(
+        self,
+        index: int,
+        new_data: bytes,
+        offset_field_idx: int = 1,
+        size_field_idx: Optional[int] = None,
+        auto_cascade: bool = True,
+        **kwargs,
+    ) -> int:
+        """
+        Replaces entry `index` with `new_data`, updating bounds and optionally cascading
+        the offset delta across all subsequent entries.
+        Returns the delta in bytes.
+        """
+        start, end, old_size = self.entry_bounds(
+            index,
+            offset_field_idx=offset_field_idx,
+            size_field_idx=size_field_idx,
+            **kwargs,
+        )
+        delta = self.replace_slice(start, end, new_data)
+
+        if size_field_idx is not None:
+            self.table[index][size_field_idx] = len(new_data)
+
+        if auto_cascade and delta != 0:
+            self.cascade_offset(
+                from_index=index + 1,
+                delta=delta,
+                offset_field_idx=offset_field_idx,
+            )
+
+        self.commit_table()
+        return delta
+
     def get_record(self, index: int) -> List[Any]:
         return self.table[index]
 
@@ -115,3 +206,4 @@ class MasterTableArchive:
 
     def __len__(self) -> int:
         return len(self.data)
+

@@ -91,7 +91,7 @@ class AntiPiracyBypasser:
         matches: List[APMatch] = []
         n = len(arm9_code)
 
-        # 1. Search for Cartridge Command Register references
+        # Cartridge command register references
         for pat in cls.NDS_ROMCTRL_PATTERNS:
             pos = 0
             while True:
@@ -122,12 +122,12 @@ class AntiPiracyBypasser:
                             )
                             break
 
-        # 2. Search for Checksum accumulator loops (e.g., eor / add in loop followed by cmp)
+        # Checksum verification loops
         # ARM pattern: cmp rX, rY; bne loc
         for i in range(0, n - 8, 4):
             instr1 = struct.unpack("<I", arm9_code[i:i+4])[0]
             instr2 = struct.unpack("<I", arm9_code[i+4:i+8])[0]
-            # cmp instruction (opcode 0x3500000 or similar: (instr & 0x0DE00000) == 0x01500000)
+            # CMP instruction match
             if (instr1 & 0x0DE00000) == 0x01500000:
                 # instr2 is BNE (cond 0x1, opcode 0xA)
                 cond2 = (instr2 >> 28) & 0xF

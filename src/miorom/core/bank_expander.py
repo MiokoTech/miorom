@@ -32,7 +32,7 @@ class RomExpander:
             if (csum_hi + comp_hi) == 0xFFFF and csum_hi > 0:
                 header_off = 0xFFC0
 
-        # Calculate size code: 2^N KB (e.g., 2MB = 2048KB = 2^11 -> 11 = 0x0B)
+        # Calculate size code: 2^N KB
         kb = target_size_bytes // 1024
         size_code = 7
         while (1 << size_code) < kb:
@@ -41,7 +41,6 @@ class RomExpander:
         rom[header_off + 0x17] = size_code
 
         # Recalculate 16-bit checksum
-        # Sum of all bytes in the expanded ROM
         total_sum = sum(rom)
         # Exclude old checksum and complement bytes
         old_csum = struct.unpack_from("<H", rom, header_off + 0x1E)[0]

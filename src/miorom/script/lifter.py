@@ -55,7 +55,7 @@ class BinaryLifter:
         func_name = function_name or f"sub_{base_address:08X}"
         ir_func = IRFunction(name=func_name, entry_address=base_address)
 
-        # 1. Split into basic blocks
+        # Partition into basic blocks
         leaders: Set[int] = {base_address}
         for ins in disasm_list:
             if ins.is_branch or ins.is_return:
@@ -81,7 +81,7 @@ class BinaryLifter:
             if ins.is_return or (ins.is_branch and not ins.is_conditional):
                 cur_block = None
 
-        # 2. Build CFG edges
+        # Control flow graph edges
         for addr, b in blocks.items():
             if not b.instructions:
                 continue
@@ -99,7 +99,7 @@ class BinaryLifter:
                     b.successors.append(target_lbl)
                     blocks[target_addr].predecessors.append(b.label)
 
-        # 3. Apply SSA Versioning
+        # SSA register versioning
         cls.convert_to_ssa(ir_func)
 
         if cache_path:
@@ -234,17 +234,59 @@ class BinaryLifter:
             elif mnem in ("bc", "bca") and ins.target_address:
                 return IRInstruction(IROp.BRANCH_COND, args=[ins.target_address, f"cond_{ops[0]}_{ops[1]}"], pc=ins.address)
 
-        # ARM Lifting
-        elif arch_norm in ("arm", "arm32"):
+        # ARM & Thumb Lifting
+        elif arch_norm in ("arm", "arm32", "thumb", "arm_thumb"):
             if mnem == "mov" and len(ops) >= 2:
                 val = int(ops[1].replace("#", ""), 0) if ops[1].startswith("#") else ops[1]
                 return IRInstruction(IROp.ASSIGN, dst=ops[0], args=[val], pc=ins.address)
             elif mnem == "bx" and ops and ops[0] == "lr":
                 return IRInstruction(IROp.RETURN, args=["r0"], pc=ins.address)
+            elif mnem == "pop" and ops and "pc" in ops[0]:
+                return IRInstruction(IROp.RETURN, args=["r0"], pc=ins.address)
+            elif mnem in ("add", "adds") and len(ops) >= 2:
+                if len(ops) >= 3:
+                    arg2 = int(ops[2].replace("#", ""), 0) if ops[2].startswith("#") else ops[2]
+                    return IRInstruction(IROp.ADD, dst=ops[0], args=[ops[1], arg2], pc=ins.address)
+                else:
+                    arg1 = int(ops[1].replace("#", ""), 0) if ops[1].startswith("#") else ops[1]
+                    return IRInstruction(IROp.ADD, dst=ops[0], args=[ops[0], arg1], pc=ins.address)
+            elif mnem in ("sub", "subs") and len(ops) >= 2:
+                if len(ops) >= 3:
+                    arg2 = int(ops[2].replace("#", ""), 0) if ops[2].startswith("#") else ops[2]
+                    return IRInstruction(IROp.SUB, dst=ops[0], args=[ops[1], arg2], pc=ins.address)
+                else:
+                    arg1 = int(ops[1].replace("#", ""), 0) if ops[1].startswith("#") else ops[1]
+                    return IRInstruction(IROp.SUB, dst=ops[0], args=[ops[0], arg1], pc=ins.address)
+            elif mnem == "mul" and len(ops) >= 2:
+                src = ops[1] if len(ops) >= 2 else ops[0]
+                return IRInstruction(IROp.MUL, dst=ops[0], args=[ops[0], src], pc=ins.address)
+            elif mnem == "and" and len(ops) >= 2:
+                src = ops[1] if len(ops) >= 2 else ops[0]
+                return IRInstruction(IROp.AND, dst=ops[0], args=[ops[0], src], pc=ins.address)
+            elif mnem == "orr" and len(ops) >= 2:
+                src = ops[1] if len(ops) >= 2 else ops[0]
+                return IRInstruction(IROp.OR, dst=ops[0], args=[ops[0], src], pc=ins.address)
+            elif mnem == "eor" and len(ops) >= 2:
+                src = ops[1] if len(ops) >= 2 else ops[0]
+                return IRInstruction(IROp.XOR, dst=ops[0], args=[ops[0], src], pc=ins.address)
+            elif mnem in ("lsl", "lsls") and len(ops) >= 2:
+                arg = int(ops[2].replace("#", ""), 0) if len(ops) >= 3 and ops[2].startswith("#") else (ops[2] if len(ops) >= 3 else ops[1])
+                src = ops[1] if len(ops) >= 3 else ops[0]
+                return IRInstruction(IROp.SHL, dst=ops[0], args=[src, arg], pc=ins.address)
+            elif mnem in ("lsr", "lsrs", "asr", "asrs") and len(ops) >= 2:
+                arg = int(ops[2].replace("#", ""), 0) if len(ops) >= 3 and ops[2].startswith("#") else (ops[2] if len(ops) >= 3 else ops[1])
+                src = ops[1] if len(ops) >= 3 else ops[0]
+                return IRInstruction(IROp.SHR, dst=ops[0], args=[src, arg], pc=ins.address)
+            elif mnem in ("ldr", "ldrb", "ldrh", "ldsb", "ldsh") and len(ops) >= 2:
+                return IRInstruction(IROp.LOAD, dst=ops[0], args=[ops[1]], pc=ins.address)
+            elif mnem in ("str", "strb", "strh") and len(ops) >= 2:
+                return IRInstruction(IROp.STORE, dst=None, args=[ops[1], ops[0]], pc=ins.address)
             elif mnem == "bl" and ins.target_address:
                 return IRInstruction(IROp.CALL, dst="r0", args=[ins.target_address], pc=ins.address)
             elif mnem == "b" and ins.target_address:
                 return IRInstruction(IROp.BRANCH, args=[ins.target_address], pc=ins.address)
+            elif mnem in ("beq", "bne", "bcs", "bcc", "bmi", "bpl", "bvs", "bvc", "bhi", "bls", "bge", "blt", "bgt", "ble") and ins.target_address:
+                return IRInstruction(IROp.BRANCH_COND, args=[ins.target_address, mnem], pc=ins.address)
 
         # MIPS Lifting
         elif "mips" in arch_norm:
@@ -332,6 +374,67 @@ class BinaryLifter:
             elif mnem in ("bsr", "jsr") and ins.target_address:
                 return IRInstruction(IROp.CALL, dst="d0", args=[ins.target_address], pc=ins.address)
 
+        # 6502 / 65816 Lifting (NES / SNES)
+        elif arch_norm in ("6502", "nes", "famicom", "2a03", "65816", "snes", "sfc", "5a22", "w65c816"):
+            if mnem == "nop":
+                return IRInstruction(IROp.NOP, pc=ins.address)
+            elif mnem in ("rts", "rtl"):
+                return IRInstruction(IROp.RETURN, args=["a"], pc=ins.address)
+            elif mnem in ("lda", "ldx", "ldy") and ops:
+                target_reg = "a" if mnem == "lda" else ("x" if mnem == "ldx" else "y")
+                op0 = ops[0]
+                if op0.startswith("#$") or op0.startswith("#"):
+                    val = int(op0.replace("#$", "0x").replace("#", ""), 0)
+                    return IRInstruction(IROp.ASSIGN, dst=target_reg, args=[val], pc=ins.address)
+                else:
+                    return IRInstruction(IROp.LOAD, dst=target_reg, args=[op0], pc=ins.address)
+            elif mnem in ("sta", "stx", "sty") and ops:
+                src_reg = "a" if mnem == "sta" else ("x" if mnem == "stx" else "y")
+                return IRInstruction(IROp.STORE, dst=None, args=[ops[0], src_reg], pc=ins.address)
+            elif mnem == "stz" and ops:
+                return IRInstruction(IROp.STORE, dst=None, args=[ops[0], 0], pc=ins.address)
+            elif mnem in ("tax", "txa", "tay", "tya", "tsx", "txs", "txy", "tyx", "tcd", "tdc", "tcs", "tsc"):
+                src_dst_map = {
+                    "tax": ("x", "a"), "txa": ("a", "x"),
+                    "tay": ("y", "a"), "tya": ("a", "y"),
+                    "tsx": ("x", "sp"), "txs": ("sp", "x"),
+                    "txy": ("y", "x"), "tyx": ("x", "y"),
+                    "tcd": ("d", "a"), "tdc": ("a", "d"),
+                    "tcs": ("sp", "a"), "tsc": ("a", "sp"),
+                }
+                dst, src = src_dst_map[mnem]
+                return IRInstruction(IROp.ASSIGN, dst=dst, args=[src], pc=ins.address)
+            elif mnem in ("adc", "sbc") and ops:
+                op_type = IROp.ADD if mnem == "adc" else IROp.SUB
+                val = ops[0]
+                arg = int(val.replace("#$", "0x").replace("#", ""), 0) if (val.startswith("#$") or val.startswith("#")) else val
+                return IRInstruction(op_type, dst="a", args=["a", arg], pc=ins.address)
+            elif mnem in ("and", "ora", "eor") and ops:
+                op_type = IROp.AND if mnem == "and" else (IROp.OR if mnem == "ora" else IROp.XOR)
+                val = ops[0]
+                arg = int(val.replace("#$", "0x").replace("#", ""), 0) if (val.startswith("#$") or val.startswith("#")) else val
+                return IRInstruction(op_type, dst="a", args=["a", arg], pc=ins.address)
+            elif mnem in ("asl", "lsr"):
+                op_type = IROp.SHL if mnem == "asl" else IROp.SHR
+                dst_reg = ops[0] if ops else "a"
+                return IRInstruction(op_type, dst=dst_reg, args=[dst_reg, 1], pc=ins.address)
+            elif mnem in ("inc", "dec") and ops:
+                op_type = IROp.ADD if mnem == "inc" else IROp.SUB
+                dst_reg = ops[0]
+                return IRInstruction(op_type, dst=dst_reg, args=[dst_reg, 1], pc=ins.address)
+            elif mnem in ("inx", "iny"):
+                dst_reg = "x" if mnem == "inx" else "y"
+                return IRInstruction(IROp.ADD, dst=dst_reg, args=[dst_reg, 1], pc=ins.address)
+            elif mnem in ("dex", "dey"):
+                dst_reg = "x" if mnem == "dex" else "y"
+                return IRInstruction(IROp.SUB, dst=dst_reg, args=[dst_reg, 1], pc=ins.address)
+            elif mnem in ("jsr", "jsl") and ins.target_address is not None:
+                return IRInstruction(IROp.CALL, dst="a", args=[ins.target_address], pc=ins.address)
+            elif mnem in ("jmp", "jml", "bra", "brl") and ins.target_address is not None:
+                return IRInstruction(IROp.BRANCH, args=[ins.target_address], pc=ins.address)
+            elif mnem in ("beq", "bne", "bcs", "bcc", "bmi", "bpl", "bvs", "bvc") and ins.target_address is not None:
+                return IRInstruction(IROp.BRANCH_COND, args=[ins.target_address, mnem], pc=ins.address)
+
         # Generic fallback
         return IRInstruction(IROp.NOP, pc=ins.address, comment=f"{ins.mnemonic} {', '.join(ops)}")
 
@@ -347,7 +450,7 @@ class BinaryLifter:
                 # Replace read args with current version
                 new_args = []
                 for a in ins.args:
-                    if isinstance(a, str) and (a.startswith("r") or a.startswith("$")):
+                    if isinstance(a, str) and (a.startswith("r") or a.startswith("$") or a.startswith("d") or a in ("a", "x", "y", "sp")):
                         v = var_counts[a]
                         new_args.append(IRVar(name=a, version=v))
                     else:

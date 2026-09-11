@@ -8,9 +8,10 @@ binary script files into human-readable text, and recompile them with automatic
 label and branch target resolution.
 """
 
+from miorom.core.binary import BinaryReader, BinaryWriter
 from miorom.result import MioRomResult
+import ast
 import re
-import struct
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -62,6 +63,24 @@ class ScriptVM:
         return self
 
     # ------------------------------------------------------------------
+    # Opcode I/O Helpers
+    # ------------------------------------------------------------------
+
+    def _read_opcode(self, bytecode: bytes, p: int) -> int:
+        if self.opcode_size == 1:
+            return BinaryReader.unpack_u8(bytecode, p)
+        elif self.opcode_size == 2:
+            return BinaryReader.unpack_u16(bytecode, p, endian=self.endian)
+        return BinaryReader.unpack_u32(bytecode, p, endian=self.endian)
+
+    def _pack_opcode(self, code: int) -> bytes:
+        if self.opcode_size == 1:
+            return BinaryWriter.pack_u8(code)
+        elif self.opcode_size == 2:
+            return BinaryWriter.pack_u16(code, endian=self.endian)
+        return BinaryWriter.pack_u32(code, endian=self.endian)
+
+    # ------------------------------------------------------------------
     # Disassembler
     # ------------------------------------------------------------------
 
@@ -69,14 +88,13 @@ class ScriptVM:
         """Disassemble bytecode into readable assembly text with labels."""
         p = start_offset
         limit = len(bytecode)
-        fmt_op = f"{self.endian}{'B' if self.opcode_size == 1 else ('H' if self.opcode_size == 2 else 'I')}"
 
         # Pass 1: Find all jump targets to place labels
         jump_targets = set()
         while p < limit:
             if p + self.opcode_size > limit:
                 break
-            code = struct.unpack_from(fmt_op, bytecode, p)[0]
+            code = self._read_opcode(bytecode, p)
             if code not in self._opcodes:
                 p += self.opcode_size
                 continue
@@ -85,7 +103,7 @@ class ScriptVM:
             for arg_desc in spec.args:
                 arg_type = arg_desc.split(":")[-1]
                 if arg_type == "label":
-                    target = struct.unpack_from(f"{self.endian}I", bytecode, p)[0]
+                    target = BinaryReader.unpack_u32(bytecode, p, endian=self.endian)
                     jump_targets.add(target)
                     p += 4
                 elif arg_type in ("u8", "s8"):
@@ -96,7 +114,7 @@ class ScriptVM:
                     p += 4
                 elif arg_type == "str_utf16":
                     while p + 1 < limit:
-                        val = struct.unpack_from(f"{self.endian}H", bytecode, p)[0]
+                        val = BinaryReader.unpack_u16(bytecode, p, endian=self.endian)
                         p += 2
                         if val == 0:
                             break
@@ -118,7 +136,7 @@ class ScriptVM:
                 break
 
             curr_addr = p
-            code = struct.unpack_from(fmt_op, bytecode, p)[0]
+            code = self._read_opcode(bytecode, p)
             if code not in self._opcodes:
                 lines.append(f"    .byte 0x{code:02x}")
                 p += self.opcode_size
@@ -131,7 +149,7 @@ class ScriptVM:
             for arg_desc in spec.args:
                 arg_type = arg_desc.split(":")[-1]
                 if arg_type == "label":
-                    target = struct.unpack_from(f"{self.endian}I", bytecode, p)[0]
+                    target = BinaryReader.unpack_u32(bytecode, p, endian=self.endian)
                     arg_vals.append(f"label_{target:04x}")
                     p += 4
                 elif arg_type == "u8":
@@ -139,17 +157,17 @@ class ScriptVM:
                     arg_vals.append(str(val))
                     p += 1
                 elif arg_type == "u16":
-                    val = struct.unpack_from(f"{self.endian}H", bytecode, p)[0]
+                    val = BinaryReader.unpack_u16(bytecode, p, endian=self.endian)
                     arg_vals.append(str(val))
                     p += 2
                 elif arg_type == "u32":
-                    val = struct.unpack_from(f"{self.endian}I", bytecode, p)[0]
+                    val = BinaryReader.unpack_u32(bytecode, p, endian=self.endian)
                     arg_vals.append(str(val))
                     p += 4
                 elif arg_type == "str_utf16":
                     chars = []
                     while p + 1 < limit:
-                        val = struct.unpack_from(f"{self.endian}H", bytecode, p)[0]
+                        val = BinaryReader.unpack_u16(bytecode, p, endian=self.endian)
                         p += 2
                         if val == 0:
                             break
@@ -178,8 +196,6 @@ class ScriptVM:
         """Assemble assembly text back into bytecode, resolving all labels."""
         raw_lines = [line.strip() for line in asm_text.splitlines() if line.strip() and not line.strip().startswith("#")]
 
-        fmt_op = f"{self.endian}{'B' if self.opcode_size == 1 else ('H' if self.opcode_size == 2 else 'I')}"
-
         # Pass 1: Compute label positions and instruction lengths
         labels: Dict[str, int] = {}
         cur_pos = 0
@@ -193,22 +209,26 @@ class ScriptVM:
                 labels[lbl_name] = cur_pos
                 continue
 
-            parts = line.split(maxsplit=1)
+            # Parse instruction
+            parts = line.split(None, 1)
             op_name = parts[0].upper()
-            raw_args = [a.strip() for a in parts[1].split(",")] if len(parts) > 1 else []
+            raw_args = []
+            if len(parts) > 1:
+                # Tokenize args safely respecting quotes
+                raw_args = [a.strip() for a in re.findall(r'("(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|[^\s,]+)', parts[1])]
 
             if op_name == ".BYTE":
-                val = int(raw_args[0], 0)
-                parsed_instructions.append((None, [val]))
+                val = int(raw_args[0], 0) if raw_args else 0
                 cur_pos += 1
+                parsed_instructions.append((None, [val]))
                 continue
 
             if op_name not in self._name_to_opcode:
-                raise ParseError(f"Unknown opcode: '{op_name}' in line: '{line}'")
+                raise ParseError(f"Unknown opcode '{op_name}' during assembly.")
 
             spec = self._name_to_opcode[op_name]
-            parsed_instructions.append((spec, raw_args))
             cur_pos += self.opcode_size
+            parsed_instructions.append((spec, raw_args))
 
             for i, arg_desc in enumerate(spec.args):
                 arg_type = arg_desc.split(":")[-1]
@@ -219,11 +239,11 @@ class ScriptVM:
                 elif arg_type in ("u8", "s8"):
                     cur_pos += 1
                 elif arg_type == "str_utf16":
-                    # Evaluate string literal
-                    s_val = eval(raw_args[i]) if i < len(raw_args) else ""
+                    # Safe literal evaluation
+                    s_val = ast.literal_eval(raw_args[i]) if i < len(raw_args) else ""
                     cur_pos += (len(s_val) * 2) + 2
                 elif arg_type == "str_ascii":
-                    s_val = eval(raw_args[i]) if i < len(raw_args) else ""
+                    s_val = ast.literal_eval(raw_args[i]) if i < len(raw_args) else ""
                     cur_pos += len(s_val) + 1
 
         # Pass 2: Emit binary bytecode
@@ -234,7 +254,7 @@ class ScriptVM:
                 out.append(args[0] & 0xFF)
                 continue
 
-            out.extend(struct.pack(fmt_op, spec.code))
+            out.extend(self._pack_opcode(spec.code))
             for i, arg_desc in enumerate(spec.args):
                 arg_type = arg_desc.split(":")[-1]
                 arg_str = args[i] if i < len(args) else "0"
@@ -242,20 +262,22 @@ class ScriptVM:
                 if arg_type == "label":
                     lbl = arg_str.strip()
                     target_addr = labels.get(lbl, 0)
-                    out.extend(struct.pack(f"{self.endian}I", target_addr))
+                    out.extend(BinaryWriter.pack_u32(target_addr, endian=self.endian))
                 elif arg_type == "u8":
                     out.append(int(arg_str, 0) & 0xFF)
                 elif arg_type == "u16":
-                    out.extend(struct.pack(f"{self.endian}H", int(arg_str, 0)))
+                    out.extend(BinaryWriter.pack_u16(int(arg_str, 0), endian=self.endian))
                 elif arg_type == "u32":
-                    out.extend(struct.pack(f"{self.endian}I", int(arg_str, 0)))
+                    out.extend(BinaryWriter.pack_u32(int(arg_str, 0), endian=self.endian))
                 elif arg_type == "str_utf16":
-                    s_val = eval(arg_str)
+                    # Safe literal evaluation
+                    s_val = ast.literal_eval(arg_str)
                     for ch in s_val:
-                        out.extend(struct.pack(f"{self.endian}H", ord(ch)))
+                        out.extend(BinaryWriter.pack_u16(ord(ch), endian=self.endian))
                     out.extend(b"\x00\x00")
                 elif arg_type == "str_ascii":
-                    s_val = eval(arg_str)
+                    # Safe literal evaluation
+                    s_val = ast.literal_eval(arg_str)
                     out.extend(s_val.encode("ascii", errors="replace") + b"\x00")
 
         return bytes(out)

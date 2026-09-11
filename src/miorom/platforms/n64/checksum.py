@@ -28,7 +28,7 @@ class N64CIC(Enum):
     CIC_5101 = "5101"
 
 
-# Known MD5 hashes of the 4032-byte IPL3 bootcode (ROM 0x40..0x1000)
+# IPL3 bootcode MD5 hash map
 IPL3_MD5_MAP = {
     "900b4a5b68edb71f4c7ed52acd814fc5": N64CIC.CIC_6101,
     "e24dd796b2fa16511521139d28c8356b": N64CIC.CIC_6102_7101,

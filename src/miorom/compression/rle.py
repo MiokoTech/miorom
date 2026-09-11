@@ -63,6 +63,11 @@ class RLE:
                     if len(out) >= uncompressed_size:
                         break
 
+        if len(out) < uncompressed_size:
+            raise CompressionError(
+                f"RLE decompression truncated: expected {uncompressed_size} bytes, got {len(out)} bytes"
+            )
+
         return bytes(out)
 
     @classmethod

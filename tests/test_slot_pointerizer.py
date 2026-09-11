@@ -25,7 +25,7 @@ def test_slot_to_heap_pointerizer():
     buf[20:28] = b"Ring\x00\x00\x00\x00"
     struct.pack_into("<I", buf, 28, 500)
 
-    # 1. Extract original fixed-width texts
+    # Extract original fixed-width texts
     extracted = SlotToHeapPointerizer.extract_fixed_slots(
         buffer=bytes(buf),
         table_offset=0,
@@ -37,7 +37,7 @@ def test_slot_to_heap_pointerizer():
     assert extracted[0] == (0, "Herb")
     assert extracted[1] == (1, "Ring")
 
-    # 2. Translate with long strings that overflow 8 bytes
+    # Translate with long strings that overflow 8 bytes
     translations = {
         0: "Herbal Penyembuh Luka Parah",
         1: "Cincin Kekuatan Mistis Naga",

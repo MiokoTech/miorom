@@ -164,7 +164,7 @@ class IpsPatcher:
                 i += 1
 
         patch.extend(cls.EOF)
-        # If modified is shorter than original, append truncation extension
+        # Truncation extension for shorter files
         if mod_len < orig_len:
             patch.extend(struct.pack(">I", mod_len)[1:])
 

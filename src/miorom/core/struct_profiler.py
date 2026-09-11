@@ -222,20 +222,18 @@ class StructProfiler:
             if records < min_records:
                 break
 
-            # 1. Measure byte constancy across records:
-            # If `stride` is the true record length, certain columns (like padding, flags, IDs)
-            # will have lower variance or high constancy across records.
+            # Measure column variance across records
             constancy_score = 0.0
             for col in range(stride):
                 col_bytes = [data[r * stride + col] for r in range(records)]
                 unique_ratio = len(set(col_bytes)) / records
-                # Zero variance (all same) or moderate variance is characteristic of structured fields
+                # Score low variance columns
                 if unique_ratio == (1.0 / records):  # Constant column
                     constancy_score += 2.0
                 elif unique_ratio < 0.5:
                     constancy_score += 1.0
 
-            # 2. Alignment preference (multiples of 2 or 4 are standard in console memory)
+            # Evaluate field alignment
             align_bonus = 1.2 if (stride % 4 == 0) else (1.1 if stride % 2 == 0 else 1.0)
             final_score = (constancy_score / stride) * align_bonus
 

@@ -58,14 +58,14 @@ class ElfRelocator:
         externs = external_symbols or {}
         endian = self.elf.endian
 
-        # 1. Collect loadable allocatable sections (.text, .rodata, .data, .bss)
+        # Collect allocatable sections
         loadable_sections: List[ElfSection] = []
         for sec in self.elf.sections:
             # SHF_ALLOC = 0x2
             if (sec.sh_flags & 0x2) and sec.sh_type != 0 and (len(sec.data) > 0 or sec.sh_size > 0):
                 loadable_sections.append(sec)
 
-        # 2. Lay out sections and calculate their RAM base addresses
+        # Calculate section virtual memory layout
         current_offset = 0
         section_offsets: Dict[str, int] = {}
         section_sizes: Dict[str, int] = {}
@@ -87,7 +87,7 @@ class ElfRelocator:
                 section_sizes[sec.name] = len(sec.data)
                 current_offset += len(sec.data)
 
-        # 3. Resolve symbol addresses
+        # Resolve symbol addresses
         resolved_symbols: Dict[str, int] = {}
         unresolved_symbols: List[str] = []
         for sym in self.elf.symbol_list:
@@ -105,7 +105,7 @@ class ElfRelocator:
                 else:
                     resolved_symbols[sym.name] = base_address + sym.st_value
 
-        # 4. Apply relocations
+        # Apply relocations
         for rel in self.elf.relocations:
             sec_name = rel.section_name
             if sec_name not in section_buffers:
@@ -208,7 +208,7 @@ class ElfRelocator:
                     res = (orig_instr & 0xFFFF0000) | hi
                     buf[rel.r_offset:rel.r_offset + 4] = U32().pack(res, endian=endian)
 
-                # R_PPC_ADDR16_HA = 6 (High-adjusted to compensate for signed addi)
+                # R_PPC_ADDR16_HA = 6
                 elif rel.rel_type == 6:
                     orig_instr = U32().unpack(buf, rel.r_offset, endian)[0]
                     ha = ((s_addr + addend + 0x8000) >> 16) & 0xFFFF
@@ -247,14 +247,14 @@ class ElfRelocator:
                 res = (val + s_addr + addend) & 0xFFFFFFFF
                 buf[rel.r_offset:rel.r_offset + 4] = U32().pack(res, endian=endian)
 
-        # 5. Pack all relocated sections into contiguous binary
+        # Pack relocated sections into contiguous binary
         out = bytearray(current_offset)
         for sec in loadable_sections:
             sec_off = section_offsets[sec.name]
             buf = section_buffers[sec.name]
             out[sec_off:sec_off + len(buf)] = buf
 
-        # 6. Determine entry point address
+        # Resolve entry point address
         entry_point = None
         if entry_symbol and entry_symbol in resolved_symbols:
             entry_point = resolved_symbols[entry_symbol]

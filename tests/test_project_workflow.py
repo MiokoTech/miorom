@@ -22,7 +22,7 @@ def test_project_workflow_dump_and_build(tmp_path):
     struct.pack_into("<I", rom_buf, 0x10, 0x40)
     struct.pack_into("<I", rom_buf, 0x14, 0x50)
 
-    # 1. Initialize project
+    # Initialize project
     tables_config = [
         {
             "name": "items",
@@ -40,13 +40,13 @@ def test_project_workflow_dump_and_build(tmp_path):
     )
     assert manifest.name == "TestRPG_ID"
 
-    # 2. Dump project (Bongkar)
+    # Dump project
     dumped = ProjectWorkflowManager.dump_project(bytes(rom_buf), project_dir, manifest)
     assert len(dumped) == 1
     po_path = dumped[0]
     assert os.path.exists(po_path)
 
-    # 3. Translate with text lengthening (arbitrary expansion)
+    # Translate with text lengthening
     po = PoHandler.from_file(po_path)
     assert len(po.entries) == 2
     assert po.entries[0].msgid == "Sword"
@@ -54,7 +54,7 @@ def test_project_workflow_dump_and_build(tmp_path):
     po.entries[1].msgstr = "Perisai Baja Pelindung Jiwa"             # 27 bytes >> 7 bytes
     po.save(po_path)
 
-    # 4. Build project (Pasang)
+    # Build project
     out_rom_path = str(tmp_path / "game_id.bin")
     res = ProjectWorkflowManager.build_project(
         rom_buffer=rom_buf,

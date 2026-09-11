@@ -1,12 +1,11 @@
 from miorom.result import MioRomResult
 import os
-from miorom.errors import ParseError
+from miorom.errors import ParseError, RelocationError
+from miorom.security import sanitize_extract_path
 from dataclasses import dataclass
 from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U8, U16, U32
 from typing import List, Optional, Tuple, Dict, Any, Union
 
-
-from miorom.errors import ParseError, RelocationError
 BANNER_LANGUAGES = {
     0: "Japanese",
     1: "English",
@@ -418,7 +417,7 @@ class NDSRom:
         self.data.extend(new_data)
         new_end = len(self.data)
 
-        # Pad after new_data to preserve alignment for any subsequent append
+        # Post-data alignment padding
         rem_after = len(self.data) % alignment
         pad_after = (alignment - rem_after) % alignment if alignment > 1 else 0
         if pad_after > 0:
@@ -554,6 +553,81 @@ class NDSRom:
             self.data[0x15E:0x160] = NDSHeaderCrcStruct(checksum=crc).to_bytes()
         return crc
 
+    def get_arm9_vaddr_offset(self, vaddr: int) -> int:
+        """Translates an ARM9 virtual RAM address (e.g. 0x02088FC0) to ROM file offset."""
+        if self.arm9_ram_addr == 0:
+            raise ParseError("ARM9 RAM base address is not set in ROM header.")
+        rel = vaddr - self.arm9_ram_addr
+        if rel < 0 or rel + 4 > self.arm9_size:
+            raise ValueError(
+                f"Virtual RAM address 0x{vaddr:08X} is out of bounds for ARM9 binary "
+                f"(base 0x{self.arm9_ram_addr:08X}, size 0x{self.arm9_size:08X})."
+            )
+        return self.arm9_offset + rel
+
+    def get_arm7_vaddr_offset(self, vaddr: int) -> int:
+        """Translates an ARM7 virtual RAM address to ROM file offset."""
+        if self.arm7_ram_addr == 0:
+            raise ParseError("ARM7 RAM base address is not set in ROM header.")
+        rel = vaddr - self.arm7_ram_addr
+        if rel < 0 or rel + 4 > self.arm7_size:
+            raise ValueError(
+                f"Virtual RAM address 0x{vaddr:08X} is out of bounds for ARM7 binary "
+                f"(base 0x{self.arm7_ram_addr:08X}, size 0x{self.arm7_size:08X})."
+            )
+        return self.arm7_offset + rel
+
+    def patch_arm9_vaddr(
+        self,
+        vaddr: int,
+        patch_data: Union[bytes, int],
+        expected: Optional[Union[bytes, int]] = None,
+        auto_fix_checksum: bool = True,
+    ) -> bool:
+        """
+        Patches ARM9 binary code in-place by virtual RAM address (e.g. 0x02088FC0).
+        Automatically maps virtual RAM address to the file offset in the ROM,
+        verifies expected original bytes/instruction (as bytes or uint32),
+        applies patch, and optionally recalculates the valid NDS header CRC16.
+        """
+        file_offset = self.get_arm9_vaddr_offset(vaddr)
+        return self._patch_at_offset(file_offset, patch_data, expected, auto_fix_checksum)
+
+    def patch_arm7_vaddr(
+        self,
+        vaddr: int,
+        patch_data: Union[bytes, int],
+        expected: Optional[Union[bytes, int]] = None,
+        auto_fix_checksum: bool = True,
+    ) -> bool:
+        """Patches ARM7 binary code in-place by virtual RAM address."""
+        file_offset = self.get_arm7_vaddr_offset(vaddr)
+        return self._patch_at_offset(file_offset, patch_data, expected, auto_fix_checksum)
+
+    def _patch_at_offset(
+        self,
+        offset: int,
+        patch_data: Union[bytes, int],
+        expected: Optional[Union[bytes, int]] = None,
+        auto_fix_checksum: bool = True,
+    ) -> bool:
+        patch_bytes = patch_data.to_bytes(4, "little") if isinstance(patch_data, int) else patch_data
+        n = len(patch_bytes)
+
+        if offset + n > len(self.data):
+            raise ValueError(f"Patch data of {n} bytes at offset 0x{offset:X} exceeds ROM length.")
+
+        if expected is not None:
+            exp_bytes = expected.to_bytes(4, "little") if isinstance(expected, int) else expected
+            cur_bytes = bytes(self.data[offset : offset + len(exp_bytes)])
+            if cur_bytes != exp_bytes:
+                return False
+
+        self.data[offset : offset + n] = patch_bytes
+        if auto_fix_checksum:
+            self.fix_header_checksum()
+        return True
+
     def to_bytes(self) -> bytes:
         return bytes(self.data)
 
@@ -565,10 +639,10 @@ class NDSRom:
         return f"<NDSRom '{self.title}' code={self.game_code} maker={self.maker_code}>"
 
 
-def calculate_nds_checksum(header_bytes: bytes) -> int:
-    """CRC-16/IBM checksum used by NDS header at 0x15E, covering bytes 0x000..0x15D."""
+def calculate_nds_crc16(data: bytes) -> int:
+    """CRC-16/IBM (poly 0xA001, init 0xFFFF) used by Nintendo DS headers and banners."""
     crc = 0xFFFF
-    for b in header_bytes[:0x15E]:
+    for b in data:
         crc ^= b
         for _ in range(8):
             if crc & 1:
@@ -576,6 +650,11 @@ def calculate_nds_checksum(header_bytes: bytes) -> int:
             else:
                 crc >>= 1
     return crc & 0xFFFF
+
+
+def calculate_nds_checksum(header_bytes: bytes) -> int:
+    """CRC-16/IBM checksum used by NDS header at 0x15E, covering bytes 0x000..0x15D."""
+    return calculate_nds_crc16(header_bytes[:0x15E])
 
 
 def verify_nds_checksum(rom_data: bytes) -> bool:
@@ -609,7 +688,7 @@ def extract_rom(rom_path: str, extract_dir: str, work_dir: str = "") -> None:
         os.makedirs(data_dir, exist_ok=True)
         fnt = rom.resolve_fnt()
         for rel_path, file_id in fnt.items():
-            dest = os.path.join(data_dir, rel_path)
+            dest = sanitize_extract_path(data_dir, rel_path)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             with open(dest, "wb") as f:
                 f.write(rom.get_file(file_id))
@@ -639,7 +718,7 @@ def extract_rom(rom_path: str, extract_dir: str, work_dir: str = "") -> None:
     for i, file_bytes in enumerate(rom.files):
         filepath = rom.filenames.filenameOf(i)
         if filepath is not None:
-            full_p = os.path.join(datafolder, filepath)
+            full_p = sanitize_extract_path(datafolder, filepath)
             os.makedirs(os.path.dirname(full_p), exist_ok=True)
             with open(full_p, "wb") as f:
                 f.write(file_bytes)

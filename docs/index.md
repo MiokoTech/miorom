@@ -1,22 +1,23 @@
 # MioROM
 
 <div class="retro-hero">
-  <div class="title">&gt; MIOROM // RE_FRAMEWORK_v0.13.1</div>
+  <div class="title">&gt; MIOROM // RE_FRAMEWORK_v1.0.0</div>
   <div class="subtitle">Modular Low-Level Binary &amp; Assembly Primitives for Console ROM Hacking</div>
   <div>
-    <span class="chip-badge nds">NDS ARM9/ARM7</span>
+    <span class="chip-badge nds">NDS ARM9/ARM7/THUMB</span>
     <span class="chip-badge n64">N64 MIPS-VR4300</span>
     <span class="chip-badge gba">GBA ARM7TDMI</span>
     <span class="chip-badge wii">WII BROADWAY PPC</span>
     <span class="chip-badge ps1">PS1 MIPS-R3000A</span>
-    <span class="chip-badge snes">SNES 65C816</span>
+    <span class="chip-badge snes">SNES W65C816</span>
+    <span class="chip-badge nes">NES MOS-6502</span>
     <span class="chip-badge gba">SEGA M68000</span>
     <span class="chip-badge nds">GB SM83</span>
   </div>
   <div class="stats">
-    <span>TESTS: <strong>468 PASSED</strong></span>
+    <span>TESTS: <strong>1050+ PASSED</strong></span>
     <span>RUNTIME DEPS: <strong>ZERO (STDLIB ONLY)</strong></span>
-    <span>DISASSEMBLER: <strong>6 ARCHITECTURES</strong></span>
+    <span>DISASSEMBLER: <strong>8 ARCHITECTURES</strong></span>
     <span>LICENSE: <strong>MIT</strong></span>
   </div>
 </div>
@@ -31,12 +32,13 @@ Rather than imposing a monolithic graphical interface or rigid one-click workflo
 
 | Architecture / Platform | Binary Formats | Primary Primitives |
 |---|---|---|
-| <span class="chip-badge nds">Nintendo DS</span> | `.nds`, `.srl`, `.narc`, `.nftr` | `NDSRom`, `NARCArchive`, `NFTRFont`, FAT/FNT mapper, CRC16 header recalibration |
-| <span class="chip-badge n64">Nintendo 64</span> | `.z64`, `.n64`, `.v64`, `.m64` | `N64Rom`, `DmaTableArchive`, `Fast3DParser`, `Fast3DBuilder`, `N64TextureDecoder`, IPL3 CIC verification |
-| <span class="chip-badge gba">Game Boy Advance</span> | `.gba`, `.agb`, `.bin` | `GBARom`, `LZ10`, `LZ11`, `ArmSnippet`, complement check validation |
-| <span class="chip-badge wii">Wii / GameCube</span> | `.iso`, `.gcm`, `.u8`, `.arc`, `.tpl`, `.dol` | `GameCubeDisc`, `U8Archive`, `TPLFile`, `DolBinary`, `FstInjector`, 32-byte sector alignment |
-| <span class="chip-badge ps1">PlayStation 1</span> | `.bin/.cue`, `.iso`, `.exe`, `.tim` | `ISO9660`, `CueBinDisc`, `TIMImage`, `PSXExe`, `CdXaDecoder` (ADPCM) |
-| <span class="chip-badge snes">Super Nintendo</span> | `.sfc`, `.smc` | `SNESRom`, LoROM / HiROM complement checksum fixer |
+| <span class="chip-badge nds">Nintendo DS</span> | `.nds`, `.srl`, `.narc`, `.nftr`, `.ncgr`, `.nclr`, `.nscr` | `NDSRom`, `NARCArchive`, `NFTRFont`, `NCLRFile`, `NCGRFile`, `NSCRFile`, `ThumbSnippet`, FAT/FNT mapper |
+| <span class="chip-badge n64">Nintendo 64</span> | `.z64`, `.n64`, `.v64`, `.m64` | `N64Rom`, `DmaTableArchive`, `Fast3DParser`, `Fast3DBuilder`, `N64TextureDecoder`, `Yay0`, IPL3 CIC verification |
+| <span class="chip-badge gba">Game Boy Advance</span> | `.gba`, `.agb`, `.bin` | `GBARom`, `LZ10`, `LZ11`, `ArmSnippet`, `ThumbSnippet`, `APLib`, complement check validation |
+| <span class="chip-badge wii">Wii / GameCube</span> | `.iso`, `.gcm`, `.u8`, `.arc`, `.tpl`, `.dol` | `GameCubeDisc`, `U8Archive`, `TPLFile`, `DolBinary`, `PpcSnippet`, `DSPADPCMCodec`, `Yay0`, `Yaz0`, 32-byte alignment |
+| <span class="chip-badge ps1">PlayStation 1</span> | `.bin/.cue`, `.iso`, `.exe`, `.tim`, `.vag` | `ISO9660`, `CueBinDisc`, `TIMImage`, `PSXExe`, `VAGFile`, `VAGCodec` (SPU-ADPCM), `CdXaDecoder` |
+| <span class="chip-badge snes">Super Nintendo</span> | `.sfc`, `.smc`, `.brr` | `SNESRom`, `BRRCodec` (SPC700 audio), `SnesSnippet`, W65C816 disasm with dynamic REP/SEP tracking |
+| <span class="chip-badge nes">NES / Famicom</span> | `.nes`, `.unf` | `NESRom`, `NESHeaderStruct` (iNES / NES 2.0), mapper identification, PRG/CHR separation, MOS 6502 disasm |
 | <span class="chip-badge gba">Sega Genesis / MD</span> | `.md`, `.gen`, `.smd` | `MDRom`, SMD deinterleaving, Motorola 68000 disasm &amp; lifter |
 | <span class="chip-badge nds">Game Boy / GBC</span> | `.gb`, `.gbc` | `GBRom`, `SM83Snippet`, SM83 instruction disassembler &amp; IR lifter |
 
@@ -145,6 +147,17 @@ ScriptCatalog.script_to_csv("script_translated.txt", "base.csv", "updated.csv")
 
 ---
 
+### 5. Fan Translation Reverse Engineering Toolkit
+Surgical primitives for dissecting and translating retro game ROMs:
+- **`JapaneseCharMapMiner`**: Gojūon relative search engine auto-generating draft `.tbl` character tables from raw ROM binaries.
+- **`FontDissector`**: Heuristic font scanner, VWF width table hunter, and PNG spritesheet round-trip pipeline.
+- **`TextCompressionHunter`**: Retro Huffman tree graph walker and DTE bigram forensic scanner with optimal re-compressor.
+- **`ScriptVMDissector`**: Event script bytecode disassembler and branch relinker recalculating all jump targets automatically.
+- **`TilemapDissector`**: Menu nametable text scanner, ASCII layout visualizer, and translated graphic label splicer.
+- **`VWFHookEngine`**: End-to-end VWF hook deployer across ARM32, Thumb, MIPS32, SNES 65816, and MOS 6502 with automatic code cave allocation.
+
+---
+
 ## Installation
 
 Install MioROM from PyPI:
@@ -171,11 +184,15 @@ pip install git+https://github.com/MiokoTech/miorom
 
 -   :material-chip: **[Binary & Assembly Primitives](BINARY_PRIMITIVES.md)**
     ---
-    Fluent micro-assemblers (`MipsSnippet`, `ArmSnippet`), patch writers, and symbol maps.
+    Fluent binary reader/writers, micro-assemblers (`MipsSnippet`, `ArmSnippet`), patch writers, and symbol maps.
 
 -   :material-console: **[CLI Reference](CLI_REFERENCE.md)**
     ---
     Terminal manual for `miorom unpack`, `repack`, `scan`, `diff`, and more.
+
+-   :material-chef-hat: **[Cookbook & Golden Pipelines](COOKBOOK.md)**
+    ---
+    10 golden pipelines: NDS, GBA, SNES, N64, GC, PS1, Sega, and PC-Engine recipes.
 
 -   :material-gamepad: **[Platform Specifications](PLATFORMS.md)**
     ---
@@ -187,6 +204,18 @@ pip install git+https://github.com/MiokoTech/miorom
 
 -   :material-code-json: **[API Reference](API_REFERENCE.md)**
     ---
-    Complete programmatic index across all 10 core subpackages.
+    Complete programmatic index across 70+ classes and all 10 core subpackages.
+
+-   :material-file-certificate: **[Library Contracts](LIBRARY_CONTRACTS.md)**
+    ---
+    Serialization, streaming, structured exceptions, and pipeline extension contracts.
+
+-   :material-shield-check: **[Security & Path Safety](SECURITY.md)**
+    ---
+    Directory traversal protection, zip-slip defense, and untrusted archive checklist.
+
+-   :material-history: **[Release Changelog](CHANGELOG.md)**
+    ---
+    Detailed version history, migration notes, and v1.0.0 release summary.
 
 </div>

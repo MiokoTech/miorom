@@ -27,6 +27,7 @@ from miorom.scanner.xref import XRefType, XRefEntry, XRefGraph, XRefAnalyzer
 from miorom.scanner.pattern import AOBPatternScanner, PatternMatch, CompiledPattern
 from miorom.scanner.triage import RomTriageEngine, TriageReport, FileTriageRecord, AssetType
 from miorom.scanner.table_detector import HeuristicTableDetector, TableCandidate
+from miorom.scanner.text_stream import TextStreamScanner, TextStreamSpan
 
 __all__ = [
     "BinaryFingerprint",
@@ -58,4 +59,6 @@ __all__ = [
     "AssetType",
     "HeuristicTableDetector",
     "TableCandidate",
+    "TextStreamScanner",
+    "TextStreamSpan",
 ]

@@ -1,5 +1,5 @@
-import struct
 from typing import Any, Tuple, Optional, List
+from miorom.core.binary import BinaryReader, BinaryWriter
 
 
 class OpcodeArg:
@@ -16,26 +16,26 @@ class OpcodeArg:
 
 class ArgU8(OpcodeArg):
     def unpack(self, data: bytes, offset: int, endian: str) -> Tuple[int, int]:
-        return struct.unpack_from("B", data, offset)[0], 1
+        return BinaryReader.unpack_u8(data, offset), 1
 
     def pack(self, value: Any, endian: str) -> bytes:
-        return struct.pack("B", int(value))
+        return BinaryWriter.pack_u8(int(value))
 
 
 class ArgU16(OpcodeArg):
     def unpack(self, data: bytes, offset: int, endian: str) -> Tuple[int, int]:
-        return struct.unpack_from(f"{endian}H", data, offset)[0], 2
+        return BinaryReader.unpack_u16(data, offset, endian=endian), 2
 
     def pack(self, value: Any, endian: str) -> bytes:
-        return struct.pack(f"{endian}H", int(value))
+        return BinaryWriter.pack_u16(int(value), endian=endian)
 
 
 class ArgU32(OpcodeArg):
     def unpack(self, data: bytes, offset: int, endian: str) -> Tuple[int, int]:
-        return struct.unpack_from(f"{endian}I", data, offset)[0], 4
+        return BinaryReader.unpack_u32(data, offset, endian=endian), 4
 
     def pack(self, value: Any, endian: str) -> bytes:
-        return struct.pack(f"{endian}I", int(value))
+        return BinaryWriter.pack_u32(int(value), endian=endian)
 
 
 class ArgString(OpcodeArg):

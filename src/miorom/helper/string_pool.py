@@ -63,7 +63,7 @@ class StringPoolBuilder:
         self._strings.append(text)
         self._flags.append(flag)
 
-        # If deduplication is enabled and we have already added this string, reuse offset
+        # Reuse existing offset if deduplicated
         if self.deduplicate and text in self._dedup_map:
             self._offsets.append(self._dedup_map[text])
             return index

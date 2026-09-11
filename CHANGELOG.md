@@ -2,6 +2,356 @@
 
 All notable changes to MioROM will be documented in this file.
 
+## [1.0.0] — 2026-11-11
+
+### Added
+- **Menu Tilemap & Nametable Dissector (`miorom.graphics.tilemap_dissector`)**:
+  - `TilemapTextRun`: Structured record of a contiguous graphic text tile sequence; carries row/col origin, direction, decoded text, palette bank, flip flags, and available padding count. Supports round-trip `to_dict()` / `from_dict()` for JSON layout files.
+  - `TilemapMenuBox`: Rectangular window descriptor enclosing a list of `TilemapTextRun` items; bounding box coordinates are relative to the parent tilemap.
+  - `TilemapDissector.scan_text_runs()`: Scans a `Tilemap` horizontally or vertically for contiguous runs of `CharMap`-mapped tiles; computes trailing blank padding for every run and filters runs shorter than `min_length`.
+  - `TilemapDissector.export_text_grid()`: Renders a 2D ASCII/Unicode visual grid of all decoded text characters in a tilemap for layout proofreading and screenshot comparison.
+  - `TilemapDissector.splice_label()`: Injects a translated string into the tilemap at an arbitrary (row, col) position with `left`, `center`, or `right` alignment, clears residual tiles to `pad_tile`, and enforces `max_width` tile boundary safety.
+  - `TilemapDissector.extract_menu_box()`: Extracts all horizontal text runs from a rectangular sub-region and remaps coordinates back into the parent tilemap coordinate space.
+  - `TilemapDissector.export_layout_json()` / `import_layout_json()`: Full-roundtrip JSON serialization and deserialization of discovered `TilemapTextRun` lists for external editing and translation pipeline integration.
+  - `TilemapDissector.apply_layout_dict()`: Batch translation applicator: accepts a list of `{"row", "col", "new_text", "max_width", "align"}` dicts and splices each label into the tilemap in a single pass.
+  - `TilemapDissector.clear_region()`: Fills an arbitrary rectangular region with a blank tile index, suitable for erasing original Japanese graphic text before writing a replacement.
+- **Assembly Trampoline & VWF Hook Engine (`miorom.asm.vwf_hook_engine`)**:
+  - `VWFHookConfig`: Declarative configuration dataclass specifying architecture (`arm`, `thumb`, `mips`, `snes`, `6502`), hook ROM/RAM addresses, original instruction bytes for integrity verification, glyph width table source, optional explicit cave address, fallback width, character range, and endianness.
+  - `VWFDeploymentReport`: Comprehensive deployment audit trail: hook record, table ROM/RAM offset and size, lookup routine ROM/RAM offset and size, total code cave bytes consumed, and verification status. Provides `to_dict()` for pipeline logging.
+  - `VWFHookEngine.verify_hook_site()`: Byte-exact integrity guard that compares actual ROM bytes at `hook_rom_offset` against `original_instr_bytes` before any modification; raises `RelocationError` on mismatch to prevent double-patching.
+  - `VWFHookEngine.synthesize_width_routine()`: Generates architecture-specific machine code for glyph width table lookups — ARM32 (`r0`=char, `r1`+=width), Thumb-16 (8-byte halfword routine with fallback), MIPS32 (`$a0`=char, `$a1`+=width with `lui/lb`), SNES W65C816 (`PHP/REP/LDA.L table,X/PLB/PLP/RTL`), and MOS 6502 (`SEC/SBC/TAX/LDA table,X`).
+  - `VWFHookEngine.deploy()`: End-to-end orchestration — validates hook site, serializes width table into code cave, synthesizes lookup routine, generates multi-architecture trampoline hook (payload + displaced instructions + return branch), and atomically patches `rom_buffer`. Supports `simulate=True` for dry-run preflight checks without modifying the buffer.
+- **Japanese Gojūon Relative Search & Auto-.TBL Generator (`miorom.text.japanese_charmap`)**:
+  - `JapaneseWordMatch`: Single kanji/kana word match record with byte offset, decoded string, charmap key bytes, confidence score, and character class flags.
+  - `JapaneseMiningCluster`: Grouped cluster of consecutive Japanese word matches sharing gojūon row membership, density, and overall confidence score.
+  - `JapaneseCharMapMiner`: Relative search engine discovering game-specific Japanese character encodings by mining hiragana/katakana gojūon rows with dakuten variants; generates draft `.tbl` files via `auto_generate_tbl()`.
+- **Font Graphic Bank Scanner & VWF Width Table Hunter (`miorom.graphics.font_dissector`)**:
+  - `FontGeometry`: Glyph bounding box record (left, top, right, bottom, advance_width) computed from 1bpp/2bpp/4bpp pixel data.
+  - `DissectedGlyph`: Individual dissected glyph with tile index, raw pixel bytes, geometry, and is-blank flag.
+  - `WidthTableCandidate`: Discovered width table candidate inside a ROM buffer with offset, inferred byte-width per entry, and measured advance width histogram.
+  - `FontCandidate`: Font bank candidate with ROM offset, glyph count, tile format, bit-depth, glyph list, and optional associated width table.
+  - `FontDissector.scan_font_banks()`: Heuristic font bank discovery combining entropy scoring, stroke fill density filtering, and glyph diversity checks to reject noise regions.
+  - `FontDissector.scan_width_tables()`: Discovers VWF width tables adjacent to font banks by matching advance width distributions.
+  - `FontDissector.export_sheet_png()`: Renders dissected glyphs to a PNG spritesheet using `PNGCodec` (pure Python, zero external dependencies).
+  - `FontDissector.inject_glyphs()` / `inject_width_table()`: Round-trip glyph pixel and width table injection back into ROM buffers.
+- **Retro Text Compression Scanner & Huffman/DTE Tree Hunter (`miorom.compression.text_compression_hunter`)**:
+  - `HuffmanNodeEntry`: Individual node in an array-based binary Huffman tree (left child index, right child index, symbol value, and is-leaf flag).
+  - `HuffmanTreeCandidate`: Discovered Huffman tree in a ROM buffer with offset, node count, depth, symbol set, and decoded bitstream payload.
+  - `DteDictionaryCandidate`: Discovered DTE bigram table with offset, entry count, active bigrams (non-dummy pairs), byte coverage, and uniqueness ratio.
+  - `TextCompressionHunter.scan_huffman_trees()`: Dynamic Huffman tree discovery via root-0 traversal without hardcoded node-count assumptions; rejects cyclic graphs and non-contiguous node sets.
+  - `TextCompressionHunter.parse_huffman_tree_auto()`: Parses array-based Huffman trees with automatic size detection for arbitrary retro Huffman variants (19, 23, 45, 63 nodes, etc.).
+  - `TextCompressionHunter.decompress_huffman()`: Bitstream decompressor producing decoded byte payloads for content verification.
+  - `TextCompressionHunter.scan_dte_tables()`: Scans for DTE bigram tables with alignment, dummy-pair, and uniqueness filtering.
+  - `TextCompressionHunter.compress_huffman()`: Adaptive optimal Huffman compressor that re-encodes translated text and serializes the complete node array plus bitstream.
+- **Event Script Bytecode Disassembler & Branch Relinker (`miorom.script.script_dissector`)**:
+  - `VMOpcodeType`: Enumeration of instruction categories: `TEXT`, `BRANCH_REL`, `BRANCH_ABS`, `SWITCH`, `CONTROL`, and `TERMINATOR`.
+  - `VMInstructionDef`: Opcode schema carrying opcode byte, name, type, fixed length, text terminator, length-prefix flag, and operand format string.
+  - `DissectedInstruction`: Fully decoded script instruction with index, ROM offset, byte length, opcode, raw bytes, text payload (if any), branch target, relative delta, switch targets, and operand offset.
+  - `DissectedScriptVM`: Disassembled script container with base offset, instruction list, and total byte count; provides `get_dialogues()` for filtered dialogue extraction and `to_po()` for direct GNU gettext PO catalog export via `PoHandler`.
+  - `ScriptVMDissector.disassemble()`: Linear sweep disassembler accepting arbitrary opcode tables; correctly handles all five instruction categories including null-terminated and length-prefixed dialogue strings.
+  - `ScriptVMDissector.splice_and_relink()`: Dynamic text replacement engine — injects translated strings at precise byte positions, computes cumulative shift maps for all replacement sites, and automatically recalculates relative branch deltas, absolute jump targets, and switch/jump table entries across the entire script buffer.
+
+- **Cookbook & Golden End-to-End Integration Pipelines (`docs/COOKBOOK.md`, `tests/test_golden_pipelines.py`)**:
+  - Production-ready, copy-pasteable recipes and integration tests covering the complete ROM hacking lifecycle:
+    - Text Translation, Far Relinking, Checksum Recalculation & Multi-Format Patching (`TextStreamScanner`, `PointerRelinker`, `RetroChecksum`, `BpsPatcher`, `IpsPatcher`, `UpsPatcher`).
+    - Code Cave Discovery, Subroutine Assembly, Branch Rebasing & Inline Trampoline Hooking (`CodeCaveManager`, `HookManager`, `ArmHookBuilder`, `BranchRelocator`, `UniversalDisassembler`).
+    - Planar Graphics Extraction, Tile Deduplication, Nametable Synthesis & Hardware OAM Layout (`PlanarTileCodec`, `TileDeduplicator`, `HardwareOamCodec`, `SpriteDescriptor`).
+    - Cross-Version Binary Diffing & Function Matching (`BinDiffEngine`, `UniversalDisassembler`).
+    - Anti-Piracy Detection & Surgical NOP Bypass (`AntiPiracyBypasser`).
+
+- **ARM/Thumb Inline Hook Builder & Code Cave Manager (`miorom.asm.hook_manager`)**:
+  - `CodeCave`: dataclass representing a free-space region with `start`, `size`, `used`, `free`, and `end` properties.
+  - `HookRecord`: dataclass capturing installed hook metadata: `hook_offset`, `cave_offset`, `arch`, `hook_bytes`, `original_bytes`, and `hook_size`.
+  - `CodeCaveManager`: scans ROM buffers for contiguous fill-byte runs (`scan()`), manually registers known free regions (`register()`), allocates cave space (`allocate()`), and writes code into caves with bookkeeping (`write_to_cave()`).
+  - `ArmHookBuilder`: static encoder for ARM BL, ARM B, Thumb BL (long-range two-halfword form), and Thumb B (11-bit short-range) branch instructions, plus `build_arm_trampoline_return()` for epilogue generation.
+  - `HookManager`: high-level hook installer for both ARM (`install_arm_hook()`) and Thumb (`install_thumb_hook()`) modes; writes hook branch and cave trampoline (cave code + return branch) directly into a bytearray buffer and records all installed hooks.
+- **Sega Genesis / Mega Drive 68000 Disassembler (`miorom.asm.m68k`)**:
+  - `M68kInstruction`: dataclass with `offset`, `bytes_`, `mnemonic`, `operands`, `size`, `is_branch`, `is_call`, `is_return`, and `branch_target`; exposes `.text` property for formatted output.
+  - `M68kDisassembler`: single-pass big-endian 68000 decoder supporting NOP, ILLEGAL, RTS/RTR/RTE, TRAP, BRA/BSR/Bcc (8-bit, 16-bit, and 32-bit displacement), MOVEQ, MOVE.b/w/l, MOVEA, JSR, JMP, LEA, ADD/ADDA, SUB/SUBA, CMP/CMPA, CMPI, ADDI, SUBI, AND, OR, EOR; full effective-address mode decoding (Dn, An, (An), (An)+, -(An), d16(An), d8(An,Xn), abs.w, abs.l, PC-relative, immediate); DC.W fallback for unrecognised opcodes.
+  - `disassemble()` method for sequential multi-instruction decoding with `count` and `end` bounds.
+  - `format_listing()` produces annotated hex+mnemonic text output compatible with standard 68k assembler listing format.
+- **PC-Relative Branch Rebasing & Relocation (`miorom.asm.reloc_calc`)**:
+  - `BranchRelocation`: dataclass capturing instruction offset, architecture, mnemonic, old/new PC addresses, destination address, byte representation, and displacement range validation.
+  - `BranchRelocator`: low-level PC-relative branch displacement rebasing engine supporting MOS 6502, W65C816, Z80, SM83, M68K, ARM, Thumb, and MIPS; includes `patch_single_branch()` and `rebase_block()` with internal/external target discrimination and dictionary-based destination remapping.
+- **Multi-Byte Japanese Binary Text Stream Scanner (`miorom.scanner.text_stream`)**:
+  - `TextStreamSpan`: dataclass recording detected text boundaries, encoding, confidence metrics, character count, kanji/kana density, and terminator presence.
+  - `TextStreamScanner`: binary scanner detecting unmapped dialogue and message blocks encoded in Shift-JIS, EUC-JP, UTF-16LE, UTF-16BE, and ASCII; applies strict lead-byte/trail-byte FSM validation to filter machine code and false positives, and includes `scan_string_table()` for sequential dialogue cluster extraction.
+- **Sub-Byte Bitfield & Packed Record Codec (`miorom.core.bitfield`)**:
+  - `BitField` and `BitFieldSchema`: declarative schema for arbitrary bit-width fields (1 to 64 bits), signed two's complement interpretation, and configurable MSB-first or LSB-first bit order.
+  - `BitFieldCodec`: encoder and decoder supporting `unpack()`, `unpack_from()`, `unpack_all()`, `pack()`, `pack_into()` for in-place buffer mutation, and `pack_all()` for tabular record arrays.
+- **Tile Deduplicator & VRAM Optimizer (`miorom.graphics.tile_dedup`)**:
+  - `DeduplicatedTileEntry`: mapping entry linking original tile positions to optimized unique indices with H-flip and V-flip metadata; includes nametable word converters for SNES, Genesis, GBC, and GBA.
+  - `TileDedupResult`: optimization report capturing unique tile pixel buffers, entries, and compression metrics.
+  - `TileDeduplicator`: detects identical 8x8 tiles and symmetrical flipped copies (horizontal, vertical, HV-flip); includes `deduplicate_raw_bpp()` for direct binary planar tile buffer optimization.
+- **Hardware Sprite OAM Descriptor Codec (`miorom.graphics.oam`)**:
+  - `SpriteDescriptor`: normalized representation of a 2D hardware sprite object with coordinates, tile ID, palette, flipping, priority, and dimension attributes.
+  - `HardwareOamCodec`: multi-platform hardware sprite attribute codec supporting NES/Famicom 4-byte OAM, Game Boy / GBC 4-byte OAM, SNES dual split tables (Table 1 + Hi-OAM Table 2), Sega Genesis / Mega Drive 8-byte SAT, and GBA 8-byte OAM.
+- **CLI Commands Expansion (`miorom.cli.main`)**:
+  - `scan-text`: multi-byte binary text stream scanner with threshold and encoding filtering.
+  - `disasm`: multi-architecture disassembler supporting m68k, arm, thumb, mips, ppc, 6502, 65816, z80, and sm83.
+  - `checksum`: retro cartridge and file checksum calculation (CRC32, MD5, SHA1, GB, SNES, N64, Genesis).
+  - `reloc-branch`: batch branch displacement rebasing for moved code blocks.
+  - `tile-dedup`: binary planar tile deduplication with H/V flipping and nametable generation.
+- **ARM Thumb-16 Expansion (`miorom.asm`, `miorom.script`)**:
+  - Comprehensive Thumb 16-bit instruction disassembler formats 1–19 (`UniversalDisassembler._disasm_thumb`) for GBA and NDS ARM7/ARM9.
+  - SSA Intermediate Representation lifter for Thumb instructions (`BinaryLifter._lift_thumb`) enabling C pseudocode decompilation.
+  - Function prologue detection for Thumb 16-bit push patterns (`0xB5xx`).
+  - Fluent `ThumbSnippet` micro-assembly builder (`AsmSnippet.thumb()`) for GBA & NDS code-caves.
+- **MOS 6502 & W65C816 Architectures (`miorom.asm`, `miorom.script`)**:
+  - Complete 256-opcode table with dynamic `REP`/`SEP` status bit tracking across sequential disassembly for 8-bit and 16-bit Accumulator/Index register switching.
+  - SSA IR lifter and C decompilation for 6502 (NES) and 65816 (SNES).
+  - SNES function prologue detection (`php; rep; pha`, `phb; phd`).
+  - Fluent `SnesSnippet` builder (`AsmSnippet.snes()`) for SNES routines.
+- **PowerPC 32-bit Code-Cave Tools (`miorom.asm.snippet`, `miorom.asm.disasm`)**:
+  - Fluent `PpcSnippet` builder (`AsmSnippet.ppc()`) for GameCube and Wii (`stwu`, `lwz`, `stw`, `addi`, `li`, `lis`, `ori`, `mr`, `mflr`, `mtlr`, `b`, `bl`, `blr`).
+  - Added `stwu`, `lwzu`, and `or`/`mr` instruction decoding to `UniversalDisassembler._disasm_ppc`.
+- **Nintendo Entertainment System Platform (`miorom.platforms.nes`)**:
+  - `NESRom` and `NESHeaderStruct` supporting iNES and modern NES 2.0 cartridge formats.
+  - Automatic mapper detection (NROM, MMC1, MMC3, MMC5, UNROM, CNROM, etc.).
+  - PRG ROM and CHR ROM/RAM separation, modification, and 512-byte trainer buffer extraction.
+- **Universal Patching System (`miorom.patch.ups`)**:
+  - Native pure-Python `UpsPatcher` implementing UPS format with Variable-Length Quantity (VLQ) encoding, XOR diffing, and CRC32 verification.
+- **Nintendo DS 2D Graphics Suite (`miorom.platforms.nds`)**:
+  - `NCLRFile`: Nitro Color Palette (`.nclr`) reader and serializer for BGR555 color palettes.
+  - `NCGRFile`: Nitro Character Graphic (`.ncgr`) reader and serializer for 4bpp/8bpp tile graphics.
+  - `NSCRFile`: Nitro Screen Resource (`.nscr`) background tilemap screen layout reader and serializer.
+- **Console Audio Codecs & Exporters (`miorom.audio`)**:
+  - Sony PS1 & PS2 VAG SPU-ADPCM (`VAGHeader`, `VAGCodec`, `VAGFile`): 16-byte block parser, encoder, decoder, and direct WAV exporter.
+  - Super Nintendo SPC700 BRR (`BRRCodec`): 9-byte BRR block encoder and decoder with S-DSP 4-filter Gaussian interpolation, loop tagging, and WAV generation.
+  - Nintendo GameCube & Wii DSP-ADPCM (`DSPADPCMCodec`): 8-byte frame audio decoder and WAV converter.
+- **Compression Codecs (`miorom.compression`)**:
+  - Nintendo Yay0 (`Yay0`): 3-stream LZSS decompressor and compressor used in N64 and early GameCube titles (Super Mario 64, Zelda OoT, Star Fox 64).
+  - aPLib (`APLib`): Pure-Python high-ratio LZ decompressor and compressor supporting raw streams and `AP32` container headers.
+  - Registered `yay0` and `aplib` into unified `compress()` and `decompress()` dispatchers.
+- **Symbolic Cross-References Engine (`miorom.asm.xref_engine`)**:
+  - `SymbolicXrefEngine` and `XRefDatabase`: Multi-architecture cross-reference analysis across ARM, Thumb, PowerPC, MIPS, W65C816, MOS 6502, and data pointer tables.
+  - Call graph construction and IDA / Ghidra style `; CODE XREF:` and `; DATA XREF:` disassembly annotations.
+- **C Struct Overlay Mapper (`miorom.core.cstruct`)**:
+  - `CStructOverlay` and `CStructInstance`: Compiles ANSI C struct syntax into binary layouts with dot/dict access, table iterations (`read_table()`), and in-place binary writes (`write()`).
+- **AngelCode BMFont Suite & Minimal PNG Codec (`miorom.text.bmfont`)**:
+  - `BMFont`: Two-way parser and generator for AngelCode `.fnt` files (both Text and XML formats).
+  - Automatic 2D texture atlas shelf packing for `BitmapFont` glyphs.
+  - `PNGCodec`: Built-in pure-Python minimal PNG encoder and decoder (grayscale & RGBA) using only standard library `zlib`.
+- **Sega Genesis 4bpp & SNES Mode 7 Planar 8bpp Tile Formats (`miorom.graphics.tiles`)**:
+  - Added `high_nibble_first` support for Sega Mega Drive / Genesis 4bpp chunky tiles and planar 8bpp for SNES Mode 3/4/7 in `decode_tile`, `encode_tile`, `decode_tileset`, and `encode_tileset` with preset platform aliases (`genesis`, `md`, `snes8`, `mode7`).
+- **GBA Sappy / M4A Sound Engine Scanner & Sample Ripper (`miorom.audio.sappy`)**:
+  - Added `SappyScanner` and `SappyCodec` for discovering Sappy song tables, voice tables, instrument envelopes, and extracting DirectSound 8-bit signed PCM samples with direct WAV conversion.
+- **ISO 9660 Disc Tree Synthesizer & Rebuilder (`miorom.platforms.iso.builder`)**:
+  - Added pure-Python `Iso9660Builder` for creating standards-compliant ISO 9660 optical disc images from in-memory buffers or filesystem folders with PVD, Path Tables, Directory Records, and custom system areas.
+- **Sega Genesis VDP 9-bit RGB333 Palette & Color Tables (`miorom.graphics.palette`)**:
+  - Discrete 9-bit RGB333 DAC conversion (`to_md_color()`, `from_md_color()`) with Genesis standard CRAM packing format `0000_BBB0_GGG0_RRR0`.
+  - Genesis CRAM binary byte stream import and export (`to_md_bytes()`, `from_md_bytes()`).
+  - Adobe Color Table (`.act`) 768-byte / 772-byte binary palette import and export (`to_act()`, `from_act()`).
+  - JASC-PAL Paint Shop Pro text format palette import and export (`to_jasc_pal()`, `from_jasc_pal()`).
+- **NES 6502 & SNES 65816 Code-Cave Trampoline Hooks (`miorom.asm.trampoline`)**:
+  - Direct `create_6502_hook()` synthesizing 3-byte absolute `JMP $xxxx` hooks with automatic displaced instruction execution and return jump.
+  - 24-bit direct `create_snes_hook()` synthesizing 4-byte 24-bit far hooks using either `JML` (far jump) or `JSL` (far subroutine call returning via `RTL`).
+  - Integrated into unified `TrampolineHook.create_hook()` and binary cave finder `TrampolineHook.auto_hook()`.
+- **Compressed ISO (CSO / CISO) Image Suite (`miorom.platforms.iso.cso`)**:
+  - `CSOImage`: Sector-based random-access reader supporting raw Deflate/zlib decompression, LBA reading (`read_sector`, `read_sectors`), cross-sector byte slicing (`read_bytes`), and disk streaming (`decompress_to_file`).
+  - Pure-Python `compress_iso()` engine converting raw disc images into standards-compliant CSO archives with sector-level compression decision (deflate vs raw storage) and bit 31 index tagging.
+- **Sony PlayStation Portable & PS1 Classics Container Suite (`miorom.platforms.psp`)**:
+  - `SFOFile`: Two-way parser and binary serializer for Sony `PARAM.SFO` metadata objects supporting UTF-8 string, ASCII string, and uint32 types.
+  - `PBPFile`: Container unpacker and builder for Sony `EBOOT.PBP` archives handling all 8 canonical sections (`PARAM.SFO`, `ICON0.PNG`, `ICON1.PMF`, `PIC0.PNG`, `PIC1.PNG`, `SND0.AT3`, `DATA.PSP`, `DATA.PSAR`), with multi-file extraction (`extract_all()`) and binary synthesis (`to_bytes()`, `save()`).
+- **PlayStation Patch Format (PPF v1, v2, v3) Engine (`miorom.patch.ppf`)**:
+  - Pure-Python `PPFPatcher` supporting PPF 1.0, PPF 2.0, and PPF 3.0 standards with 512-byte headers, undo-data chunks, and sector 0x9320 validation block checks.
+  - Streaming constant-memory disc patch applier (`apply_stream()`), in-memory patcher (`apply()`), and patch creator (`create()`).
+  - Integrated into universal patch routing (`create_patch()`, `apply_patch()`) with automatic `.ppf` extension and magic byte auto-detection.
+- **EA RefPack (QFS) & Okumura LZSS Compression Codecs (`miorom.compression`)**:
+  - `RefPack`: Electronic Arts RefPack / QFS decompressor and compressor supporting 2-byte, 3-byte, and 4-byte match opcodes, literal run blocks, and 3-byte size headers.
+  - `LZSS`: Standard Haruhiko Okumura (1989) 4096-byte sliding window LZSS decompressor and compressor with configurable initial fill bytes and positions.
+  - Registered `refpack` and `lzss` into unified `compress()` and `decompress()` dispatchers.
+- **Sega Saturn & Dreamcast Disc Bootstrap Suite (`miorom.platforms.sega_disc`)**:
+  - `SaturnDiscHeader`: Sector 0 security bootstrap header parser and serializer for Sega Saturn CD-ROMs with region unlocking (`make_region_free()`).
+  - `DreamcastIpBin`: Sector 0 (32KB) IP.BIN bootstrap header parser and CRC16 recalculator (`calculate_crc()`) for Dreamcast GD-ROMs and MIL-CDs with region-free unlocking.
+  - `GDISheet`, `GDITrack`: Parser and formatter for Dreamcast GD-ROM multi-track descriptor sheets (`disc.gdi`) with automatic high-density track discovery.
+- **GBA BIOS SWI Symbolic Resolver & Multiboot Builder (`miorom.platforms.gba`)**:
+  - `GBASwiResolver`: Full 32-entry lookup database for official Game Boy Advance BIOS software interrupts with automatic disassembly annotation for Thumb (`0xDFxx`) and ARM (`0xEFxxxxxx`) instructions, and binary call-site scanner (`scan_swi_calls()`).
+  - `GBAMultiboot`: 256KB EWRAM Multiboot (`.mb`) payload builder and validator with ARM entry branch, Nintendo logo insertion, complement checksum calculation, and parameter blocks.
+- **Font Glyph Injector & Latin Extender Suite (`miorom.graphics.font_injector`)**:
+  - `FontGlyphInjector`: Comprehensive glyph injection and extraction engine supporting 1bpp, 2bpp planar (Game Boy, NES), and 4bpp (SNES, Genesis, GBA) tiles for localizing Japanese games.
+  - Built-in `LATIN_8X8_BITMAPS` dataset containing all 95 printable ASCII characters plus extended Latin accented letters (`é`, `è`, `ê`, `á`, `à`, `í`, `ó`, `ú`, `ñ`, `ç`, `¿`, `¡`).
+  - Proportional Variable-Width Font (VWF) binary width table generator (`generate_vwf_table()`) and character table mapping exporter (`generate_tbl_mapping()`).
+- **VWF Pixel-Accurate Line Wrapper & Dialogue Paginator (`miorom.text.line_wrapper`)**:
+  - `VwfLineWrapper`: Pixel-accurate word-wrapper accepting width sources of multiple forms: width dict, raw VWF binary table bytes, arbitrary callable, or `FontGlyphInjector` / `FontMetrics` instances.
+  - Control code preservation mode: bracketed and braced game tags (`[wait]`, `{hero}`, `<color:red>`) are tokenized and excluded from pixel measurements while being kept intact in output.
+  - Emergency long-word splitting with optional hyphenation (`hyphenate_overflow=True`).
+  - `paginate()`: Automatic multi-page dialogue layout with configurable line count per page and page-break tokens.
+  - `analyze()`: Returns `LineWrapResult` with structured `TextBoxPage` objects, per-line pixel widths, and overflow diagnostics for batch translation validation.
+- **GameCube & Wii DOL Executable Parser, Translator & Section Injector (`miorom.platforms.gc.dol`)**:
+  - `DolFile`: Full header parser and binary serializer for GameCube/Wii DOL executables with up to 7 text and 11 data sections.
+  - Bidirectional RAM virtual address ↔ DOL file offset translation (`address_to_offset()`, `offset_to_address()`).
+  - Direct RAM memory read/write interface (`read_memory()`, `write_memory()`) with section boundary safety checks.
+  - `add_section()`: Injects additional text or data sections into the first available header slot with configurable alignment, enabling new ASM code caves and expanded translation data regions.
+  - `allocate_code_cave()`: High-level helper that zeroes and registers a new code block section, returning the RAM address and file offset ready for instruction injection.
+- **DTE / MTE Dictionary Optimizer & Compressor (`miorom.text.dte`)**:
+  - `DteOptimizer.analyze_ngrams()`: Counts n-gram frequencies (configurable `min_len`–`max_len`) across a text corpus while preserving bracketed control codes.
+  - `DteOptimizer.build_dictionary()`: Synthesizes the optimal DTE/MTE substitution dictionary (default 2–4 character pairs) ranked by net byte savings `(len-1)×frequency`, with `reserved_codes` exclusion and `start_code` assignment control; returns `DteStats` with compression ratio metrics.
+  - `DteOptimizer.to_tbl()` / `from_tbl()`: Round-trip serialization of DTE token tables to and from standard romhacking `.tbl` character mapping format, preserving trailing spaces within token values.
+  - `DteCodec.encode()` / `decode()`: High-performance two-way greedy longest-match encoder and decoder integrated with `CharMap` for full round-trip text translation pipelines.
+- **Translation Memory & Pure-Python Fuzzy String Matcher (`miorom.text.translation_memory`)**:
+  - `TranslationMemory`: In-memory translation memory engine implementing pure-Python dynamic programming Levenshtein distance matching without external dependencies.
+  - `lookup()`: Multi-candidate retrieval returning structured `TmLookupResult` and `TmMatch` with exact (100%) and fuzzy match scoring.
+  - `pre_fill_po()`: Automatically populates untranslated GNU gettext `.po` entries with TM matches and tags fuzzy translations for QA.
+  - JSON serialization (`export_json()`, `from_json()`) for portable translation memory persistence.
+- **Universal Script Extractor & Reinserter (`miorom.script.extractor`)**:
+  - `ScriptExtractor`: Two-way script extraction and reinsertion pipeline integrated with `CharMap` and custom control code schemas.
+  - Export formats: Human-readable block format (`to_txt()`, `from_txt()`) and tabular localization format (`to_csv()`).
+  - Safe binary injection (`insert()`): Writes translated bytecode directly into ROM buffers with dry-run verification mode and slot overflow detection.
+- **Script Table Pointer Relinker & Free-Space Relocator (`miorom.text.pointer_relinker`)**:
+  - `PointerRelinker`: Multi-architecture pointer table scanner and relinker supporting 1, 2, 3, and 4-byte pointers with big-endian and little-endian byte orders.
+  - Dynamic free space allocation: In-place string rewrites with fill-byte padding when expanded text fits, and automatic relocation to ROM caves when strings expand.
+  - Detailed `RelinkReport` logging entries relinked, relocated, bytes saved, and mapped free space regions.
+- **Game Boy / GBC ROM Builder & MBC Mapper Suite (`miorom.platforms.gb.builder`)**:
+  - `GBHeader`: Cartridge header parser and serializer covering titles, MBC cartridge types (MBC1, MBC2, MBC3, MBC5), CGB/SGB flags, and destination codes.
+  - Checksum recalculators: Pure bitwise `calculate_header_checksum()` and 16-bit `calculate_global_checksum()`.
+  - `GBRomBuilder`: Assembles multi-bank Game Boy ROMs, manages 16KB switchable banks, inserts official Nintendo boot logos, and provides power-of-two ROM capacity expansion (`expand()`).
+- **ARM & Thumb Inline Hook Builder & Code Cave Manager (`miorom.asm.hook_manager`)**:
+  - `CodeCaveManager`: Automated scanner for unused ROM padding blocks (`0x00` or `0xFF`) and tracking registry for code cave allocation.
+  - `ArmHookBuilder`: Pure bitwise branch instruction synthesizers for ARM `BL`/`B`, Thumb `BL` (long-range 4-byte halfwords), Thumb `B` (short-range), and return trampolines.
+  - `HookManager`: High-level hook installer writing call branches at hook offsets and payload trampolines into allocated code caves.
+- **Sega Genesis / Mega Drive 68000 Disassembler (`miorom.asm.m68k`)**:
+  - `M68kDisassembler`: Motorola 68000 instruction decoder covering data movement (`MOVE`, `MOVEA`, `MOVEQ`), ALU (`ADD`, `SUB`, `CMP`, `AND`, `OR`, `EOR`), branching (`BRA`, `BSR`, `Bcc`), control (`JMP`, `JSR`, `RTS`, `TRAP`, `NOP`), and addressing modes (`Dn`, `An`, `(An)`, `(An)+`, `-(An)`, `d16(An)`, `#imm`, `abs.w`, `abs.l`).
+  - Structured output (`M68kInstruction`) with branch target resolution, call classification, and formatted assembly listings (`format_listing()`).
+
+- **Nintendo DS ARM9 & ARM7 Overlay Table Manager & Relocator (`miorom.platforms.nds.overlay`)**:
+  - `NDSOverlayTable`: Two-way binary serializer for ARM9 (`y9.bin`) and ARM7 (`y7.bin`) overlay definition tables; supports add, update, and RAM address relocation per overlay ID.
+  - `NDSOverlayCompressor`: LZ10 compression and decompression for overlays with automatic compressed flag management.
+  - `NDSOverlayManager`: High-level orchestrator for extracting, replacing, and relocating ARM9/ARM7 overlay payloads within `NDSRom` images; auto-expands ROM buffer when translated overlays exceed original capacity.
+  - `OverlayAllocationReport`: Structured result recording old/new RAM size, file size, and compression state per operation.
+- **SNES SPC700 Sound File Parser & BRR Sample Dumper (`miorom.audio.spc`)**:
+  - `SpcFile`: Full `.spc` format reader and serializer including 64KB SPC700 RAM, 128-byte S-DSP register block, IPL ROM, and ID666 metadata (song title, game, dumper, artist, date, duration).
+  - `list_samples()`: Parses the S-DSP BRR directory table (`DSP 0x3D`) to enumerate all instrument/SFX sample entries with start and loop addresses.
+  - `extract_brr_sample()`: Walks BRR 9-byte blocks from sample start until end-flag, yielding raw BRR binary.
+  - `dump_samples_to_wav()`: Converts all discovered BRR samples to standard RIFF/WAVE 16-bit PCM files using `BRRCodec`.
+  - Direct RAM read/write access (`read_ram()`, `write_ram()`) for audio data modification.
+- **Universal Game Genie & GameShark Cheat Code Engine & ROM Hard-Patcher (`miorom.patch.cheats`)**:
+  - `NesGameGenie`: NES 6-character (no compare) and 8-character (with compare) decoder and encoder using the standard Game Genie cipher.
+  - `SnesGameGenie`: SNES 8-character decoder and encoder (base-16 `DF4709156BC8A23E` alphabet) producing hyphenated `XXXX-XXXX` format.
+  - `GenesisGameGenie`: Sega Genesis / Mega Drive 8-character 40-bit cipher decoder for 24-bit address and 16-bit word patches.
+  - `GameBoyGameGenie`: Game Boy 6-character and 9-character (with compare) decoder and encoder.
+  - `GameShark`: GameShark / Action Replay `XXXXXXXX YYYY` format decoder for GBA, N64, and PS1.
+  - `parse_cheat_code()`: Format auto-detector resolving cheat strings to `CheatCode` records without requiring explicit system parameter.
+  - `hard_patch_rom()`: Permanent cheat injection that resolves CPU virtual addresses to ROM file offsets (NES, SNES LoROM, Game Boy), validates compare bytes, and writes patch bytes atomically.
+- **Arbitrary Bitstream I/O Primitives (`miorom.core.bitstream`)**:
+  - `BitReader`: Arbitrary bitstream reader supporting MSB-first and LSB-first bit ordering across byte boundaries; provides `read_bits()`, `read_signed_bits()`, `peek_bits()`, `skip_bits()`, and `align_byte()`.
+  - `BitWriter`: Arbitrary bitstream writer supporting MSB-first and LSB-first accumulation, signed bit packing, and byte-boundary padding.
+- **Planar Bitplane Tile Codec & Interleaver (`miorom.graphics.planar`)**:
+  - `PlanarTileCodec`: Modular 8x8 indexed pixel tile encoder and decoder covering 1bpp mono, 2bpp Game Boy / NES / SNES, 3bpp Capcom SNES, 4bpp SNES planar, 4bpp Sega Genesis chunky, 4bpp GBA, and 8bpp SNES Mode 7.
+  - `split_bitplanes()` / `combine_bitplanes()`: Isolates and recombines individual 8-byte bitplanes for layer-specific manipulation and font glyph injection.
+  - `planar_to_linear()` / `linear_to_planar()`: Bulk stream converters between console planar tiles and raw indexed pixel streams.
+- **Retro Bus Address & Banking Coordinate Translators (`miorom.core.bus_mapper`)**:
+  - `SNESBusMapper`: Pure mathematical translations between 24-bit SNES bus addresses and physical ROM offsets for LoROM (Mode 20), HiROM (Mode 21), and SMC-headered ROMs.
+  - `NESBusMapper`: Bus-to-offset mapping formulas for NROM (16KB/32KB), MMC1 16KB switchable PRG banks, and MMC3 8KB PRG banks (Modes 0 and 1).
+  - `GameBoyBusMapper`: Cartridge ROM mapping for fixed Bank 0 ($0000-$3FFF) and switchable banks ($4000-$7FFF) with MBC1 bank translation quirks ($00, $20, $40, $60).
+- **Variable-Length Integer Codec Enhancements (`miorom.core.vlq`)**:
+  - Added `encode_sqlite_varint()` and `decode_sqlite_varint()` for 1-9 byte variable-length integers used in embedded database and savegame formats.
+  - Added `zigzag_encode()` and `zigzag_decode()` for signed integer mapping.
+  - Exposed module-level shortcuts: `encode_vlq()`, `decode_vlq()`, `encode_uleb128()`, `decode_uleb128()`, `encode_sleb128()`, `decode_sleb128()`.
+- **Retro Cyclic & Additive Checksum Primitives (`miorom.core.checksum`)**:
+  - `RetroChecksum`: Zero-dependency, pure-Python bitwise checksum suite including CRC-16 (CCITT, XMODEM, ARC, Modbus), pure-Python IEEE 802.3 CRC32, Adler-32, Fletcher-16, Sega Genesis 16-bit big-endian sum, SNES complement checksum pair, and Game Boy header/global checksums.
+- **Bitwise Arithmetic & Word Transformation Primitives (`miorom.core.bits`)**:
+  - Bitwise rotations and reflections: `rol()` (rotate left), `ror()` (rotate right), `bit_reverse8()`, `bit_reverse16()`, `bit_reverse32()`, `bit_reverse()`.
+  - Nibble packing and extraction: `swap_nibbles()`, `pack_nibbles()`, `unpack_nibbles()`.
+  - Sign extension and bit counting: `sign_extend()` (for immediate values), `popcount()`, `clz()` (count leading zeros), `ctz()` (count trailing zeros).
+  - Endianness byte swapping: `bswap16()`, `bswap32()`, `bswap64()`.
+- **Canonical Huffman Tree & Codec Primitives (`miorom.core.huffman_tree`)**:
+  - `HuffmanNode`: Binary node structure for priority-queue frequency trees.
+  - `build_huffman_tree()` / `extract_code_lengths()`: Builds optimal prefix trees from symbol frequency histograms and extracts bit lengths.
+  - `generate_canonical_codes()`: Generates deterministic RFC 1951 / JPEG compliant Canonical Huffman bit codes.
+- **Binary Slicing & Free Space Block Finder (`miorom.core.slicer`)**:
+  - `align_up()` / `align_down()`: Memory and boundary alignment calculations.
+  - `pad_bytes()`: Sector boundary padding with arbitrary fill byte.
+  - `chunk_bytes()`: Generator yielding fixed-size contiguous slices across buffers.
+  - `find_free_blocks()`: Scans binary buffers for contiguous sequences of padding bytes (code cave / free space discovery) with optional alignment constraints.
+  - `BinarySlicer`: Zero-copy memoryview slice navigator with pattern matching and in-place chunk replacement.
+- **Branch Displacement & Jump Opcode Math (`miorom.asm.branch_calc`)**:
+  - ARM: `calc_arm_branch()` and `resolve_arm_branch()` for 32-bit B and BL opcodes accounting for 8-byte prefetch pipeline.
+  - Thumb-16: `calc_thumb_branch()` and `resolve_thumb_branch()` for dual-instruction BL pairs (+/- 4MB).
+  - MIPS: `calc_mips_jump()`, `resolve_mips_jump()` for 26-bit pseudo-absolute J/JAL targets; `calc_mips_branch()`, `resolve_mips_branch()` for 16-bit word-offset branches with delay slot calculation.
+  - MOS 6502 / W65C816: `calc_6502_branch()` and `resolve_6502_branch()` for 8-bit signed relative displacements.
+- **Sliding Window Ring Buffer & LZ Match Finder (`miorom.core.ring_buffer`)**:
+  - `RingBuffer`: Circular sliding byte buffer with relative indexing, chronological window extraction, and `copy_lz_match()` handling overlapping RLE byte repeats.
+  - `LzssMatchFinder`: Hash-chained longest match finder with automatic sliding window expiration pruning for proprietary LZ compression algorithms.
+- **Shannon Entropy & Sliding Randomness Profiler (`miorom.core.entropy`)**:
+  - `calculate_entropy()`: Computes Shannon entropy (0.0 to 8.0 bits/byte) to identify padding, code, audio, and compressed streams.
+  - `byte_frequency()`: Generates exact byte-level frequency histograms.
+  - `sliding_entropy_scan()`: Sliding-window entropy scanner mapping density profiles across large files.
+  - `chi_squared_test()`: Uniform distribution test for cryptographic randomness.
+  - `find_entropy_regions()`: Detects start and end boundaries of compressed or encrypted binary streams.
+- **XOR & Rolling-Key Byte Deobfuscator (`miorom.core.cipher`)**:
+  - `xor_bytes()`: Repeating multi-byte XOR encryption and decryption.
+  - `rolling_xor()`: Rolling-key XOR stream cipher ($K_{i+1} = (K_i + step) \pmod{256}$).
+  - `invert_bytes()`: Bitwise NOT unmasking.
+  - `add_cipher()`: Additive / Caesar byte cipher modulo 256.
+  - `crack_single_byte_xor()`: Automated single-byte XOR key cracker using printable character distribution heuristics.
+- **Split-Bus & Interleaved Byte Arrays Reconstructor (`miorom.core.interleave`)**:
+  - `combine_split_words()`: Merges separate low-byte, high-byte, and optional bank-byte arrays into 16-bit and 24-bit pointer words.
+  - `split_words()`: Decomposes integer words across independent byte lanes.
+  - `deinterleave_channels()` / `interleave_channels()`: Deinterleaves and interleaves multi-channel byte streams (arcade even/odd EPROMs and multi-channel audio).
+- **Cumulative Delta & Relative Offset Resolvers (`miorom.core.delta`)**:
+  - `cumulative_offsets()`: Converts entry lengths into contiguous start offsets ($P_i = P_{i-1} + L_{i-1}$).
+  - `offsets_to_lengths()`: Inverts pointer tables into entry lengths.
+  - `delta_decode()` / `delta_encode()`: Encodes and decodes differential numeric sequences.
+  - `relative_to_absolute()` / `absolute_to_relative()`: Translates offsets relative to header/table bases.
+- **Pointer Table Sequence & Monotonic Stride Validator (`miorom.core.pointer_analyzer`)**:
+  - `unpack_pointer()` / `pack_pointer()`: 16-bit (2-byte), 24-bit (3-byte SNES/Neo-Geo far addresses), and 32-bit (4-byte) pointer word serialization for little-endian and big-endian architectures.
+  - `unpack_pointers()` / `pack_pointers()`: Vectorized unpacking and packing for contiguous pointer arrays.
+  - `verify_stride_monotonicity()` / `calculate_monotonicity_ratio()`: Evaluates strict and non-decreasing monotonic sequences.
+  - `analyze_pointer_sequence()`: Generates `PointerSequenceMetrics` containing span, mean delta step, duplicate ratio, and composite statistical confidence score.
+  - `remap_pointers()`: Remaps address targets via lookup table or uniform delta translation.
+  - `find_pointer_tables()`: Automated binary scanner discovering bounded candidate pointer tables with multi-stride, endianness, and alignment analysis, returning deduplicated `PointerTableCandidate` objects.
+- **Tilemap & Nametable Matrix Compositor (`miorom.graphics.tilemap`)**:
+  - `decode_nes_nametable()` / `encode_nes_nametable()`: Full NES 32x30 nametable (960 bytes) and 64-byte 2x2 sub-block attribute table roundtrip codec.
+  - `decode_genesis_tilemap()` / `encode_genesis_tilemap()`: Sega Genesis / Mega Drive VDP Plane 16-bit big-endian tilemap serialization.
+  - `decode_gbc_tilemap()` / `encode_gbc_tilemap()`: Game Boy Color parallel VRAM bank 0 (tile index) and bank 1 (attributes) decoder/encoder.
+  - `render_pixels()` / `render_flat_pixels()`: 2D/1D pixel compositing with tile flipping (H-flip, V-flip) and palette offset calculations.
+  - `submap()` / `paste()`: Rectangular tilemap region slicing and stamping.
+- **Script Delimiter & Control Code Auto-Detector (`miorom.script.boundary_detector`)**:
+  - `detect_delimiters()`: Cross-references pointer table targets to detect 1-byte and multi-byte string terminators (`0x00`, `0xFF`, `0xFE 0x00`) with statistical confidence scoring.
+  - `detect_control_codes()`: Identifies embedded bytecode opcodes within dialogue streams, measures frequencies, and estimates parameter argument lengths.
+  - `analyze_script_boundaries()`: Generates `ScriptBoundaryReport` covering string length distributions, memory alignment, and candidate terminators/tokens.
+  - `slice_script_entries()`: Extracts discrete binary text entries between targets with optional terminator stripping.
+- **Metatile (16x16 / 32x32) Map Assembler (`miorom.graphics.metatile`)**:
+  - `MetatileTable`: Manages 16x16 metatile definitions with sequential 8-bit (NES/GB), sequential 16-bit (SNES/Genesis), and planar 4-array (TL, TR, BL, BR) serialization.
+  - `MetatileMap`: 2D metatile index grid expanding into full 8x8 `Tilemap` structures (`to_tilemap()`) and compressing from raw tilemaps (`from_tilemap()`).
+- **Split-Bank & Dual-Table Far Pointer Relinker (`miorom.core.far_pointer`)**:
+  - `resolve_banked_to_offset()` / `resolve_offset_to_banked()`: Bidirectional coordinate translators between physical ROM offsets and (bank, cpu_address) pairs for NES, Game Boy, and SNES LoROM/HiROM.
+  - `read_split_pointer_table()` / `write_split_pointer_table()`: Manages dual parallel tables (1-byte banks + 2-byte CPU addresses).
+  - `read_interleaved_pointer_table()` / `write_interleaved_pointer_table()`: Manages 3-byte contiguous far pointer arrays.
+  - `relocate_banked_table()`: In-place relocation engine updating banked pointer records and calculating new bank/address mappings.
+
+### Fixed
+- **Anti-Zip-Slip / Directory Traversal Protection Across Archive Handlers**:
+  - Integrated `sanitize_extract_path` into NDS ROM (`NDSRom.extract`, `NDSRomHandler`), GameCube (`GameCubeRomHandler`), and ISO9660 (`Iso9660RomHandler`) extraction pipelines, blocking arbitrary file writes outside destination directories.
+  - **`NarcRomHandler.unpack()` (`miorom.rom.handlers.narc`)**: `e.name` sourced from untrusted NARC archive metadata was passed directly to `os.path.join` without sanitization — completing the path traversal protection across all four archive handlers. NARC is the most frequently accessed NDS container format (MSG, graphics, data assets in virtually every NDS title).
+- **SPU-ADPCM Negative Shift Exception Safety (`miorom.audio.vag`)**:
+  - Added arithmetic right-shift handling when `shift > 12`, preventing `ValueError: negative shift count` crashes on corrupted/fuzzed audio.
+- **Systemic Decompression Integrity & Truncation Detection (`miorom.compression`)**:
+  - Added strict payload size validation on `LZ10`, `LZ11`, `Yaz0`, `Yay0`, `RLE`, and `Huffman`, raising `CompressionError` on unexpected EOF or truncated streams instead of silently corrupting downstream consumers.
+- **Patcher Bounds Validation (`miorom.patch.bps`)**:
+  - Guarded `SourceCopy` and `TargetCopy` in `BpsPatcher` against negative indexing and buffer overflows, raising `PatchError`.
+- **DSP-ADPCM Filter Coefficient Bounds (`miorom.audio.dsp_adpcm`)**:
+  - Added coefficient length validation (`len(coefs) >= 16`) in `decode_frame` and `decode` to prevent raw `IndexError` exceptions.
+- **NES 2.0 Exponent Notation & Archaic iNES Convention (`miorom.platforms.nes`)**:
+  - Implemented standard NES 2.0 exponent-multiplier notation (`2^E * (multiplier * 2 + 1)`) and handled archaic iNES 0-byte PRG size (representing 256 banks / 4MB).
+- **PS1 TIM Texture Bounds Checking (`miorom.platforms.psx.tim`)**:
+  - Added validation for CLUT and pixel image section lengths against true input buffer length, raising `ParseError` on truncated TIM textures.
+- **Performance Optimization for Error-Diffusion Dithering (`miorom.graphics.palette`)**:
+  - Inlined error diffusion in `FloydSteinbergDitherer`, eliminating inner loop closure allocations.
+- **CharMap Strict Mode (`miorom.text.charmap`)**:
+  - Added optional `strict: bool = False` to `CharMap.encode()`, raising `ValueError` on unmapped multibyte characters.
+- **Low-RAM Streaming ROM Unpacking for Disc Images (`miorom.rom.handlers`)**:
+  - Added `unpack_file` streaming implementation for `GameCubeRomHandler` and `Iso9660RomHandler`, enabling extraction of multi-gigabyte ISOs with minimal RAM usage.
+- **XRef Database Export Interoperability (`miorom.asm.xref_engine`)**:
+  - Added `export_ida_map` (IDA Pro `.map`) and `export_ghidra_xml` (Ghidra Program XML) to `XRefDatabase`.
+- **Branch Validation Error Handling (`miorom.asm.branch`)**:
+  - Imported `ParseError` in `branch.py` preventing `NameError` exceptions when validating unaligned branch targets.
+- **ROM Handler Keyword Arguments Passthrough (`miorom.rom.handlers`)**:
+  - Corrected `unpack()` forwarding in `NDSRomHandler`, `GameCubeRomHandler`, and `Iso9660RomHandler` to prevent duplicate `filepath` argument errors when delegating to `unpack_file()`.
+- **Streaming ROM Handler Filepath Probing (`miorom.rom.handlers`)**:
+  - Enhanced `can_handle` in `Iso9660RomHandler` and `GameCubeRomHandler` to probe magic headers directly from `filepath` when passed empty in-memory buffer payloads.
+
 ## [0.13.1] — 2026-09-10
 
 ### Added
@@ -62,8 +412,6 @@ All notable changes to MioROM will be documented in this file.
 
 ### Changed
 - Standardized `CsvHandler.export_csv()` and `export_clean_csv()` to automatically ensure parent directories exist before writing.
-- Bumped version to `0.13.0`.
-
 
 ## [0.12.0] — Initial Release
 

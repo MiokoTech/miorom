@@ -8,7 +8,7 @@ from miorom.graphics.image_bridge import ImageBridge, HAS_PIL
 def test_image_bridge_to_and_from_image():
     from PIL import Image
 
-    # 1. Create a 16x8 image (2 tiles wide, 1 tile high)
+    # Create a 16x8 image (2 tiles wide, 1 tile high)
     pal = Palette([
         Color(0, 0, 0, 255),       # 0
         Color(255, 0, 0, 255),     # 1: Red
@@ -26,7 +26,7 @@ def test_image_bridge_to_and_from_image():
     assert img.getpixel((0, 0)) == (255, 0, 0, 255)
     assert img.getpixel((8, 0)) == (0, 255, 0, 255)
 
-    # 2. Convert back from image
+    # Convert back from image
     extracted_tiles, extracted_pal, _ = ImageBridge.from_image(img, bpp=2, target_palette=pal)
     assert len(extracted_tiles) == 2
     assert extracted_tiles[0] == t1

@@ -110,7 +110,67 @@ def swap_from_big_endian(data: bytes, target_order: N64ByteOrder) -> bytes:
             ba.extend(data[aligned_len:])
         return bytes(ba)
 
-    return data
+def parse_byte_order(order: Union[N64ByteOrder, str]) -> N64ByteOrder:
+    """Parse a byte order enum or common string alias into an N64ByteOrder."""
+    if isinstance(order, N64ByteOrder):
+        return order
+    cleaned = str(order).strip().lower().lstrip(".")
+    if cleaned in ("z64", "big", "be", "big-endian", "big_endian"):
+        return N64ByteOrder.BIG_ENDIAN
+    elif cleaned in ("v64", "byteswapped", "byteswap", "swap", "byte-swapped", "byte_swapped"):
+        return N64ByteOrder.BYTE_SWAPPED
+    elif cleaned in ("n64", "little", "le", "little-endian", "little_endian"):
+        return N64ByteOrder.LITTLE_ENDIAN
+    raise ValueError(f"Unknown N64 byte order alias: {order!r}")
+
+
+def convert_endianness(
+    data: Union[bytes, bytearray],
+    target_order: Union[N64ByteOrder, str],
+    source_order: Optional[Union[N64ByteOrder, str]] = None,
+) -> bytes:
+    """Convert ROM binary bytes from any byte order directly into target_order."""
+    target_enum = parse_byte_order(target_order)
+    src_enum = parse_byte_order(source_order) if source_order is not None else detect_byte_order(bytes(data))
+
+    if src_enum == target_enum:
+        return bytes(data)
+
+    be_data = swap_to_big_endian(bytes(data), src_enum)
+    return swap_from_big_endian(be_data, target_enum)
+
+
+def convert_file_endianness(
+    src_path: Union[str, os.PathLike],
+    dst_path: Union[str, os.PathLike],
+    target_order: Union[N64ByteOrder, str],
+    chunk_size: int = 1024 * 1024,
+) -> Tuple[N64ByteOrder, N64ByteOrder]:
+    """
+    Stream convert an N64 ROM file to the target endianness in chunks without loading
+    the whole ROM into memory. Returns (detected_source_order, target_order).
+    """
+    target_enum = parse_byte_order(target_order)
+    chunk_size = (chunk_size // 4) * 4
+    if chunk_size < 4:
+        chunk_size = 4096
+
+    with open(src_path, "rb") as f_in:
+        header_sample = f_in.read(4)
+        if len(header_sample) < 4:
+            raise ValueError(f"ROM file is too small to determine byte order ({len(header_sample)} bytes)")
+        source_enum = detect_byte_order(header_sample)
+        f_in.seek(0)
+
+        with open(dst_path, "wb") as f_out:
+            while True:
+                chunk = f_in.read(chunk_size)
+                if not chunk:
+                    break
+                converted = convert_endianness(chunk, target_enum, source_enum)
+                f_out.write(converted)
+
+    return source_enum, target_enum
 
 
 @dataclass

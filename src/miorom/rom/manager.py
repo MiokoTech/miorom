@@ -53,7 +53,7 @@ class RomManager:
 
     def detect_format(self, data: bytes, filepath: Optional[str] = None) -> Optional[str]:
         """Auto-detects the container or ROM format from binary data or file path."""
-        # Check handlers in precedence order (specific container before generic cartridge)
+        # Check handlers by precedence order
         order = ["nds", "gamecube", "u8", "narc", "iso9660", "cartridge"]
         for name in order:
             handler = self.handlers.get(name)

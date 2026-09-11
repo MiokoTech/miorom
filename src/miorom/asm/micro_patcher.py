@@ -89,7 +89,7 @@ class StackAllocPatcher:
         """
         if not (0 < frame_size <= 32768) or offset + 4 > len(code):
             return False
-        # addiu $sp, $sp, -frame_size: opcode=0x27BD, imm16 = (-frame_size) & 0xFFFF
+        # addiu $sp, $sp, -frame_size
         imm16 = (-frame_size) & 0xFFFF
         op = 0x27BD0000 | imm16
         struct.pack_into(f"{endian}I", code, offset, op)

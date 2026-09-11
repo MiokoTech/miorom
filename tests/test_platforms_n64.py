@@ -8,6 +8,9 @@ from miorom.platforms.n64 import (
     detect_byte_order,
     detect_cic,
     fix_n64_checksum,
+    parse_byte_order,
+    convert_endianness,
+    convert_file_endianness,
     swap_from_big_endian,
     swap_to_big_endian,
     verify_n64_checksum,
@@ -80,3 +83,40 @@ def test_n64_header_and_checksum():
     rom_from_v64 = N64Rom(v64_bytes)
     assert rom_from_v64.verify_checksum() is True
     assert rom_from_v64.header.title == "SUPER MARIO 64"
+
+
+def test_n64_endianness_conversion_helpers():
+    # Test alias parsing
+    assert parse_byte_order("z64") == N64ByteOrder.BIG_ENDIAN
+    assert parse_byte_order(".z64") == N64ByteOrder.BIG_ENDIAN
+    assert parse_byte_order("big") == N64ByteOrder.BIG_ENDIAN
+    assert parse_byte_order("v64") == N64ByteOrder.BYTE_SWAPPED
+    assert parse_byte_order("byteswapped") == N64ByteOrder.BYTE_SWAPPED
+    assert parse_byte_order("n64") == N64ByteOrder.LITTLE_ENDIAN
+    assert parse_byte_order("little") == N64ByteOrder.LITTLE_ENDIAN
+
+    z64_data = b"\x80\x37\x12\x40\x11\x22\x33\x44"
+    v64_data = b"\x37\x80\x40\x12\x22\x11\x44\x33"
+    n64_data = b"\x40\x12\x37\x80\x44\x33\x22\x11"
+
+    # Direct conversions with aliases
+    assert convert_endianness(z64_data, "v64") == v64_data
+    assert convert_endianness(v64_data, "n64") == n64_data
+    assert convert_endianness(n64_data, "big") == z64_data
+    assert convert_endianness(v64_data, "byteswapped") == v64_data
+
+
+def test_n64_stream_convert_file(tmp_path):
+    z64_data = b"\x80\x37\x12\x40\x00\x00\x00\x0F" * 1024  # 8KB
+    src_file = tmp_path / "game.z64"
+    dst_file = tmp_path / "game.v64"
+    src_file.write_bytes(z64_data)
+
+    src_order, dst_order = convert_file_endianness(src_file, dst_file, target_order="v64", chunk_size=512)
+    assert src_order == N64ByteOrder.BIG_ENDIAN
+    assert dst_order == N64ByteOrder.BYTE_SWAPPED
+
+    converted_bytes = dst_file.read_bytes()
+    assert len(converted_bytes) == len(z64_data)
+    assert detect_byte_order(converted_bytes) == N64ByteOrder.BYTE_SWAPPED
+

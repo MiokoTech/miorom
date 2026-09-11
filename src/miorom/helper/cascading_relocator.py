@@ -49,7 +49,7 @@ class CascadingRelocator:
         if delta_bytes <= 0:
             return CascadingShiftReport(shift_boundary, 0, 0, 0, len(data))
 
-        # 1. Expand buffer at shift_boundary
+        # Expand buffer at shift boundary
         # Insert delta_bytes of 0x00 at shift_boundary
         tail = data[shift_boundary:]
         data[shift_boundary : shift_boundary + delta_bytes] = b"\x00" * delta_bytes
@@ -58,10 +58,10 @@ class CascadingRelocator:
         direct_count = 0
         boundary_ram = shift_boundary + ram_base
 
-        # 2. Update direct pointer tables
+        # Update direct pointer tables
         tables = direct_tables or []
         for tbl_off, count in tables:
-            # If the table itself was located after the boundary, its file offset shifted!
+            # Adjust table offset if located after boundary
             actual_tbl_off = tbl_off + (delta_bytes if tbl_off >= shift_boundary else 0)
             for i in range(count):
                 p_off = actual_tbl_off + i * 4
@@ -71,7 +71,7 @@ class CascadingRelocator:
                         struct.pack_into(f"{endian}I", data, p_off, val + delta_bytes)
                         direct_count += 1
 
-        # 3. Update split pointers (e.g. lis + addi in PPC, lui + addiu in MIPS)
+        # Update architecture split pointers
         split_count = 0
         splits = split_pointers or []
         for hi_off, lo_off in splits:

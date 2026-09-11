@@ -10,6 +10,9 @@ from miorom.platforms.n64.rom import (
     N64Header,
     N64Rom,
     detect_byte_order,
+    parse_byte_order,
+    convert_endianness,
+    convert_file_endianness,
     swap_from_big_endian,
     swap_to_big_endian,
 )
@@ -17,6 +20,9 @@ from miorom.platforms.n64.rom import (
 __all__ = [
     "N64ByteOrder",
     "detect_byte_order",
+    "parse_byte_order",
+    "convert_endianness",
+    "convert_file_endianness",
     "swap_to_big_endian",
     "swap_from_big_endian",
     "N64Header",

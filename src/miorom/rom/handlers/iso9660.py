@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional
 
 from miorom.rom.base import BaseRomHandler
 from miorom.platforms.iso.iso9660 import ISO9660
+from miorom.security import sanitize_extract_path
 
 
 class Iso9660RomHandler(BaseRomHandler):
@@ -22,15 +23,22 @@ class Iso9660RomHandler(BaseRomHandler):
             if data[pvd_off : pvd_off + 6] == b"\x01CD001":
                 return True
 
-        if filepath:
-            ext = os.path.splitext(filepath)[1].lower()
-            if ext in self.extensions and len(data) >= 17 * 2048:
-                pvd_off = 16 * 2048
-                return data[pvd_off : pvd_off + 6] == b"\x01CD001"
+        if filepath and os.path.isfile(filepath):
+            try:
+                with open(filepath, "rb") as f:
+                    f.seek(16 * 2048)
+                    pvd = f.read(6)
+                    return pvd == b"\x01CD001"
+            except OSError:
+                return False
 
         return False
 
     def unpack(self, data: bytes, output_dir: str, **kwargs) -> Dict[str, Any]:
+        filepath = kwargs.pop("filepath", None)
+        if filepath and os.path.isfile(filepath):
+            return self.unpack_file(filepath, output_dir, **kwargs)
+
         iso = ISO9660(data)
         sys_dir = os.path.join(output_dir, "sys")
         root_dir = os.path.join(output_dir, "root")
@@ -44,7 +52,7 @@ class Iso9660RomHandler(BaseRomHandler):
         files = iso.list_files()
         for f_path in files:
             content = iso.read_file(f_path)
-            dest = os.path.join(root_dir, f_path.lstrip("/"))
+            dest = sanitize_extract_path(root_dir, f_path)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             with open(dest, "wb") as f:
                 f.write(content)
@@ -54,6 +62,52 @@ class Iso9660RomHandler(BaseRomHandler):
             "platform": "ISO9660 Disc Image",
             "volume_id": iso.volume_id,
             "file_count": len(files),
+        }
+
+    def unpack_file(self, filepath: str, output_dir: str, **kwargs) -> Dict[str, Any]:
+        """Memory-efficient streaming unpack directly from ISO file without loading full disc to RAM."""
+        sys_dir = os.path.join(output_dir, "sys")
+        root_dir = os.path.join(output_dir, "root")
+        os.makedirs(sys_dir, exist_ok=True)
+        os.makedirs(root_dir, exist_ok=True)
+
+        # Stream copy to iso_base.bin in 64KB chunks
+        with open(filepath, "rb") as f_in, open(os.path.join(sys_dir, "iso_base.bin"), "wb") as f_out:
+            while True:
+                chunk = f_in.read(65536)
+                if not chunk:
+                    break
+                f_out.write(chunk)
+
+        # Read directory metadata header
+        file_size = os.path.getsize(filepath)
+        with open(filepath, "rb") as f_in:
+            hdr_bytes = f_in.read(min(file_size, 4 * 1024 * 1024))
+            iso = ISO9660(hdr_bytes)
+
+            files = iso.list_files()
+            for f_path in files:
+                entry = iso.get_entry(f_path)
+                if not entry:
+                    continue
+                dest = sanitize_extract_path(root_dir, f_path)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                f_in.seek(entry.lba * 2048)
+                with open(dest, "wb") as f_out:
+                    rem = entry.size
+                    while rem > 0:
+                        chunk = f_in.read(min(rem, 65536))
+                        if not chunk:
+                            break
+                        f_out.write(chunk)
+                        rem -= len(chunk)
+
+        return {
+            "format": self.name,
+            "platform": "ISO9660 Disc Image",
+            "volume_id": iso.volume_id,
+            "file_count": len(files),
+            "streaming": True,
         }
 
     def repack(self, input_dir: str, **kwargs) -> bytes:
@@ -80,7 +134,7 @@ class Iso9660RomHandler(BaseRomHandler):
                 with open(full_path, "rb") as f:
                     new_data = f.read()
 
-                # If file exists in ISO, replace it; if not and method exists, inject
+                # Replace file in ISO if found
                 entry = iso.get_entry(rel)
                 if entry is not None:
                     iso.replace_file(rel, new_data)

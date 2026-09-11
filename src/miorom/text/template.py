@@ -21,8 +21,7 @@ class GameTextTemplate:
         self.template = template
         self.variables: List[str] = self.VAR_PATTERN.findall(template)
 
-        # Build regex for reverse extraction
-        # Escape template literal parts, and replace {var} with capture groups
+        # Build extraction regex from template
         escaped = re.escape(template)
         pattern_str = re.sub(r"\\\{([A-Za-z0-9_]+)\\\}", r"(?P<\1>.+?)", escaped)
         self._regex = re.compile(f"^{pattern_str}$")

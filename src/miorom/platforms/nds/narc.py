@@ -88,7 +88,7 @@ class NARCArchive:
         if not cls.is_narc(data):
             raise ParseError("Data is not a valid Nintendo NARC archive.")
 
-        # Header (16 bytes): MAGIC (4), BOM (2), Version (2), FileSize (4), HeaderSize (2), Chunks (2)
+        # NARC header (16 bytes)
         narc_header = cls._Header.from_bytes(data, offset=0)
         bom = narc_header.bom
         version = narc_header.version
@@ -96,7 +96,7 @@ class NARCArchive:
         header_size = narc_header.header_size
         num_chunks = narc_header.num_chunks
 
-        # 1. BTAF section (File Allocation Table)
+        # File Allocation Table (BTAF)
         btaf_pos = header_size
         btaf_header = cls._SectionHeader.from_bytes(data, offset=btaf_pos)
         btaf_magic = btaf_header.magic
@@ -116,7 +116,7 @@ class NARCArchive:
             fat_entries.append((start_off, end_off))
             fat_ptr += 8
 
-        # 2. BTNF section (File Name Table)
+        # File Name Table (BTNF)
         btnf_pos = btaf_pos + btaf_size
         btnf_header = cls._SectionHeader.from_bytes(data, offset=btnf_pos)
         btnf_magic = btnf_header.magic
@@ -127,7 +127,7 @@ class NARCArchive:
         # Parse file names if BTNF is not dummy (size > 16)
         names = cls._parse_btnf_names(data[btnf_pos:btnf_pos + btnf_size], file_count)
 
-        # 3. GMIF section (Game Image File / Payload)
+        # Image payload (GMIF)
         gmif_pos = btnf_pos + btnf_size
         gmif_header = cls._SectionHeader.from_bytes(data, offset=gmif_pos)
         gmif_magic = gmif_header.magic
@@ -152,12 +152,11 @@ class NARCArchive:
 
     @classmethod
     def _parse_btnf_names(cls, btnf_data: bytes, file_count: int) -> List[str]:
-        # Minimal dummy BTNF is 16 bytes: 4s (BTNF), I (size=16), 8 bytes table
+        # Dummy BTNF check (<= 16 bytes)
         if len(btnf_data) <= 16:
             return [""] * file_count
 
-        # For simplicity, fallback to empty names if complex directory tree
-        # or parse sequential null-terminated strings
+        # Fallback to empty names on complex tree
         return [""] * file_count
 
     @classmethod
@@ -181,7 +180,7 @@ class NARCArchive:
         """Constructs a binary NARC archive from a list of byte payloads."""
         file_count = len(files)
 
-        # 1. Build GMIF payload with 4-byte alignment
+        # Build GMIF payload with 4-byte alignment
         gmif_body = bytearray()
         fat_offsets = []
 
@@ -204,7 +203,7 @@ class NARCArchive:
         gmif_section.extend(cls._SectionHeader(magic=cls.GMIF_MAGIC, size=len(gmif_body) + 8).to_bytes()[4:])
         gmif_section.extend(gmif_body)
 
-        # 2. Build BTAF section
+        # Build BTAF section
         btaf_body = bytearray()
         btaf_body.extend(cls._FatHeader(file_count=file_count, _reserved=0).to_bytes())
         for start, end in fat_offsets:
@@ -215,14 +214,14 @@ class NARCArchive:
         btaf_section.extend(cls._SectionHeader(magic=cls.BTAF_MAGIC, size=len(btaf_body) + 8).to_bytes()[4:])
         btaf_section.extend(btaf_body)
 
-        # 3. Build minimal dummy BTNF section (16 bytes)
+        # Build minimal BTNF section
         btnf_section = bytearray()
         btnf_section.extend(cls.BTNF_MAGIC)
         btnf_section.extend(cls._SectionHeader(magic=cls.BTNF_MAGIC, size=16).to_bytes()[4:])
         # 8 bytes standard root directory record
         btnf_section.extend(cls._BtNFRoot(root_offset=4, first_file_id=0, directory_count=1, _reserved=0).to_bytes())
 
-        # 4. Build NARC Header
+        # Build NARC header
         header_size = 16
         total_size = header_size + len(btaf_section) + len(btnf_section) + len(gmif_section)
 

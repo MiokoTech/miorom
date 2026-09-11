@@ -198,7 +198,7 @@ class U8Archive:
         nodes_info = []  # dict of entry attributes
         string_pool = bytearray(b"\x00")  # root name is empty string at 0
 
-        # Step 1: Collect files and directory structure
+        # Collect files and directory structure
         # Helper recursive builder
         node_index_counter = 0
 
@@ -245,7 +245,7 @@ class U8Archive:
         build_dir_nodes(input_dir, 0)
         total_nodes = len(nodes_info)
 
-        # Step 2: Build string pool and record name offsets
+        # Build string pool and record offsets
         for node in nodes_info:
             if node["index"] == 0:
                 node["name_offset"] = 0
@@ -254,13 +254,13 @@ class U8Archive:
                 node["name_offset"] = len(string_pool)
                 string_pool.extend(name_bytes)
 
-        # Step 3: Calculate offsets and alignments
+        # Align section offsets
         root_node_offset = 0x20
         nodes_size = total_nodes * 12
         header_size = nodes_size + len(string_pool)
         data_offset = (root_node_offset + header_size + 31) & ~31
 
-        # Step 4: Calculate file data offsets
+        # Calculate file offsets
         curr_file_offset = data_offset
         file_payloads = []
         for node in nodes_info:
@@ -272,7 +272,7 @@ class U8Archive:
                 # 32-byte align for next file
                 curr_file_offset = (curr_file_offset + len(content) + 31) & ~31
 
-        # Step 5: Build binary archive
+        # Build archive binary
         out = bytearray()
         archive_header = U8HeaderStruct(
             magic=b"\x55\xAA\x38\x2D",

@@ -72,7 +72,7 @@ class SpeculativeStreamCarver:
         if len(data) < 4:
             return None
 
-        # 1. Try standard zlib
+        # Standard zlib stream
         for wbits, fmt_name in [(15, "zlib"), (-15, "deflate_raw")]:
             try:
                 decompressor = zlib.decompressobj(wbits)
@@ -106,12 +106,12 @@ class SpeculativeStreamCarver:
         while i <= data_len - 8:
             found = False
 
-            # 1. Check zlib / raw deflate
+            # Zlib and raw deflate streams
             if check_zlib:
                 # Filter obvious non-zlib header to speed up sweep
                 b0 = data[i]
                 b1 = data[i + 1]
-                # Standard zlib header has CMF=0x78 (Deflate with 32K window) and valid FCHECK
+                # Standard zlib header validation
                 is_zlib_header = (b0 == 0x78) and (((b0 << 8) | b1) % 31 == 0)
                 if is_zlib_header:
                     res = cls.probe_zlib_deflate(
@@ -136,7 +136,7 @@ class SpeculativeStreamCarver:
                         found = True
                         continue
 
-            # 2. Check Nintendo formats (LZ10, LZ11, RLE, Yaz0)
+            # Nintendo formats (LZ10, LZ11, RLE, Yaz0)
             if check_nintendo and not found:
                 magic = data[i]
                 if magic in (0x10, 0x11, 0x30) or data[i : i + 4] == b"Yaz0":

@@ -50,6 +50,8 @@ class CharMap:
 
     def decode(self, data: bytes, end_bytes: Optional[bytes] = None) -> str:
         """Decode a byte buffer into a string using the character table."""
+        if not isinstance(data, bytes):
+            data = bytes(data)
         chars = []
         i = 0
         data_len = len(data)
@@ -75,8 +77,14 @@ class CharMap:
 
         return "".join(chars)
 
-    def encode(self, text: str) -> bytes:
-        """Encode a string into bytes using the character table."""
+    def encode(self, text: str, strict: bool = False) -> bytes:
+        """Encode a string into bytes using the character table.
+
+        Args:
+            text: The text string to encode.
+            strict: If True, raises ValueError on any unmapped character instead of
+                falling back to single-byte truncation.
+        """
         out = bytearray()
         i = 0
         text_len = len(text)
@@ -105,6 +113,8 @@ class CharMap:
                     break
 
             if not matched:
+                if strict:
+                    raise ValueError(f"Unmapped character {text[i]!r} (U+{ord(text[i]):04X}) at index {i}")
                 # Fallback to ascii/utf-8 single byte if possible
                 out.append(ord(text[i]) & 0xFF)
                 i += 1

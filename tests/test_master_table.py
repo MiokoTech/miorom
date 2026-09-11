@@ -54,3 +54,35 @@ def test_update_footer_anchored_fields():
     )
     assert results[4] == 110
     assert struct.unpack_from("<H", new_data, 4)[0] == 110
+
+
+def test_master_table_entry_bounds_and_set_entry():
+    # 4 entries, format <II (record: [size, offset])
+    payloads = [b"AAA", b"BBBB", b"CCCCC", b"DDDDDD"]
+    header_size = 4 * 8
+    buf = bytearray(header_size)
+    cur = header_size
+    for i, p in enumerate(payloads):
+        struct.pack_into("<II", buf, i * 8, len(p), cur)
+        buf.extend(p)
+        cur += len(p)
+
+    archive = MasterTableArchive(bytes(buf), table_entries=4, record_format="<II")
+
+    # Test get_entry
+    assert archive.get_entry(0, offset_field_idx=1, size_field_idx=0) == b"AAA"
+    assert archive.get_entry(2, offset_field_idx=1, size_field_idx=0) == b"CCCCC"
+
+    # Test pristine entry
+    assert archive.get_pristine_entry(1, offset_field_idx=1, size_field_idx=0) == b"BBBB"
+
+    # Test set_entry with automatic size and offset cascading
+    delta = archive.set_entry(1, b"BBBB_EXTENDED", offset_field_idx=1, size_field_idx=0, auto_cascade=True)
+    assert delta == len(b"_EXTENDED")
+
+    # Check that entry 1 was updated and entry 2, 3 offsets cascaded
+    assert archive.get_entry(1, offset_field_idx=1, size_field_idx=0) == b"BBBB_EXTENDED"
+    assert archive.get_entry(2, offset_field_idx=1, size_field_idx=0) == b"CCCCC"
+    assert archive.get_entry(3, offset_field_idx=1, size_field_idx=0) == b"DDDDDD"
+    assert archive.table[2][1] == archive.get_pristine_record(2)[1] + delta
+

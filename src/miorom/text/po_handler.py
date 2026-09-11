@@ -204,13 +204,13 @@ class PoHandler:
         """Serialize catalog to GNU gettext PO formatted string."""
         blocks = []
 
-        # 1. Header block
+        # PO header block
         header_lines = ['msgid ""', 'msgstr ""']
         for k, v in self.headers.items():
             header_lines.append(f'"{k}: {v}\\n"')
         blocks.append("\n".join(header_lines))
 
-        # 2. Entries
+        # Translation entries
         for e in self.entries:
             entry_lines = []
             for c in e.comments:

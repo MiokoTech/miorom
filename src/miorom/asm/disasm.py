@@ -47,6 +47,7 @@ class _DisassembleDescriptor:
                 arch: Optional[str] = None,
                 endian: Optional[str] = None,
                 max_instructions: Optional[int] = None,
+                **kwargs,
             ) -> List[DisasmInstruction]:
                 target_arch = arch or instance.arch
                 target_endian = endian or instance.endian
@@ -56,6 +57,7 @@ class _DisassembleDescriptor:
                     arch=target_arch,
                     endian=target_endian,
                     max_instructions=max_instructions,
+                    **kwargs,
                 )
             return _instance_disassemble
         else:
@@ -65,6 +67,7 @@ class _DisassembleDescriptor:
                 arch: str = "ppc",
                 endian: Optional[str] = None,
                 max_instructions: Optional[int] = None,
+                **kwargs,
             ) -> List[DisasmInstruction]:
                 return owner._disassemble_impl(
                     data=data,
@@ -72,13 +75,14 @@ class _DisassembleDescriptor:
                     arch=arch,
                     endian=endian,
                     max_instructions=max_instructions,
+                    **kwargs,
                 )
             return _class_disassemble
 
 
 class UniversalDisassembler:
     """
-    Multi-architecture instruction disassembler supporting PowerPC, ARM, Thumb, and MIPS.
+    Multi-architecture instruction disassembler supporting PowerPC, ARM, Thumb, MIPS, SM83, M68K, MOS 6502, and W65C816.
     Parses instruction bitfields into structured DisasmInstruction objects with target resolution.
     """
 
@@ -95,6 +99,8 @@ class UniversalDisassembler:
         raw_bytes: bytes,
         arch: str = "ppc",
         endian: Optional[str] = None,
+        m16: bool = False,
+        x16: bool = False,
     ) -> DisasmInstruction:
         arch_norm = arch.lower()
         end_char = "<"
@@ -121,6 +127,10 @@ class UniversalDisassembler:
             return cls._disasm_sm83(address, raw_bytes)
         elif arch_norm in ("m68k", "68000", "md", "genesis", "megadrive"):
             return cls._disasm_m68k(address, raw_bytes)
+        elif arch_norm in ("6502", "nes", "famicom", "2a03"):
+            return cls._disasm_6502(address, raw_bytes)
+        elif arch_norm in ("65816", "snes", "sfc", "5a22", "w65c816"):
+            return cls._disasm_65816(address, raw_bytes, m16=m16, x16=x16)
         else:
             raise UnsupportedFormatError(f"Unsupported architecture: '{arch}'")
 
@@ -241,12 +251,13 @@ class UniversalDisassembler:
             uimm = instr & 0xFFFF
             return DisasmInstruction(address, raw, "ori", [f"r{ra}", f"r{rs}", f"0x{uimm:04X}"])
 
-        # Load / Store words (lwz=32, stw=36)
-        if opcode in (32, 36):
+        # Load / Store words (lwz=32, lwzu=33, stw=36, stwu=37)
+        if opcode in (32, 33, 36, 37):
             rt = (instr >> 21) & 0x1F
             ra = (instr >> 16) & 0x1F
             d = struct.unpack(">h", struct.pack(">H", instr & 0xFFFF))[0]
-            mnem = "lwz" if opcode == 32 else "stw"
+            mnem_map = {32: "lwz", 33: "lwzu", 36: "stw", 37: "stwu"}
+            mnem = mnem_map[opcode]
             return DisasmInstruction(address, raw, mnem, [f"r{rt}", f"{d}(r{ra})"])
 
         # Special opcode 31
@@ -256,6 +267,12 @@ class UniversalDisassembler:
             ra = (instr >> 16) & 0x1F
             rb = (instr >> 11) & 0x1F
 
+            # or / mr (xo 444)
+            if xo == 444:
+                rs = rt
+                if rs == rb:
+                    return DisasmInstruction(address, raw, "mr", [f"r{ra}", f"r{rs}"])
+                return DisasmInstruction(address, raw, "or", [f"r{ra}", f"r{rs}", f"r{rb}"])
             # mflr (xo 339, ra=8)
             if xo == 339 and ra == 8:
                 return DisasmInstruction(address, raw, "mflr", [f"r{rt}"])
@@ -419,25 +436,354 @@ class UniversalDisassembler:
         instr = struct.unpack(f"{endian}H", data[:2])[0]
         raw = data[:2]
 
-        # BX Rm
-        if (instr & 0xFF87) == 0x4700:
-            rm = (instr >> 3) & 0xF
+        def _t_reg(r: int) -> str:
+            if r == 13:
+                return "sp"
+            elif r == 14:
+                return "lr"
+            elif r == 15:
+                return "pc"
+            return f"r{r}"
+
+        # ------------------------------------------------------------------
+        # Format 19: Long branch with link (BL) - 32-bit (2 halfwords)
+        # First halfword: 11110_Offset11 (0xF000..0xF7FF)
+        # Second halfword: 11111_Offset11 (0xF800..0xFFFF)
+        # ------------------------------------------------------------------
+        if (instr >> 11) == 0b11110 and len(data) >= 4:
+            instr2 = struct.unpack(f"{endian}H", data[2:4])[0]
+            if (instr2 >> 11) == 0b11111:
+                raw4 = data[:4]
+                off_h = instr & 0x7FF
+                if off_h & 0x400:
+                    off_h -= 0x800
+                off_l = instr2 & 0x7FF
+                diff = (off_h << 12) + (off_l << 1)
+                target = (address + 4 + diff) & 0xFFFFFFFF
+                return DisasmInstruction(
+                    address=address,
+                    raw_bytes=raw4,
+                    mnemonic="bl",
+                    operands=[f"0x{target:08X}"],
+                    target_address=target,
+                    is_call=True,
+                )
+
+        # ------------------------------------------------------------------
+        # Format 1: Move shifted register
+        # 000_Op_Offset5_Rs_Rd (Op: 00=lsl, 01=lsr, 10=asr)
+        # ------------------------------------------------------------------
+        if (instr >> 13) == 0 and (instr >> 11) in (0, 1, 2):
+            op = (instr >> 11) & 0x3
+            offset5 = (instr >> 6) & 0x1F
+            rs = (instr >> 3) & 0x7
+            rd = instr & 0x7
+            mnems = ["lsl", "lsr", "asr"]
             return DisasmInstruction(
                 address=address,
                 raw_bytes=raw,
-                mnemonic="bx",
-                operands=[f"r{rm}" if rm != 14 else "lr"],
-                is_branch=True,
-                is_return=(rm == 14),
+                mnemonic=mnems[op],
+                operands=[f"r{rd}", f"r{rs}", f"#{offset5}"],
             )
 
-        # Unconditional branch B (format 18: 0b11100 + 11-bit imm)
+        # ------------------------------------------------------------------
+        # Format 2: Add / subtract register or 3-bit immediate
+        # 00011_I_Op_Rn/Offset3_Rs_Rd
+        # ------------------------------------------------------------------
+        if (instr >> 11) == 3:
+            imm_flag = (instr >> 10) & 1
+            sub_flag = (instr >> 9) & 1
+            rn_imm = (instr >> 6) & 0x7
+            rs = (instr >> 3) & 0x7
+            rd = instr & 0x7
+            mnemonic = "sub" if sub_flag else "add"
+            op3 = f"#{rn_imm}" if imm_flag else f"r{rn_imm}"
+            return DisasmInstruction(
+                address=address,
+                raw_bytes=raw,
+                mnemonic=mnemonic,
+                operands=[f"r{rd}", f"r{rs}", op3],
+            )
+
+        # ------------------------------------------------------------------
+        # Format 3: Move/compare/add/subtract immediate
+        # 001_Op_Rd_Offset8 (Op: 00=mov, 01=cmp, 10=add, 11=sub)
+        # ------------------------------------------------------------------
+        if (instr >> 13) == 1:
+            op = (instr >> 11) & 0x3
+            rd = (instr >> 8) & 0x7
+            imm8 = instr & 0xFF
+            mnems = ["mov", "cmp", "add", "sub"]
+            return DisasmInstruction(
+                address=address,
+                raw_bytes=raw,
+                mnemonic=mnems[op],
+                operands=[f"r{rd}", f"#{imm8}"],
+            )
+
+        # ------------------------------------------------------------------
+        # Format 4: ALU operations
+        # 010000_Op_Rs_Rd (16 opcodes)
+        # ------------------------------------------------------------------
+        if (instr >> 10) == 0b010000:
+            op = (instr >> 6) & 0xF
+            rs = (instr >> 3) & 0x7
+            rd = instr & 0x7
+            ALU_OPS = [
+                "and", "eor", "lsl", "lsr", "asr", "adc", "sbc", "ror",
+                "tst", "neg", "cmp", "cmn", "orr", "mul", "bic", "mvn",
+            ]
+            return DisasmInstruction(
+                address=address,
+                raw_bytes=raw,
+                mnemonic=ALU_OPS[op],
+                operands=[f"r{rd}", f"r{rs}"],
+            )
+
+        # ------------------------------------------------------------------
+        # Format 5: Hi register operations / branch exchange
+        # 010001_Op_H1_H2_Rs_Rd
+        # ------------------------------------------------------------------
+        if (instr >> 10) == 0b010001:
+            op = (instr >> 8) & 0x3
+            h1 = (instr >> 7) & 1
+            h2 = (instr >> 6) & 1
+            rd = (h1 << 3) | (instr & 0x7)
+            rm = (h2 << 3) | ((instr >> 3) & 0x7)
+            if op == 0:
+                return DisasmInstruction(address=address, raw_bytes=raw, mnemonic="add", operands=[_t_reg(rd), _t_reg(rm)])
+            elif op == 1:
+                return DisasmInstruction(address=address, raw_bytes=raw, mnemonic="cmp", operands=[_t_reg(rd), _t_reg(rm)])
+            elif op == 2:
+                return DisasmInstruction(address=address, raw_bytes=raw, mnemonic="mov", operands=[_t_reg(rd), _t_reg(rm)])
+            elif op == 3:
+                # BX Rm
+                is_ret = (rm == 14)
+                return DisasmInstruction(
+                    address=address,
+                    raw_bytes=raw,
+                    mnemonic="bx",
+                    operands=[_t_reg(rm)],
+                    is_branch=True,
+                    is_return=is_ret,
+                )
+
+        # ------------------------------------------------------------------
+        # Format 6: PC-relative load
+        # 01001_Rd_Word8
+        # ------------------------------------------------------------------
+        if (instr >> 11) == 0b01001:
+            rd = (instr >> 8) & 0x7
+            word8 = instr & 0xFF
+            offset = word8 * 4
+            target = ((address + 4) & ~2) + offset
+            return DisasmInstruction(
+                address=address,
+                raw_bytes=raw,
+                mnemonic="ldr",
+                operands=[f"r{rd}", f"[pc, #{offset}]"],
+                comment=f"=0x{target:08X}",
+            )
+
+        # ------------------------------------------------------------------
+        # Format 7: Load/store with register offset
+        # 0101_L_B_0_Ro_Rb_Rd
+        # ------------------------------------------------------------------
+        if (instr >> 12) == 0b0101 and ((instr >> 9) & 1) == 0:
+            l_bit = (instr >> 11) & 1
+            b_bit = (instr >> 10) & 1
+            ro = (instr >> 6) & 0x7
+            rb = (instr >> 3) & 0x7
+            rd = instr & 0x7
+            if l_bit == 0:
+                mnemonic = "strb" if b_bit else "str"
+            else:
+                mnemonic = "ldrb" if b_bit else "ldr"
+            return DisasmInstruction(
+                address=address,
+                raw_bytes=raw,
+                mnemonic=mnemonic,
+                operands=[f"r{rd}", f"[r{rb}, r{ro}]"],
+            )
+
+        # ------------------------------------------------------------------
+        # Format 8: Load/store sign-extended byte/halfword
+        # 0101_H_S_1_Ro_Rb_Rd
+        # ------------------------------------------------------------------
+        if (instr >> 12) == 0b0101 and ((instr >> 9) & 1) == 1:
+            h_bit = (instr >> 11) & 1
+            s_bit = (instr >> 10) & 1
+            ro = (instr >> 6) & 0x7
+            rb = (instr >> 3) & 0x7
+            rd = instr & 0x7
+            op_code = (h_bit << 1) | s_bit
+            mnems = ["strh", "ldsb", "ldrh", "ldsh"]
+            return DisasmInstruction(
+                address=address,
+                raw_bytes=raw,
+                mnemonic=mnems[op_code],
+                operands=[f"r{rd}", f"[r{rb}, r{ro}]"],
+            )
+
+        # ------------------------------------------------------------------
+        # Format 9: Load/store with immediate offset
+        # 011_B_L_Offset5_Rb_Rd
+        # ------------------------------------------------------------------
+        if (instr >> 13) == 0b011:
+            b_bit = (instr >> 12) & 1
+            l_bit = (instr >> 11) & 1
+            offset5 = (instr >> 6) & 0x1F
+            rb = (instr >> 3) & 0x7
+            rd = instr & 0x7
+            if b_bit == 0:
+                mnemonic = "ldr" if l_bit else "str"
+                offset = offset5 * 4
+            else:
+                mnemonic = "ldrb" if l_bit else "strb"
+                offset = offset5
+            ops = [f"r{rd}", f"[r{rb}, #{offset}]" if offset != 0 else f"[r{rb}]"]
+            return DisasmInstruction(address=address, raw_bytes=raw, mnemonic=mnemonic, operands=ops)
+
+        # ------------------------------------------------------------------
+        # Format 10: Load/store halfword
+        # 1000_L_Offset5_Rb_Rd
+        # ------------------------------------------------------------------
+        if (instr >> 12) == 0b1000:
+            l_bit = (instr >> 11) & 1
+            offset5 = (instr >> 6) & 0x1F
+            rb = (instr >> 3) & 0x7
+            rd = instr & 0x7
+            offset = offset5 * 2
+            mnemonic = "ldrh" if l_bit else "strh"
+            ops = [f"r{rd}", f"[r{rb}, #{offset}]" if offset != 0 else f"[r{rb}]"]
+            return DisasmInstruction(address=address, raw_bytes=raw, mnemonic=mnemonic, operands=ops)
+
+        # ------------------------------------------------------------------
+        # Format 11: SP-relative load/store
+        # 1001_L_Rd_Word8
+        # ------------------------------------------------------------------
+        if (instr >> 12) == 0b1001:
+            l_bit = (instr >> 11) & 1
+            rd = (instr >> 8) & 0x7
+            word8 = instr & 0xFF
+            offset = word8 * 4
+            mnemonic = "ldr" if l_bit else "str"
+            ops = [f"r{rd}", f"[sp, #{offset}]" if offset != 0 else "[sp]"]
+            return DisasmInstruction(address=address, raw_bytes=raw, mnemonic=mnemonic, operands=ops)
+
+        # ------------------------------------------------------------------
+        # Format 12: Load address
+        # 1010_SP_Rd_Word8
+        # ------------------------------------------------------------------
+        if (instr >> 12) == 0b1010:
+            sp_bit = (instr >> 11) & 1
+            rd = (instr >> 8) & 0x7
+            word8 = instr & 0xFF
+            offset = word8 * 4
+            src_reg = "sp" if sp_bit else "pc"
+            return DisasmInstruction(
+                address=address,
+                raw_bytes=raw,
+                mnemonic="add",
+                operands=[f"r{rd}", src_reg, f"#{offset}"],
+            )
+
+        # ------------------------------------------------------------------
+        # Format 13: Add offset to Stack Pointer
+        # 10110000_S_Word7
+        # ------------------------------------------------------------------
+        if (instr >> 8) == 0b10110000:
+            s_bit = (instr >> 7) & 1
+            word7 = instr & 0x7F
+            offset = word7 * 4
+            mnemonic = "sub" if s_bit else "add"
+            return DisasmInstruction(address=address, raw_bytes=raw, mnemonic=mnemonic, operands=["sp", f"#{offset}"])
+
+        # ------------------------------------------------------------------
+        # Format 14: Push/pop register list
+        # 1011_L_10_R_Rlist
+        # ------------------------------------------------------------------
+        if (instr >> 12) == 0b1011 and ((instr >> 9) & 3) == 2:
+            l_bit = (instr >> 11) & 1
+            r_bit = (instr >> 8) & 1
+            rlist = instr & 0xFF
+            reg_names = [f"r{i}" for i in range(8) if (rlist & (1 << i))]
+            if r_bit:
+                reg_names.append("pc" if l_bit else "lr")
+            mnemonic = "pop" if l_bit else "push"
+            is_ret = (l_bit == 1 and r_bit == 1)
+            return DisasmInstruction(
+                address=address,
+                raw_bytes=raw,
+                mnemonic=mnemonic,
+                operands=["{" + ", ".join(reg_names) + "}"],
+                is_branch=is_ret,
+                is_return=is_ret,
+            )
+
+        # ------------------------------------------------------------------
+        # Format 15: Multiple load/store (stmia / ldmia)
+        # 1100_L_Rb_Rlist
+        # ------------------------------------------------------------------
+        if (instr >> 12) == 0b1100:
+            l_bit = (instr >> 11) & 1
+            rb = (instr >> 8) & 0x7
+            rlist = instr & 0xFF
+            reg_names = [f"r{i}" for i in range(8) if (rlist & (1 << i))]
+            mnemonic = "ldmia" if l_bit else "stmia"
+            return DisasmInstruction(
+                address=address,
+                raw_bytes=raw,
+                mnemonic=mnemonic,
+                operands=[f"r{rb}!", "{" + ", ".join(reg_names) + "}"],
+            )
+
+        # ------------------------------------------------------------------
+        # Format 17: Software interrupt (SWI)
+        # 11011111_Value8
+        # ------------------------------------------------------------------
+        if (instr >> 8) == 0xDF:
+            val8 = instr & 0xFF
+            return DisasmInstruction(
+                address=address,
+                raw_bytes=raw,
+                mnemonic="swi",
+                operands=[f"0x{val8:02X}"],
+                is_call=True,
+            )
+
+        # ------------------------------------------------------------------
+        # Format 16: Conditional branch
+        # 1101_Cond_Offset8
+        # ------------------------------------------------------------------
+        if (instr >> 12) == 0b1101:
+            cond = (instr >> 8) & 0xF
+            COND_MNEMS = [
+                "beq", "bne", "bcs", "bcc", "bmi", "bpl", "bvs", "bvc",
+                "bhi", "bls", "bge", "blt", "bgt", "ble",
+            ]
+            if cond < len(COND_MNEMS):
+                mnemonic = COND_MNEMS[cond]
+                imm8 = instr & 0xFF
+                diff = (imm8 - 0x100 if imm8 & 0x80 else imm8) << 1
+                target = (address + 4 + diff) & 0xFFFFFFFF
+                return DisasmInstruction(
+                    address=address,
+                    raw_bytes=raw,
+                    mnemonic=mnemonic,
+                    operands=[f"0x{target:08X}"],
+                    target_address=target,
+                    is_branch=True,
+                    is_conditional=True,
+                )
+
+        # ------------------------------------------------------------------
+        # Format 18: Unconditional branch (B)
+        # 11100_Offset11
+        # ------------------------------------------------------------------
         if (instr >> 11) == 0b11100:
             imm11 = instr & 0x7FF
-            if imm11 & 0x400:
-                diff = (imm11 - 0x800) << 1
-            else:
-                diff = imm11 << 1
+            diff = (imm11 - 0x800 if imm11 & 0x400 else imm11) << 1
             target = (address + 4 + diff) & 0xFFFFFFFF
             return DisasmInstruction(
                 address=address,
@@ -736,6 +1082,259 @@ class UniversalDisassembler:
             return DisasmInstruction(address, data[:2], "moveq", [f"#{data_val}", f"d{reg}"])
         return DisasmInstruction(address, data[:2], ".word", [f"0x{w0:04X}"])
 
+    _OPCODES_65816 = {
+        0x00: ("brk", "imm8"), 0x01: ("ora", "dpix"), 0x02: ("cop", "imm8"), 0x03: ("ora", "sr"),
+        0x04: ("tsb", "dp"),   0x05: ("ora", "dp"),   0x06: ("asl", "dp"),   0x07: ("ora", "dpil"),
+        0x08: ("php", "imp"),  0x09: ("ora", "imm_m"),0x0A: ("asl", "imp"),  0x0B: ("phd", "imp"),
+        0x0C: ("tsb", "abs"),  0x0D: ("ora", "abs"),  0x0E: ("asl", "abs"),  0x0F: ("ora", "absl"),
+        0x10: ("bpl", "rel"),  0x11: ("ora", "dpiy"), 0x12: ("ora", "dpi"),  0x13: ("ora", "sriy"),
+        0x14: ("trb", "dp"),   0x15: ("ora", "dpx"),  0x16: ("asl", "dpx"),  0x17: ("ora", "dpily"),
+        0x18: ("clc", "imp"),  0x19: ("ora", "aby"),  0x1A: ("inc", "imp"),  0x1B: ("tcs", "imp"),
+        0x1C: ("trb", "abs"),  0x1D: ("ora", "abx"),  0x1E: ("asl", "abx"),  0x1F: ("ora", "abslx"),
+        0x20: ("jsr", "abs"),  0x21: ("and", "dpix"), 0x22: ("jsl", "absl"), 0x23: ("and", "sr"),
+        0x24: ("bit", "dp"),   0x25: ("and", "dp"),   0x26: ("rol", "dp"),   0x27: ("and", "dpil"),
+        0x28: ("plp", "imp"),  0x29: ("and", "imm_m"),0x2A: ("rol", "imp"),  0x2B: ("pld", "imp"),
+        0x2C: ("bit", "abs"),  0x2D: ("and", "abs"),  0x2E: ("rol", "abs"),  0x2F: ("and", "absl"),
+        0x30: ("bmi", "rel"),  0x31: ("and", "dpiy"), 0x32: ("and", "dpi"),  0x33: ("and", "sriy"),
+        0x34: ("bit", "dpx"),  0x35: ("and", "dpx"),  0x36: ("rol", "dpx"),  0x37: ("and", "dpily"),
+        0x38: ("sec", "imp"),  0x39: ("and", "aby"),  0x3A: ("dec", "imp"),  0x3B: ("tsc", "imp"),
+        0x3C: ("bit", "abx"),  0x3D: ("and", "abx"),  0x3E: ("rol", "abx"),  0x3F: ("and", "abslx"),
+        0x40: ("rti", "imp"),  0x41: ("eor", "dpix"), 0x42: ("wdm", "imm8"), 0x43: ("eor", "sr"),
+        0x44: ("mvp", "bm"),   0x45: ("eor", "dp"),   0x46: ("lsr", "dp"),   0x47: ("eor", "dpil"),
+        0x48: ("pha", "imp"),  0x49: ("eor", "imm_m"),0x4A: ("lsr", "imp"),  0x4B: ("phk", "imp"),
+        0x4C: ("jmp", "abs"),  0x4D: ("eor", "abs"),  0x4E: ("lsr", "abs"),  0x4F: ("eor", "absl"),
+        0x50: ("bvc", "rel"),  0x51: ("eor", "dpiy"), 0x52: ("eor", "dpi"),  0x53: ("eor", "sriy"),
+        0x54: ("mvn", "bm"),   0x55: ("eor", "dpx"),  0x56: ("lsr", "dpx"),  0x57: ("eor", "dpily"),
+        0x58: ("cli", "imp"),  0x59: ("eor", "aby"),  0x5A: ("phy", "imp"),  0x5B: ("tcd", "imp"),
+        0x5C: ("jml", "absl"), 0x5D: ("eor", "abx"),  0x5E: ("lsr", "abx"),  0x5F: ("eor", "abslx"),
+        0x60: ("rts", "imp"),  0x61: ("adc", "dpix"), 0x62: ("per", "rell"), 0x63: ("adc", "sr"),
+        0x64: ("stz", "dp"),   0x65: ("adc", "dp"),   0x66: ("ror", "dp"),   0x67: ("adc", "dpil"),
+        0x68: ("pla", "imp"),  0x69: ("adc", "imm_m"),0x6A: ("ror", "imp"),  0x6B: ("rtl", "imp"),
+        0x6C: ("jmp", "abi"),  0x6D: ("adc", "abs"),  0x6E: ("ror", "abs"),  0x6F: ("adc", "absl"),
+        0x70: ("bvs", "rel"),  0x71: ("adc", "dpiy"), 0x72: ("adc", "dpi"),  0x73: ("adc", "sriy"),
+        0x74: ("stz", "dpx"),  0x75: ("adc", "dpx"),  0x76: ("ror", "dpx"),  0x77: ("adc", "dpily"),
+        0x78: ("sei", "imp"),  0x79: ("adc", "aby"),  0x7A: ("ply", "imp"),  0x7B: ("tdc", "imp"),
+        0x7C: ("jmp", "abix"), 0x7D: ("adc", "abx"),  0x7E: ("ror", "abx"),  0x7F: ("adc", "abslx"),
+        0x80: ("bra", "rel"),  0x81: ("sta", "dpix"), 0x82: ("brl", "rell"), 0x83: ("sta", "sr"),
+        0x84: ("sty", "dp"),   0x85: ("sta", "dp"),   0x86: ("stx", "dp"),   0x87: ("sta", "dpil"),
+        0x88: ("dey", "imp"),  0x89: ("bit", "imm_m"),0x8A: ("txa", "imp"),  0x8B: ("phb", "imp"),
+        0x8C: ("sty", "abs"),  0x8D: ("sta", "abs"),  0x8E: ("stx", "abs"),  0x8F: ("sta", "absl"),
+        0x90: ("bcc", "rel"),  0x91: ("sta", "dpiy"), 0x92: ("sta", "dpi"),  0x93: ("sta", "sriy"),
+        0x94: ("sty", "dpx"),  0x95: ("sta", "dpx"),  0x96: ("stx", "dpy"),  0x97: ("sta", "dpily"),
+        0x98: ("tya", "imp"),  0x99: ("sta", "aby"),  0x9A: ("txs", "imp"),  0x9B: ("txy", "imp"),
+        0x9C: ("stz", "abs"),  0x9D: ("sta", "abx"),  0x9E: ("stz", "abx"),  0x9F: ("sta", "abslx"),
+        0xA0: ("ldy", "imm_x"),0xA1: ("lda", "dpix"), 0xA2: ("ldx", "imm_x"),0xA3: ("lda", "sr"),
+        0xA4: ("ldy", "dp"),   0xA5: ("lda", "dp"),   0xA6: ("ldx", "dp"),   0xA7: ("lda", "dpil"),
+        0xA8: ("tay", "imp"),  0xA9: ("lda", "imm_m"),0xAA: ("tax", "imp"),  0xAB: ("plb", "imp"),
+        0xAC: ("ldy", "abs"),  0xAD: ("lda", "abs"),  0xAE: ("ldx", "abs"),  0xAF: ("lda", "absl"),
+        0xB0: ("bcs", "rel"),  0xB1: ("lda", "dpiy"), 0xB2: ("lda", "dpi"),  0xB3: ("lda", "sriy"),
+        0xB4: ("ldy", "dpx"),  0xB5: ("lda", "dpx"),  0xB6: ("ldx", "dpy"),  0xB7: ("lda", "dpily"),
+        0xB8: ("clv", "imp"),  0xB9: ("lda", "aby"),  0xBA: ("tsx", "imp"),  0xBB: ("tyx", "imp"),
+        0xBC: ("ldy", "abx"),  0xBD: ("lda", "abx"),  0xBE: ("ldx", "aby"),  0xBF: ("lda", "abslx"),
+        0xC0: ("cpy", "imm_x"),0xC1: ("cmp", "dpix"), 0xC2: ("rep", "imm8"), 0xC3: ("cmp", "sr"),
+        0xC4: ("cpy", "dp"),   0xC5: ("cmp", "dp"),   0xC6: ("dec", "dp"),   0xC7: ("cmp", "dpil"),
+        0xC8: ("iny", "imp"),  0xC9: ("cmp", "imm_m"),0xCA: ("dex", "imp"),  0xCB: ("wai", "imp"),
+        0xCC: ("cpy", "abs"),  0xCD: ("cmp", "abs"),  0xCE: ("dec", "abs"),  0xCF: ("cmp", "absl"),
+        0xD0: ("bne", "rel"),  0xD1: ("cmp", "dpiy"), 0xD2: ("cmp", "dpi"),  0xD3: ("cmp", "sriy"),
+        0xD4: ("pei", "dpi"),  0xD5: ("cmp", "dpx"),  0xD6: ("dec", "dpx"),  0xD7: ("cmp", "dpily"),
+        0xD8: ("cld", "imp"),  0xD9: ("cmp", "aby"),  0xDA: ("phx", "imp"),  0xDB: ("stp", "imp"),
+        0xDC: ("jml", "abil"), 0xDD: ("cmp", "abx"),  0xDE: ("dec", "abx"),  0xDF: ("cmp", "abslx"),
+        0xE0: ("cpx", "imm_x"),0xE1: ("sbc", "dpix"), 0xE2: ("sep", "imm8"), 0xE3: ("sbc", "sr"),
+        0xE4: ("cpx", "dp"),   0xE5: ("sbc", "dp"),   0xE6: ("inc", "dp"),   0xE7: ("sbc", "dpil"),
+        0xE8: ("inx", "imp"),  0xE9: ("sbc", "imm_m"),0xEA: ("nop", "imp"),  0xEB: ("xba", "imp"),
+        0xEC: ("cpx", "abs"),  0xED: ("sbc", "abs"),  0xEE: ("inc", "abs"),  0xEF: ("sbc", "absl"),
+        0xF0: ("beq", "rel"),  0xF1: ("sbc", "dpiy"), 0xF2: ("sbc", "dpi"),  0xF3: ("sbc", "sriy"),
+        0xF4: ("pea", "imm16"),0xF5: ("sbc", "dpx"),  0xF6: ("inc", "dpx"),  0xF7: ("sbc", "dpily"),
+        0xF8: ("sed", "imp"),  0xF9: ("sbc", "aby"),  0xFA: ("plx", "imp"),  0xFB: ("xce", "imp"),
+        0xFC: ("jsr", "abix"), 0xFD: ("sbc", "abx"),  0xFE: ("inc", "abx"),  0xFF: ("sbc", "abslx"),
+    }
+
+    _OPCODES_6502_VALID = {
+        0x00, 0x01, 0x05, 0x06, 0x08, 0x09, 0x0A, 0x0D, 0x0E,
+        0x10, 0x11, 0x15, 0x16, 0x18, 0x19, 0x1D, 0x1E,
+        0x20, 0x21, 0x24, 0x25, 0x26, 0x28, 0x29, 0x2A, 0x2C, 0x2D, 0x2E,
+        0x30, 0x31, 0x35, 0x36, 0x38, 0x39, 0x3D, 0x3E,
+        0x40, 0x41, 0x45, 0x46, 0x48, 0x49, 0x4A, 0x4C, 0x4D, 0x4E,
+        0x50, 0x51, 0x55, 0x56, 0x58, 0x59, 0x5D, 0x5E,
+        0x60, 0x61, 0x65, 0x66, 0x68, 0x69, 0x6A, 0x6C, 0x6D, 0x6E,
+        0x70, 0x71, 0x75, 0x76, 0x78, 0x79, 0x7D, 0x7E,
+        0x81, 0x84, 0x85, 0x86, 0x88, 0x8A, 0x8C, 0x8D, 0x8E,
+        0x90, 0x91, 0x94, 0x95, 0x96, 0x98, 0x99, 0x9A, 0x9D,
+        0xA0, 0xA1, 0xA2, 0xA4, 0xA5, 0xA6, 0xA8, 0xA9, 0xAA, 0xAC, 0xAD, 0xAE,
+        0xB0, 0xB1, 0xB4, 0xB5, 0xB6, 0xB8, 0xB9, 0xBA, 0xBC, 0xBD, 0xBE,
+        0xC0, 0xC1, 0xC4, 0xC5, 0xC6, 0xC8, 0xC9, 0xCA, 0xCC, 0xCD, 0xCE,
+        0xD0, 0xD1, 0xD5, 0xD6, 0xD8, 0xD9, 0xDD, 0xDE,
+        0xE0, 0xE1, 0xE4, 0xE5, 0xE6, 0xE8, 0xE9, 0xEA, 0xEC, 0xED, 0xEE,
+        0xF0, 0xF1, 0xF5, 0xF6, 0xF8, 0xF9, 0xFD, 0xFE,
+    }
+
+    @classmethod
+    def _disasm_6502(cls, address: int, data: bytes) -> DisasmInstruction:
+        return cls._disasm_65816(address, data, m16=False, x16=False, is_6502=True)
+
+    @classmethod
+    def _disasm_65816(
+        cls,
+        address: int,
+        data: bytes,
+        m16: bool = False,
+        x16: bool = False,
+        is_6502: bool = False,
+    ) -> DisasmInstruction:
+        if not data:
+            return DisasmInstruction(address, b"", ".byte", [])
+
+        opcode = data[0]
+        if is_6502 and opcode not in cls._OPCODES_6502_VALID:
+            return DisasmInstruction(address, data[:1], ".byte", [f"0x{opcode:02X}"])
+
+        entry = cls._OPCODES_65816.get(opcode)
+        if not entry:
+            return DisasmInstruction(address, data[:1], ".byte", [f"0x{opcode:02X}"])
+
+        mnem, mode = entry
+
+        if mode == "imp":
+            size = 1
+        elif mode in ("imm8", "dp", "dpx", "dpy", "dpi", "dpix", "dpiy", "dpil", "dpily", "sr", "sriy", "rel"):
+            size = 2
+        elif mode in ("imm16", "abs", "abx", "aby", "abi", "abix", "abil", "rell", "bm"):
+            size = 3
+        elif mode in ("absl", "abslx"):
+            size = 4
+        elif mode == "imm_m":
+            size = 3 if m16 else 2
+        elif mode == "imm_x":
+            size = 3 if x16 else 2
+        else:
+            size = 1
+
+        if len(data) < size:
+            return DisasmInstruction(address, data, ".byte", [f"0x{b:02X}" for b in data])
+
+        raw = data[:size]
+        operands: List[str] = []
+        target_addr: Optional[int] = None
+        is_branch = False
+        is_call = False
+        is_return = False
+        is_conditional = False
+
+        if mode == "imp":
+            if mnem in ("asl", "lsr", "rol", "ror", "dec", "inc") and opcode in (0x0A, 0x4A, 0x2A, 0x6A, 0x3A, 0x1A):
+                operands = ["a"]
+            else:
+                operands = []
+            if mnem in ("rts", "rtl", "rti"):
+                is_return = True
+                is_branch = True
+
+        elif mode == "imm8":
+            operands = [f"#${raw[1]:02X}"]
+        elif mode == "imm16":
+            val = raw[1] | (raw[2] << 8)
+            operands = [f"#${val:04X}"]
+        elif mode == "imm_m":
+            if m16:
+                val = raw[1] | (raw[2] << 8)
+                operands = [f"#${val:04X}"]
+            else:
+                operands = [f"#${raw[1]:02X}"]
+        elif mode == "imm_x":
+            if x16:
+                val = raw[1] | (raw[2] << 8)
+                operands = [f"#${val:04X}"]
+            else:
+                operands = [f"#${raw[1]:02X}"]
+        elif mode == "dp":
+            operands = [f"${raw[1]:02X}"]
+        elif mode == "dpx":
+            operands = [f"${raw[1]:02X},x"]
+        elif mode == "dpy":
+            operands = [f"${raw[1]:02X},y"]
+        elif mode == "dpi":
+            operands = [f"(${raw[1]:02X})"]
+        elif mode == "dpix":
+            operands = [f"(${raw[1]:02X},x)"]
+        elif mode == "dpiy":
+            operands = [f"(${raw[1]:02X}),y"]
+        elif mode == "dpil":
+            operands = [f"[${raw[1]:02X}]"]
+        elif mode == "dpily":
+            operands = [f"[${raw[1]:02X}],y"]
+        elif mode == "sr":
+            operands = [f"${raw[1]:02X},s"]
+        elif mode == "sriy":
+            operands = [f"(${raw[1]:02X},s),y"]
+        elif mode == "abs":
+            val = raw[1] | (raw[2] << 8)
+            operands = [f"${val:04X}"]
+            if mnem in ("jsr", "jmp"):
+                target_addr = val
+                is_branch = True
+                is_call = (mnem == "jsr")
+        elif mode == "abx":
+            val = raw[1] | (raw[2] << 8)
+            operands = [f"${val:04X},x"]
+        elif mode == "aby":
+            val = raw[1] | (raw[2] << 8)
+            operands = [f"${val:04X},y"]
+        elif mode == "absl":
+            val = raw[1] | (raw[2] << 8) | (raw[3] << 16)
+            operands = [f"${val:06X}"]
+            if mnem in ("jsl", "jml"):
+                target_addr = val
+                is_branch = True
+                is_call = (mnem == "jsl")
+        elif mode == "abslx":
+            val = raw[1] | (raw[2] << 8) | (raw[3] << 16)
+            operands = [f"${val:06X},x"]
+        elif mode == "abi":
+            val = raw[1] | (raw[2] << 8)
+            operands = [f"(${val:04X})"]
+            if mnem == "jmp":
+                is_branch = True
+        elif mode == "abix":
+            val = raw[1] | (raw[2] << 8)
+            operands = [f"(${val:04X},x)"]
+            if mnem in ("jmp", "jsr"):
+                is_branch = True
+                is_call = (mnem == "jsr")
+        elif mode == "abil":
+            val = raw[1] | (raw[2] << 8)
+            operands = [f"[${val:04X}]"]
+            if mnem == "jml":
+                is_branch = True
+        elif mode == "rel":
+            disp = struct.unpack("b", bytes([raw[1]]))[0]
+            target = (address + 2 + disp) & (0xFFFF if is_6502 else 0xFFFFFF)
+            operands = [f"0x{target:04X}"]
+            target_addr = target
+            is_branch = True
+            is_conditional = (mnem != "bra")
+        elif mode == "rell":
+            disp16 = struct.unpack("<h", raw[1:3])[0]
+            target = (address + 3 + disp16) & 0xFFFFFF
+            operands = [f"0x{target:04X}"]
+            target_addr = target
+            is_branch = (mnem == "brl")
+        elif mode == "bm":
+            dst = raw[1]
+            src = raw[2]
+            operands = [f"${src:02X}", f"${dst:02X}"]
+
+        return DisasmInstruction(
+            address=address,
+            raw_bytes=raw,
+            mnemonic=mnem,
+            operands=operands,
+            target_address=target_addr,
+            is_branch=is_branch,
+            is_call=is_call,
+            is_return=is_return,
+            is_conditional=is_conditional,
+        )
+
     @classmethod
     def _disassemble_impl(
         cls,
@@ -744,6 +1343,9 @@ class UniversalDisassembler:
         arch: str = "ppc",
         endian: Optional[str] = None,
         max_instructions: Optional[int] = None,
+        m16: bool = False,
+        x16: bool = False,
+        **kwargs,
     ) -> List[DisasmInstruction]:
         """
         Disassemble a contiguous block of bytes into a list of DisasmInstruction objects.
@@ -753,10 +1355,13 @@ class UniversalDisassembler:
         arch_l = arch.lower()
         if arch_l in ("thumb", "arm_thumb", "m68k", "68000", "md", "genesis", "megadrive"):
             step = 2
-        elif arch_l in ("sm83", "gb", "gbc", "gameboy"):
+        elif arch_l in ("sm83", "gb", "gbc", "gameboy", "6502", "nes", "famicom", "2a03", "65816", "snes", "sfc", "5a22", "w65c816"):
             step = 1
         else:
             step = 4
+
+        curr_m16 = m16
+        curr_x16 = x16
 
         while offset < len(data):
             if max_instructions and len(instructions) >= max_instructions:
@@ -767,8 +1372,26 @@ class UniversalDisassembler:
                 raw_bytes=data[offset : offset + chunk_len],
                 arch=arch,
                 endian=endian,
+                m16=curr_m16,
+                x16=curr_x16,
             )
             instructions.append(ins)
+
+            # Dynamically track 65816 accumulator & index size state
+            if arch_l in ("65816", "snes", "sfc", "5a22", "w65c816"):
+                if ins.mnemonic == "rep" and len(ins.raw_bytes) >= 2:
+                    imm = ins.raw_bytes[1]
+                    if imm & 0x20:
+                        curr_m16 = True
+                    if imm & 0x10:
+                        curr_x16 = True
+                elif ins.mnemonic == "sep" and len(ins.raw_bytes) >= 2:
+                    imm = ins.raw_bytes[1]
+                    if imm & 0x20:
+                        curr_m16 = False
+                    if imm & 0x10:
+                        curr_x16 = False
+
             offset += len(ins.raw_bytes) if ins.raw_bytes else step
 
         return instructions

@@ -146,6 +146,20 @@ class GameCubeDisc:
             return
 
         fst_data = self.raw_data[fst_off:fst_off + fst_sz]
+        self.entries = self.parse_fst_entries(fst_data)
+
+        for entry in self.entries:
+            if not entry.is_directory:
+                if entry.file_offset + entry.file_size <= len(self.raw_data):
+                    self.files[entry.path] = bytes(self.raw_data[entry.file_offset : entry.file_offset + entry.file_size])
+                else:
+                    self.files[entry.path] = b""
+
+    @classmethod
+    def parse_fst_entries(cls, fst_data: bytes) -> List[FSTEntry]:
+        """Parses FST entries and directory hierarchy from raw FST binary data."""
+        if len(fst_data) < 12:
+            return []
 
         # Root entry (12 bytes)
         root_entry = GCFstEntryStruct.from_bytes(fst_data, offset=0)
@@ -163,10 +177,13 @@ class GameCubeDisc:
             return str_table[offset:end].decode("ascii", errors="replace")
 
         # Parse all entries
+        entries: List[FSTEntry] = []
         dir_stack = [("", 0, root_num_entries)]  # (path, entry_idx, next_idx)
 
         for i in range(root_num_entries):
             off = i * 12
+            if off + 12 > len(fst_data):
+                break
             entry_raw = GCFstEntryStruct.from_bytes(fst_data, offset=off)
             flags = entry_raw.flags
             name_offset = int.from_bytes(entry_raw.name_offset_raw, "big")
@@ -180,7 +197,6 @@ class GameCubeDisc:
                     current_path = ""
                 else:
                     entry_name = get_string(name_offset)
-                    # Pop stack if passed parent scope
                     while dir_stack and i >= dir_stack[-1][2]:
                         dir_stack.pop()
                     parent_path = dir_stack[-1][0] if dir_stack else ""
@@ -198,7 +214,7 @@ class GameCubeDisc:
                     parent_index=parent_idx,
                     next_entry_index=next_idx,
                 )
-                self.entries.append(entry)
+                entries.append(entry)
 
             else:  # File
                 f_offset = entry_raw.first_value
@@ -220,12 +236,9 @@ class GameCubeDisc:
                     parent_index=dir_stack[-1][1] if dir_stack else 0,
                     next_entry_index=0,
                 )
-                self.entries.append(entry)
+                entries.append(entry)
 
-                if f_offset + f_size <= len(self.raw_data):
-                    self.files[current_path] = bytes(self.raw_data[f_offset:f_offset + f_size])
-                else:
-                    self.files[current_path] = b""
+        return entries
 
     def read_file(self, path: str) -> bytes:
         """Read full contents of a file inside the disc."""
@@ -250,7 +263,7 @@ class GameCubeDisc:
         """
         Reconstruct and rebuild the complete GameCube disc image with updated FST.
         """
-        # 1. Build sorted hierarchical file tree
+        # Build sorted file hierarchy
         # Paths: list of files
         file_paths = sorted(self.files.keys())
 
@@ -323,7 +336,7 @@ class GameCubeDisc:
         build_subtree("", 0)
         fst_entries_meta[0]["next_idx"] = len(fst_entries_meta)
 
-        # 2. Build string table
+        # Build string table
         str_table = bytearray()
         str_offsets = {}
         for entry in fst_entries_meta:
@@ -336,7 +349,7 @@ class GameCubeDisc:
             else:
                 entry["name_offset"] = 0
 
-        # 3. Calculate FST size
+        # Calculate FST size
         num_entries = len(fst_entries_meta)
         entries_size = num_entries * 12
         total_fst_size = entries_size + len(str_table)
@@ -352,7 +365,7 @@ class GameCubeDisc:
         if rem != 0:
             file_data_start += alignment - rem
 
-        # 4. Lay out file offsets
+        # Calculate file offsets
         cur_file_offset = file_data_start
         file_buffers = []
 
@@ -365,7 +378,7 @@ class GameCubeDisc:
                 file_buffers.append((cur_file_offset, entry["data"]))
                 cur_file_offset += entry["size"]
 
-        # 5. Pack FST binary
+        # Serialize FST binary
         fst_bin = bytearray()
         for entry in fst_entries_meta:
             flags = 1 if entry["is_dir"] else 0
@@ -386,14 +399,14 @@ class GameCubeDisc:
         fst_bin.extend(str_table)
         fst_bin.extend(b"\x00" * pad)
 
-        # 6. Update disc header
+        # Update disc header
         self.header.fst_offset = fst_offset
         self.header.fst_size = len(fst_bin)
         self.header.fst_max_size = max(self.header.fst_max_size, len(fst_bin))
         self.header.user_pos = file_data_start
         self.header.user_length = cur_file_offset - file_data_start
 
-        # 7. Assemble full disc
+        # Assemble output disc image
         total_disc_len = max(len(self.raw_data), cur_file_offset)
         out_disc = bytearray(self.raw_data)
         if len(out_disc) < total_disc_len:

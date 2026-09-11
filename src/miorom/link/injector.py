@@ -182,7 +182,7 @@ class ElfInjector:
         Links an ELF32 payload and injects it into a target game binary (DOL or raw ROM),
         installing a trampoline hook at hook_ram_addr.
         """
-        # 1. Load target binary
+        # Load target binary
         if isinstance(target, (str, Path)):
             target_path = Path(target)
             target_buf = bytearray(target_path.read_bytes())
@@ -193,7 +193,7 @@ class ElfInjector:
         else:
             raise TypeError(f"Invalid target binary type: {type(target)}")
 
-        # 2. Load ELF file
+        # Load ELF file
         if isinstance(elf, Elf32File):
             elf_file = elf
         elif isinstance(elf, (str, Path)):
@@ -203,7 +203,7 @@ class ElfInjector:
         else:
             raise TypeError(f"Invalid ELF payload type: {type(elf)}")
 
-        # 3. Detect architecture
+        # Detect architecture
         if arch is None:
             if elf_file.e_machine == EM_PPC:
                 arch = "ppc"
@@ -215,17 +215,17 @@ class ElfInjector:
                 arch = "arm"
         arch_norm = arch.lower()
 
-        # 4. Check if target is DOL
+        # Check GameCube DOL executable
         is_dol = DolBinary.is_dol(bytes(target_buf))
         dol: Optional[DolBinary] = DolBinary(target_buf) if is_dol else None
         target_type = "dol" if is_dol else "raw"
 
-        # 5. Load external symbols
+        # Load external symbols
         externs: Dict[str, int] = {}
         if external_symbols:
             externs = cls.load_symbol_map(external_symbols)
 
-        # 6. Helper for address conversion
+        # Address conversion mapping
         def ram_to_offset(ram: int) -> Optional[int]:
             if dol:
                 return dol.ram_to_offset(ram)
@@ -242,7 +242,7 @@ class ElfInjector:
                 return off + ram_base
             return off
 
-        # 7. Resolve hook file offset
+        # Resolve hook file offset
         if hook_ram_addr is not None and hook_file_offset is None:
             hook_file_offset = ram_to_offset(hook_ram_addr)
             if hook_file_offset is None:
@@ -251,7 +251,7 @@ class ElfInjector:
                     "Specify hook_file_offset or ram_base."
                 )
 
-        # 8. Hook size requirement
+        # Calculate hook size
         is_mips = "mips" in arch_norm or arch_norm in ("psx", "n64", "psp")
         is_thumb = "thumb" in arch_norm
         instr_size = 8 if is_mips else (2 if is_thumb else 4)
@@ -261,17 +261,17 @@ class ElfInjector:
                 raise ParseError(f"Hook file offset 0x{hook_file_offset:08X} is out of bounds.")
             original_instr_bytes = bytes(target_buf[hook_file_offset : hook_file_offset + instr_size])
 
-        # 9. Perform initial link to determine payload size
+        # Initial link pass to compute payload size
         dummy_base = cave_ram_addr if cave_ram_addr is not None else 0x80000000
         relocator = ElfRelocator(elf_file)
         probe_link = relocator.link(dummy_base, external_symbols=externs, entry_symbol=entry_symbol)
         raw_payload_len = probe_link.total_size
 
-        # Extra buffer for trampoline return stub if trampoline hook mode is used
+        # Trampoline return stub buffer
         trampoline_extra_size = (instr_size + 8) if (hook_ram_addr is not None and hook_mode == "trampoline") else 0
         total_required_size = raw_payload_len + trampoline_extra_size
 
-        # 10. Locate or allocate code cave
+        # Allocate code cave
         cave_capacity: Optional[int] = None
         if cave_file_offset is not None:
             if cave_ram_addr is None:
@@ -279,7 +279,7 @@ class ElfInjector:
         elif cave_ram_addr is not None:
             cave_file_offset = ram_to_offset(cave_ram_addr)
             if cave_file_offset is None:
-                # If DOL and RAM address not in existing sections, add new section
+                # Add DOL section if address not mapped
                 if dol and append_dol_section:
                     pass  # Handled below
                 else:
@@ -316,7 +316,7 @@ class ElfInjector:
                 cave_ram_addr = offset_to_ram(cave_file_offset)
                 cave_capacity = target_cave.size
 
-        # 11. Final link with actual cave RAM address
+        # Final link pass with resolved cave address
         link_result = relocator.link(
             base_address=cave_ram_addr,
             external_symbols=externs,
@@ -326,13 +326,12 @@ class ElfInjector:
         final_payload = bytearray(link_result.binary)
         hook_record: Optional[HookRecord] = None
 
-        # 12. Hook installation
+        # Install hook trampoline
         if hook_ram_addr is not None and hook_file_offset is not None:
             entry_point_ram = link_result.entry_point or cave_ram_addr
 
             if hook_mode == "trampoline":
-                # Create trampoline hook: hook_bytes jumps to cave_ram_addr,
-                # then cave executes payload + displaced original instruction + return branch
+                # Create trampoline hook jumping to cave
                 hook_bytes, cave_bytes = TrampolineHook.create_hook(
                     arch=arch_norm,
                     hook_ram_addr=hook_ram_addr,
@@ -379,13 +378,13 @@ class ElfInjector:
                     cave_file_offset=cave_file_offset,
                 )
 
-        # 13. Write final payload into cave
+        # Write payload to code cave
         end_offset = cave_file_offset + len(final_payload)
         if end_offset > len(target_buf):
             target_buf.extend(b"\x00" * (end_offset - len(target_buf)))
         target_buf[cave_file_offset:end_offset] = final_payload
 
-        # 14. Save output file if requested
+        # Write modified binary to disk
         if output_file:
             out_p = Path(output_file)
             out_p.parent.mkdir(parents=True, exist_ok=True)

@@ -201,8 +201,7 @@ class ScriptASTBuilder:
         if not block.instructions:
             return BlockStmt(stmts) if stmts else None
 
-        # Check for loop back-edge on this block
-        # (e.g. successor points to this block or an earlier visited block)
+        # Check for loop back-edge
         has_self_loop = any(succ == addr for succ in block.successors)
         if has_self_loop:
             last_ins = block.instructions[-1]
@@ -264,7 +263,7 @@ class ScriptASTBuilder:
                     stmts.append(if_stmt)
                     return BlockStmt(stmts) if len(stmts) > 1 else stmts[0]
 
-                # If-Then (without else): fallthrough jumps directly to taken_addr or taken jumps to fallthrough
+                # If-then without else
                 elif fall_block.successors == [taken_addr]:
                     self.visited_blocks.add(fallthrough_addr)
                     then_stmts = [self._convert_instr(ins) for ins in fall_block.instructions if "JUMP" not in ins.name.upper()]

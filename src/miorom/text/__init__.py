@@ -26,6 +26,27 @@ from miorom.text.metrics_measurer import (
 from miorom.text.tag_validator import TagSyntaxValidator, TagValidationReport
 from miorom.text.template import GameTextTemplate
 from miorom.text.tokenizer import ControlCodeDef, ControlCodeSchema, ControlCodeTokenizer
+from miorom.text.bmfont import (
+    BMFont,
+    BMFontChar,
+    BMFontInfo,
+    BMFontCommon,
+    BMFontPage,
+    BMFontKerning,
+    PNGCodec,
+)
+from miorom.text.line_wrapper import VwfLineWrapper, TextBoxPage, LineWrapResult
+from miorom.text.dte import DteEntry, DteStats, DteOptimizer, DteCodec
+from miorom.text.pointer_relinker import PointerRecord, RelinkReport, PointerRelinker
+from miorom.text.translation_memory import TmMatch, TmLookupResult, TranslationMemory
+from miorom.text.bmg import BMGFile, BMGMessage
+from miorom.text.msbt import MSBTFile, MSBTEntry
+from miorom.text.japanese_charmap import (
+    JapaneseCharMapMiner,
+    JapaneseMiningCluster,
+    JapaneseWordMatch,
+)
+
 
 __all__ = [
     "TagManager",
@@ -75,4 +96,31 @@ __all__ = [
     "ControlCodeDef",
     "ControlCodeSchema",
     "ControlCodeTokenizer",
+    "BMFont",
+    "BMFontChar",
+    "BMFontInfo",
+    "BMFontCommon",
+    "BMFontPage",
+    "BMFontKerning",
+    "PNGCodec",
+    "VwfLineWrapper",
+    "TextBoxPage",
+    "LineWrapResult",
+    "DteEntry",
+    "DteStats",
+    "DteOptimizer",
+    "DteCodec",
+    "PointerRecord",
+    "RelinkReport",
+    "PointerRelinker",
+    "TmMatch",
+    "TmLookupResult",
+    "TranslationMemory",
+    "BMGFile",
+    "BMGMessage",
+    "MSBTFile",
+    "MSBTEntry",
+    "JapaneseCharMapMiner",
+    "JapaneseMiningCluster",
+    "JapaneseWordMatch",
 ]

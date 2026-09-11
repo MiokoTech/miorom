@@ -16,7 +16,7 @@ from miorom import (
 
 
 def test_instruction_pointer_scanner_ppc_and_mips():
-    # 1. PowerPC: lis r3, 0x8024 (opcode 15) then addi r3, r3, 0x51A0 (opcode 14)
+    # PowerPC: lis r3, 0x8024 (opcode 15) then addi r3, r3, 0x51A0 (opcode 14)
     # insn1: (15 << 26) | (3 << 21) | (0 << 16) | 0x8024
     insn_lis = (15 << 26) | (3 << 21) | 0x8024
     # insn2: (14 << 26) | (3 << 21) | (3 << 16) | 0x51A0
@@ -34,7 +34,7 @@ def test_instruction_pointer_scanner_ppc_and_mips():
     assert len(ptrs_patched) == 1
     assert ptrs_patched[0].target_address == 0x80281234
 
-    # 2. MIPS: lui $v0, 0x8005 then addiu $v0, $v0, 0x1234
+    # MIPS: lui $v0, 0x8005 then addiu $v0, $v0, 0x1234
     # lui: (15 << 26) | (0 << 21) | (2 << 16) | 0x8005
     mips_lui = (15 << 26) | (2 << 16) | 0x8005
     # addiu: (9 << 26) | (2 << 21) | (2 << 16) | 0x1234

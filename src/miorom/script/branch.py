@@ -8,8 +8,9 @@ Also provides safe in-place offset remapping with signed overflow protection.
 """
 
 from dataclasses import dataclass, field
-import struct
 from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Set, Tuple, Union
+
+from miorom.core.binary import BinaryReader, BinaryWriter
 
 from miorom.result import MioRomResult
 
@@ -97,6 +98,10 @@ class BytecodeBranchScanner:
         base_pc_delta: int = 3,
         code_range: Optional[Tuple[int, int]] = None,
         excluded_ranges: Optional[Sequence[Tuple[int, int]]] = None,
+        disjoint: bool = True,
+        instruction_lengths: Optional[Dict[int, Union[int, Callable[[bytes, int], int]]]] = None,
+        target_validator: Optional[Callable[[int], bool]] = None,
+        disallow_excluded_target: bool = True,
     ) -> List[RelativeBranch]:
         """
         Scans binary bytecode stream for relative branch/call instructions.
@@ -109,9 +114,14 @@ class BytecodeBranchScanner:
         :param base_pc_delta: Base added to signed offset (default 3, i.e. target = pc + 3 + offset).
         :param code_range: (start, end) code bounds.
         :param excluded_ranges: Ranges (e.g. string literals) to ignore.
+        :param disjoint: If True, advances pc past instruction operands on match.
+        :param instruction_lengths: Optional mapping of non-branch opcodes to their fixed/calculated byte lengths.
+                                   Advances pc past non-branch instruction operands, eliminating false positives.
+        :param target_validator: Optional predicate returning True if target address is valid.
+        :param disallow_excluded_target: If True, rejects branches whose targets fall inside excluded_ranges.
         """
         code_start, code_end = code_range if code_range else (0, len(data))
-        off_size = struct.calcsize(offset_fmt)
+        off_size = BinaryReader.calcsize(offset_fmt)
         excluded = excluded_ranges or []
 
         def in_excluded(pos: int) -> bool:
@@ -123,16 +133,26 @@ class BytecodeBranchScanner:
         branches: List[RelativeBranch] = []
         limit = code_end - max(instr_len, offset_pos_in_instr + off_size)
 
-        for pc in range(code_start, limit + 1):
+        pc = code_start
+        while pc <= limit:
             if in_excluded(pc):
+                pc += 1
                 continue
             opc = data[pc]
             if opc in branch_opcodes:
                 off_addr = pc + offset_pos_in_instr
-                off = struct.unpack_from(offset_fmt, data, off_addr)[0]
+                off = BinaryReader.unpack_from(offset_fmt, data, off_addr)[0]
                 target = pc + base_pc_delta + off
-                # Target must land within code bounds and not in the middle of excluded data
-                if code_start <= target < code_end and not mid_excluded(target):
+                target_valid = (code_start <= target < code_end)
+                if target_valid:
+                    if disallow_excluded_target and in_excluded(target):
+                        target_valid = False
+                    elif mid_excluded(target):
+                        target_valid = False
+                if target_valid and target_validator is not None:
+                    target_valid = target_validator(target)
+
+                if target_valid:
                     branches.append(
                         RelativeBranch(
                             pc=pc,
@@ -143,6 +163,21 @@ class BytecodeBranchScanner:
                             offset_fmt=offset_fmt,
                         )
                     )
+                    if disjoint:
+                        adv = instr_len
+                        if instruction_lengths and opc in instruction_lengths:
+                            spec = instruction_lengths[opc]
+                            adv = spec(data, pc) if callable(spec) else spec
+                        pc += max(1, adv)
+                        continue
+
+            if instruction_lengths and opc in instruction_lengths:
+                spec = instruction_lengths[opc]
+                adv = spec(data, pc) if callable(spec) else spec
+                pc += max(1, adv)
+                continue
+
+            pc += 1
 
         return branches
 
@@ -157,6 +192,10 @@ class BytecodeBranchScanner:
         base_pc_delta: int = 3,
         code_range: Optional[Tuple[int, int]] = None,
         excluded_ranges: Optional[Sequence[Tuple[int, int]]] = None,
+        disjoint: bool = True,
+        instruction_lengths: Optional[Dict[int, Union[int, Callable[[bytes, int], int]]]] = None,
+        target_validator: Optional[Callable[[int], bool]] = None,
+        disallow_excluded_target: bool = True,
     ) -> Iterator[RelativeBranch]:
         """Yield relative branches progressively for early-exit pipelines."""
         yield from cls.scan_relative_branches(
@@ -168,6 +207,10 @@ class BytecodeBranchScanner:
             base_pc_delta=base_pc_delta,
             code_range=code_range,
             excluded_ranges=excluded_ranges,
+            disjoint=disjoint,
+            instruction_lengths=instruction_lengths,
+            target_validator=target_validator,
+            disallow_excluded_target=disallow_excluded_target,
         )
 
     @classmethod
@@ -188,8 +231,8 @@ class BytecodeBranchScanner:
         Layout: [switch_opcode][count][relative_offset_0][relative_offset_1]...
         """
         code_start, code_end = code_range if code_range else (0, len(data))
-        cnt_size = struct.calcsize(count_fmt)
-        off_size = struct.calcsize(offset_fmt)
+        cnt_size = BinaryReader.calcsize(count_fmt)
+        off_size = BinaryReader.calcsize(offset_fmt)
         excluded = excluded_ranges or []
 
         def in_excluded(pos: int) -> bool:
@@ -206,7 +249,7 @@ class BytecodeBranchScanner:
                 continue
             opc = data[pc]
             if opc in switch_opcodes:
-                cnt = struct.unpack_from(count_fmt, data, pc + 1)[0]
+                cnt = BinaryReader.unpack_from(count_fmt, data, pc + 1)[0]
                 if not (min_cases <= cnt <= max_cases):
                     continue
 
@@ -218,7 +261,7 @@ class BytecodeBranchScanner:
                 all_valid = True
                 for k in range(cnt):
                     off_pos = pc + 1 + cnt_size + (k * off_size)
-                    off = struct.unpack_from(offset_fmt, data, off_pos)[0]
+                    off = BinaryReader.unpack_from(offset_fmt, data, off_pos)[0]
                     target = off_pos + base_pc_delta + off
                     if not (code_start <= target < code_end and not mid_excluded(target)):
                         all_valid = False
@@ -266,17 +309,33 @@ class BytecodeBranchScanner:
         mapper: Callable[[int], int],
         base_pc_delta: int = 3,
         check_overflow: bool = True,
+        valid_target_range: Optional[Tuple[int, int]] = None,
+        excluded_target_ranges: Optional[Sequence[Tuple[int, int]]] = None,
     ) -> int:
         """
         Remaps all relative branches in-place using the provided offset mapper.
         Returns the number of branches relocated.
         """
         count = 0
+        excluded = excluded_target_ranges or []
         for b in branches:
             new_off_pos = mapper(b.offset_pos)
             new_pc = mapper(b.pc)
             new_target = mapper(b.target)
             new_off = new_target - (new_pc + base_pc_delta)
+
+            if valid_target_range is not None:
+                start_b, end_b = valid_target_range
+                if not (start_b <= new_target < end_b):
+                    raise ValueError(
+                        f"Relocated branch target 0x{new_target:X} out of valid range "
+                        f"[0x{start_b:X}, 0x{end_b:X}) from pc 0x{new_pc:X}"
+                    )
+
+            if any(s <= new_target < e for s, e in excluded):
+                raise ValueError(
+                    f"Relocated branch target 0x{new_target:X} collides with excluded data range"
+                )
 
             if check_overflow:
                 if b.offset_fmt.endswith("b"):
@@ -296,15 +355,15 @@ class BytecodeBranchScanner:
                             actual=new_off,
                         )
                 else:
-                    if not (-(1 << (struct.calcsize(b.offset_fmt) * 8 - 1)) <= new_off
-                            < (1 << (struct.calcsize(b.offset_fmt) * 8 - 1))):
+                    if not (-(1 << (BinaryReader.calcsize(b.offset_fmt) * 8 - 1)) <= new_off
+                            < (1 << (BinaryReader.calcsize(b.offset_fmt) * 8 - 1))):
                         raise PointerOverflowError(
                             f"Relative branch offset {new_off} overflows {b.offset_fmt} at 0x{new_pc:X}",
                             offset=mapper(b.offset_pos),
                             actual=new_off,
                         )
 
-            struct.pack_into(b.offset_fmt, buffer, new_off_pos, new_off)
+            BinaryWriter.pack_into(b.offset_fmt, buffer, new_off_pos, new_off)
             count += 1
 
         return count
@@ -340,7 +399,7 @@ class BytecodeBranchScanner:
                                 actual=new_off,
                             )
 
-                struct.pack_into(offset_fmt, buffer, new_off_pos, new_off)
+                BinaryWriter.pack_into(offset_fmt, buffer, new_off_pos, new_off)
                 count += 1
 
         return count

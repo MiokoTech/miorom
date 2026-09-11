@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "miorom"
-version = "0.13.1"
+version = "1.0.0"
 description = "A Python library for ROM hacking and game reverse engineering"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -34,6 +34,8 @@ keywords = [
 
     # Consoles & Platforms
     "nintendo",
+    "nes",
+    "ines",
     "wii",
     "gamecube",
     "nintendo-ds",
@@ -55,6 +57,10 @@ keywords = [
     "powerpc",
     "mips",
     "arm",
+    "thumb",
+    "w65c816",
+    "mos6502",
+    "sm83",
     "split-pointer",
     "code-cave",
     "trampoline-hook",
@@ -64,6 +70,9 @@ keywords = [
     "iso9660",
     "u8-archive",
     "narc",
+    "ncgr",
+    "nclr",
+    "nscr",
     "sdat",
     "sseq",
     "brfnt",
@@ -73,14 +82,24 @@ keywords = [
     "toc-archive",
     "dual-table",
 
+    # Audio Codecs
+    "vag",
+    "spu-adpcm",
+    "brr",
+    "spc700",
+    "dsp-adpcm",
+
     # Compression & Patching
     "lz10",
     "lz11",
     "yaz0",
+    "yay0",
+    "aplib",
     "rle-compression",
     "huffman",
     "ips-patch",
     "bps-patch",
+    "ups-patch",
     "xdelta",
     "rom-patcher",
 
@@ -151,3 +170,4 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]

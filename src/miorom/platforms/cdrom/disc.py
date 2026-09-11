@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple
 from miorom.platforms.cdrom.cue import CueSheet, CueTrack, lba_to_msf
 from miorom.platforms.iso.iso9660 import ISO9660
 
-# Precomputed CD-ROM EDC lookup table (ECMA-130 / Yellow Book standard)
+# Precomputed CD-ROM EDC table
 EDC_TABLE = []
 for i in range(256):
     edc = i
@@ -259,8 +259,7 @@ class CueBinDisc:
 
         pcm_data = self.extract_track_data(track_number, raw=True)
 
-        # Build WAV RIFF header
-        # fmt chunk: PCM (1), 2 channels, 44100 Hz, 176400 bytes/sec, 4 block align, 16 bits
+        # WAV RIFF header (PCM 44.1kHz 16-bit stereo)
         fmt_chunk = struct.pack("<HHIIHH", 1, 2, 44100, 176400, 4, 16)
         data_len = len(pcm_data)
         riff_len = 4 + (8 + len(fmt_chunk)) + (8 + data_len)

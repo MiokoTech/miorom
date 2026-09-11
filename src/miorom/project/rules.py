@@ -40,7 +40,7 @@ class Rule:
         """Mapping between game-internal binary control codes and human-readable tags."""
 
         def __init__(self, forward_map: Optional[Dict[str, str]] = None):
-            # forward_map: internal_raw -> human_tag, e.g. {"[0xff20]": "<WARNA>"}
+            # forward_map: raw -> human_tag
             self.raw_to_tag = forward_map or {}
             self.tag_to_raw = {v: k for k, v in self.raw_to_tag.items()}
 

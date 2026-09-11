@@ -118,7 +118,7 @@ miorom scan script.bin -e shift_jis --pointers --orphans -o script_dialog.csv
 
 ### 5. `patch-create` - Binary Patch Generator
 
-Creates distribution patches comparing original and modified ROM files. Supports IPS (up to 16MB), BPS (with CRC32 integrity checks), and Xdelta (VCDIFF delta compression for large ISOs).
+Creates distribution patches comparing original and modified ROM files. Supports IPS (up to 16MB), BPS (with CRC32 integrity checks), UPS (with bi-directional CRC32 verification), and Xdelta (VCDIFF delta compression for large ISOs).
 
 ```bash
 miorom patch-create <original> <modified> -o <output_patch> [-f FORMAT]
@@ -128,7 +128,7 @@ miorom patch-create <original> <modified> -o <output_patch> [-f FORMAT]
 - `original`: Path to unmodified ROM.
 - `modified`: Path to modified ROM.
 - `-o, --output`: Target patch filename.
-- `-f, --format`: Patch format (`ips`, `bps`, `xdelta`). Default: `bps`.
+- `-f, --format`: Patch format (`ips`, `bps`, `ups`, `xdelta`). Default: `bps`.
 
 #### Examples
 ```bash
@@ -137,13 +137,16 @@ miorom patch-create "clean.iso" "translated.iso" -o "patch.xdelta" -f xdelta
 
 # Create a BPS patch for a GBA ROM
 miorom patch-create "game.gba" "game_id.gba" -o "patch.bps" -f bps
+
+# Create a UPS patch for a GBA ROM
+miorom patch-create "game.gba" "game_id.gba" -o "patch.ups" -f ups
 ```
 
 ---
 
 ### 6. `patch-apply` - Binary Patch Applicator
 
-Applies an IPS, BPS, or Xdelta patch to an original ROM file.
+Applies an IPS, BPS, UPS, or Xdelta patch to an original ROM file.
 
 ```bash
 miorom patch-apply <original> <patch> -o <output_file> [-f FORMAT]
@@ -153,7 +156,7 @@ miorom patch-apply <original> <patch> -o <output_file> [-f FORMAT]
 - `original`: Path to unmodified ROM.
 - `patch`: Path to distribution patch file.
 - `-o, --output`: Path for output patched file.
-- `-f, --format`: (Optional) Patch format (`ips`, `bps`, `xdelta`). Auto-detected if omitted.
+- `-f, --format`: (Optional) Patch format (`ips`, `bps`, `ups`, `xdelta`). Auto-detected if omitted.
 
 #### Example
 ```bash
@@ -173,7 +176,7 @@ miorom compress <input_file> -o <output_file> -f FORMAT
 #### Arguments & Options
 - `input_file`: Uncompressed raw file.
 - `-o, --output`: Path for compressed output file.
-- `-f, --format`: Compression format (`lz10`, `lz11`, `rle`, `yaz0`, `huffman4`, `huffman8`).
+- `-f, --format`: Compression format (`lz10`, `lz11`, `rle`, `yaz0`, `yay0`, `aplib`, `huffman4`, `huffman8`).
 
 #### Example
 ```bash
@@ -320,3 +323,89 @@ miorom port-csv --source-csv JP.csv --target-csv US.csv -o US_translated.csv [--
 - `--target-csv`: Target regional CSV to populate.
 - `-o, --output`: Output path for ported CSV.
 - `--strategy`: Matching strategy (`text`, `offset`, `hybrid`). Default: `text`.
+
+---
+
+### 15. `scan-text` - Multi-Byte Japanese Binary Text Scanner
+
+Scans unmapped ROM blobs for continuous dialogue and script tables encoded in Shift-JIS, EUC-JP, UTF-16, or ASCII using strict lead-byte/trail-byte FSM validation.
+
+```bash
+miorom scan-text <input_file> [-e ENCODINGS] [-l MIN_LEN] [-c MIN_CONF] [--table] [-n LIMIT] [-o OUTPUT]
+```
+
+#### Arguments & Options
+- `input_file`: Path to raw ROM or binary dump.
+- `-e, --encodings`: Comma-separated encodings (e.g. `sjis,euc_jp,ascii`). Default: `sjis,euc_jp,ascii`.
+- `-l, --min-len`: Minimum character run length. Default: `4`.
+- `-c, --min-conf`: Confidence threshold (0.0 to 1.0). Default: `0.65`.
+- `--table`: Detect and group continuous null-delimited string table clusters.
+- `-n, --limit`: Maximum individual text spans to print. Default: `20`.
+- `-o, --output`: Optional output JSON file path.
+
+---
+
+### 16. `disasm` - Multi-Architecture Machine Code Disassembler
+
+Disassembles machine code across 8 retro architectures (MOS 6502, W65C816, Z80, SM83, M68K, ARM, Thumb, MIPS, PowerPC).
+
+```bash
+miorom disasm <input_file> [-a ARCH] [-o OFFSET] [-n COUNT] [-b BASE]
+```
+
+#### Arguments & Options
+- `input_file`: Path to binary file containing code.
+- `-a, --arch`: Architecture (`6502`, `65816`, `z80`, `sm83`, `m68k`, `arm`, `thumb`, `mips`, `ppc`). Default: `m68k`.
+- `-o, --offset`: File start offset. Default: `0`.
+- `-n, --count`: Number of instructions to decode. Default: `32`.
+- `-b, --base`: Virtual memory PC base address. Default: same as offset.
+
+---
+
+### 17. `checksum` - Retro Header & Binary Checksum Tool
+
+Calculates, verifies, and optionally fixes hardware checksums for SNES, Sega Genesis, Game Boy, and N64.
+
+```bash
+miorom checksum <input_file> [-s SYSTEM] [--fix]
+```
+
+#### Arguments & Options
+- `input_file`: Path to ROM file.
+- `-s, --system`: Checksum algorithm (`snes`, `genesis`, `gb`, `all`). Default: `all`.
+- `--fix`: Recalculate and patch the checksum in-place if mismatched.
+
+---
+
+### 18. `reloc-branch` - PC-Relative Branch Rebasing Engine
+
+Recalculates relative branch displacements when shifting code routines across memory addresses.
+
+```bash
+miorom reloc-branch <input_file> -a ARCH --orig-base ADDR --new-base ADDR [-o OUTPUT]
+```
+
+#### Arguments & Options
+- `input_file`: Path to binary file containing machine code.
+- `-a, --arch`: Architecture (`6502`, `65816`, `z80`, `sm83`, `m68k`, `arm`, `thumb`, `mips`).
+- `--orig-base`: Original PC address of the routine.
+- `--new-base`: New PC destination address.
+- `-o, --output`: Output file path (default: overwrite input).
+
+---
+
+### 19. `tile-dedup` - 8x8 Tile Deduplicator & VRAM Optimizer
+
+Deduplicates 8x8 tiles in a binary planar graphics buffer, matching identical tiles and symmetrical flipped copies (H-flip, V-flip).
+
+```bash
+miorom tile-dedup <input_file> [--bpp BPP] [-f FORMAT] [--no-h-flip] [--no-v-flip] [-o OUTPUT]
+```
+
+#### Arguments & Options
+- `input_file`: Path to raw tile binary file.
+- `--bpp`: Bits per pixel (`1`, `2`, `4`). Default: `4`.
+- `-f, --format`: Optional format name (e.g. `2bpp`, `4bpp_planar`, `genesis_4bpp`).
+- `--no-h-flip`: Disable horizontal flip matching.
+- `--no-v-flip`: Disable vertical flip matching.
+- `-o, --output`: Output path for deduplicated tile binary.
