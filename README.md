@@ -337,41 +337,41 @@ Technical documentation, hardware specifications, and prior-art resources consul
 - [no$gba Documentation](https://problemkaputt.de/gba.htm) — GBA cartridge header, CPU timing, DMA, interrupt controller.
 - [SNESdev Wiki](https://snes.nesdev.org/wiki/SNESdev_Wiki) — SNES memory mapping (LoROM/HiROM/ExHiROM), 65816 addressing, PPU registers, SPC700.
 - [NESDev Wiki](https://www.nesdev.org/wiki/Nesdev_Wiki) — NES/Famicom iNES/NES 2.0 cartridge format, mapper table, 6502 opcode reference, PPU tile encoding.
-- [Sega Mega Drive / Genesis Technical Overview](https://wiki.megadrive.org/index.php?title=Technical_Overview) — VDP register set, 68000 vector table, M68K bus timing, CRAM palette format.
-- [MIPS Architecture Reference Manual, Vol. I-II](https://www.mips.com/products/architectures/) — R3000 / R4300i ISA, COP1 floating-point, delay slot behavior (PS1, N64).
-- [PowerPC Microprocessor Family: The Programming Environments](https://www.nxp.com/) — PPC 32-bit instruction set (GameCube/Wii Broadway/Gekko).
-- [ARM Architecture Reference Manual (ARMv4T/ARMv5TE)](https://developer.arm.com/documentation/) — ARM32 and Thumb-16 ISA, BL/BX encoding, pipeline compensation (GBA/NDS ARM7/ARM9).
-- [Motorola 68000 Programmer's Reference Manual](https://www.nxp.com/docs/en/reference-manual/M68000PRM.pdf) — M68K opcode encoding, effective address modes, BRA/BSR displacement.
+- [Plutiedev — Sega Mega Drive / Genesis Hardware Notes](https://plutiedev.com/) — VDP register set, 68000 vector table, M68K bus timing, CRAM palette format.
+- [MIPS Architecture Reference Manual](https://www.cs.cmu.edu/afs/cs/academic/class/15740-f97/public/doc/mips-isa.pdf) — R3000 / R4300i ISA, COP1 floating-point, delay slot behavior (PS1, N64).
+- [WiiBrew — Broadway PowerPC Architecture](https://wiibrew.org/wiki/Broadway) — Wii Broadway PPC 32-bit instruction set, registers, paired single SIMD (GameCube/Wii).
+- [GBATEK — ARM and Thumb CPU Reference](https://problemkaputt.de/gbatek.htm#armcpureference) — ARMv4T / ARMv5TE 32-bit and Thumb-16 ISA, BL/BX encoding, pipeline compensation (GBA/NDS).
+- [Motorola 68000 Programmer's Reference Manual](https://raw.githubusercontent.com/M680x0/Literature/master/M68000PM_AD_Rev_1_Programmers_Reference_Manual_1992.pdf) — M68K opcode encoding, effective address modes, BRA/BSR displacement.
 
 ### Console ROM & Disc Format Documentation
 - [NDSPY Documentation](https://ndspy.readthedocs.io/) — Nintendo DS ROM structure, NARC filesystem, FAT/FNT layout, ARM9/ARM7 overlay tables.
-- [Caitsith2's NARC Specification](http://problemkaputt.de/gbatek.htm#dsfilesystem) — NDS archive container spec.
+- [GBATEK — Nitro-ROM & Nitro-ARC Filesystems](https://problemkaputt.de/gbatek.htm#dscartridgenitroromandnitroarcfilesystems) — NDS archive container and ROM file allocation table specification.
 - [Nintendo GameCube / Wii GCM/ISO Filesystem](https://wiibrew.org/wiki/Wii_disc) — DOL executable sections, FST table layout, Appldr format.
 - [ISO 9660 / ECMA-119 Standard](https://www.ecma-international.org/publications-and-standards/standards/ecma-119/) — Optical disc filesystem structure.
-- [Sony PlayStation Executable Format (PS-X EXE)](https://psx-spx.consoledev.net/) — Martin Korth's PSX/PS2 hardware reference. SPU-ADPCM, CD-XA, TIM texture.
-- [CSO Compressed ISO Format Specification](https://www.romhacking.net/utilities/631/) — PSP sector-level CISO compression.
+- [Sony PlayStation Executable Format (PS-X EXE)](https://problemkaputt.de/psx-spx.htm#cdromfileplaystationexeandsystemcnf) — Martin Korth's PSX-SPX reference for 2048-byte header, load address, and entry points.
+- [CSO Compressed ISO Format Specification](https://github.com/unknownbrackets/maxcso) — PSP sector-level CISO compression, header structure, and block index tables.
 - [UPS Patch Format Specification](https://www.romhacking.net/documents/392/) — XOR diffing, VLQ encoding, CRC32 layout.
 - [BPS Patch Format Specification](https://www.romhacking.net/documents/746/) — Delta patching with source/target copy blocks.
-- [PPF 3.0 Patch Format Specification](https://www.romhacking.net/utilities/353/) — PlayStation disc patch format, undo data, sector validation.
+- [PPF 3.0 Patch Format Specification](https://github.com/alex-free/lib-ppf) — PlayStation disc patch format, undo data, and block validation.
 
 ### Compression Algorithm References
-- [Haruhiko Okumura — LZSS Data Compression (1989)](https://oku.edu.mie-u.ac.jp/~okumura/compression/) — Original 4096-byte sliding window LZSS algorithm.
-- [aPLib Compression Library](https://ibsensoftware.com/products_aPLib.html) — Jorgen Ibsen. High-ratio LZ algorithm and AP32 container format.
+- [Haruhiko Okumura — LZSS Data Compression (1989)](https://okumuralab.org/~okumura/compression/) — Original 4096-byte sliding window LZSS algorithm.
+- [aPLib Compression Library](http://ibsensoftware.com/products_aPLib.html) — Jorgen Ibsen. High-ratio LZ algorithm and AP32 container format.
 - [Nintendo Yaz0 Compression](https://wiki.tockdom.com/wiki/Yaz0_(File_Format)) — Wii/GC LZSS variant with 8-bit group flags.
-- [Nintendo Yay0 Compression](https://wiki.tockdom.com/wiki/Yay0_(File_Format)) — N64/GC 3-stream LZSS decompressor.
-- [Electronic Arts RefPack / QFS](https://www.wiki.sc4devotion.com/index.php?title=DBPF_Compression) — EA's 2-4 byte match LZ codec.
+- [Nintendo Yay0 Compression](http://justsolve.archiveteam.org/wiki/Yay0) — N64/GC 3-stream LZSS decompressor (SZP container).
+- [Electronic Arts RefPack / QFS](https://modthesims.info/wiki.php?title=DBPF_Compression) — EA's 2-4 byte match LZ codec (0xFB10 / QFS).
 - [RFC 1951 — DEFLATE Compressed Data Format](https://www.rfc-editor.org/rfc/rfc1951) — Canonical Huffman tree and LZ77 back-reference encoding.
 
 ### Audio Format References
-- [SPC700 / S-DSP BRR Audio Format](https://wiki.superfamicom.org/spc700-reference/bit-rate-reduction-(brr)) — SNES 9-byte BRR block structure, 4-filter coefficients, loop point encoding.
+- [SPC700 / S-DSP BRR Audio Format](https://wiki.superfamicom.org/bit-rate-reduction-(brr)) — SNES 9-byte BRR block structure, 4-filter coefficients, loop point encoding.
 - [VAG SPU-ADPCM Format](https://psx-spx.consoledev.net/soundprocessingunitspu/) — Sony PS1/PS2 16-byte ADPCM block structure, loop flags.
-- [GameCube DSP-ADPCM Format](https://wiibrew.org/wiki/DSP-ADPCM) — Nintendo 8-byte frame audio codec, predictor coefficient tables.
+- [GameCube / Wii DSP-ADPCM Audio Format](https://wiibrew.org/wiki/BRSTM_file) — Nintendo 8-byte frame audio codec, predictor coefficient tables, and BRSTM container.
 
 ### Text, Fonts & Localization
 - [AngelCode BMFont](https://www.angelcode.com/products/bmfont/) — Bitmap font descriptor format (.fnt text and XML).
 - [GNU gettext PO File Format](https://www.gnu.org/software/gettext/manual/gettext.html#PO-Files) — `.po` translation catalog structure and plural-form handling.
-- [Romhacking.net TBL Format](https://www.romhacking.net/documents/313/) — Standard `.tbl` character mapping format for fan translation.
-- [DTE / MTE Compression for ROM Hacking](https://www.romhacking.net/documents/208/) — Dual/Multi Tile Encoding bigram compression theory.
+- [The Definitive Guide to ROM Hacking Tables](https://www.romhacking.net/documents/53/) — Standard `.tbl` character mapping format and Thingy table specification.
+- [DTE Compression for ROM Hacking](https://www.romhacking.net/documents/384/) — Dual Tile Encoding / Byte Pair bigram compression theory and implementation.
 
 ### Existing Tools & Prior Art
 - [ndstool](https://github.com/devkitPro/ndstool) — Nintendo DS ROM header builder (reference for ARM9/ARM7 entry point layout).
