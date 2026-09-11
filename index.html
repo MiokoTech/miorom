@@ -267,6 +267,25 @@
   
   
   
+    <li class="md-tabs__item">
+      <a href="COOKBOOK/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Cookbook
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
     
     
       <li class="md-tabs__item">
@@ -474,6 +493,17 @@
     <span class="md-ellipsis">
       
         4. Dialogue Localization &amp; Clean Script Catalogs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-fan-translation-reverse-engineering-toolkit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Fan Translation Reverse Engineering Toolkit
       
     </span>
   </a>
@@ -720,6 +750,33 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="COOKBOOK/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cookbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
     
     
     
@@ -734,10 +791,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
         
           
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
             
   
   
@@ -755,8 +812,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_3">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -877,10 +934,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
         
           
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
             
   
   
@@ -898,8 +955,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_4">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1037,6 +1094,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#5-fan-translation-reverse-engineering-toolkit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Fan Translation Reverse Engineering Toolkit
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1087,22 +1155,23 @@
 
 <h1 id="miorom">MioROM<a class="headerlink" href="#miorom" title="Permanent link">&para;</a></h1>
 <div class="retro-hero">
-  <div class="title">&gt; MIOROM // RE_FRAMEWORK_v0.13.1</div>
+  <div class="title">&gt; MIOROM // RE_FRAMEWORK_v1.0.0</div>
   <div class="subtitle">Modular Low-Level Binary &amp; Assembly Primitives for Console ROM Hacking</div>
   <div>
-    <span class="chip-badge nds">NDS ARM9/ARM7</span>
+    <span class="chip-badge nds">NDS ARM9/ARM7/THUMB</span>
     <span class="chip-badge n64">N64 MIPS-VR4300</span>
     <span class="chip-badge gba">GBA ARM7TDMI</span>
     <span class="chip-badge wii">WII BROADWAY PPC</span>
     <span class="chip-badge ps1">PS1 MIPS-R3000A</span>
-    <span class="chip-badge snes">SNES 65C816</span>
+    <span class="chip-badge snes">SNES W65C816</span>
+    <span class="chip-badge nes">NES MOS-6502</span>
     <span class="chip-badge gba">SEGA M68000</span>
     <span class="chip-badge nds">GB SM83</span>
   </div>
   <div class="stats">
-    <span>TESTS: <strong>468 PASSED</strong></span>
+    <span>TESTS: <strong>1050+ PASSED</strong></span>
     <span>RUNTIME DEPS: <strong>ZERO (STDLIB ONLY)</strong></span>
-    <span>DISASSEMBLER: <strong>6 ARCHITECTURES</strong></span>
+    <span>DISASSEMBLER: <strong>8 ARCHITECTURES</strong></span>
     <span>LICENSE: <strong>MIT</strong></span>
   </div>
 </div>
@@ -1122,33 +1191,38 @@
 <tbody>
 <tr>
 <td><span class="chip-badge nds">Nintendo DS</span></td>
-<td><code>.nds</code>, <code>.srl</code>, <code>.narc</code>, <code>.nftr</code></td>
-<td><code>NDSRom</code>, <code>NARCArchive</code>, <code>NFTRFont</code>, FAT/FNT mapper, CRC16 header recalibration</td>
+<td><code>.nds</code>, <code>.srl</code>, <code>.narc</code>, <code>.nftr</code>, <code>.ncgr</code>, <code>.nclr</code>, <code>.nscr</code></td>
+<td><code>NDSRom</code>, <code>NARCArchive</code>, <code>NFTRFont</code>, <code>NCLRFile</code>, <code>NCGRFile</code>, <code>NSCRFile</code>, <code>ThumbSnippet</code>, FAT/FNT mapper</td>
 </tr>
 <tr>
 <td><span class="chip-badge n64">Nintendo 64</span></td>
 <td><code>.z64</code>, <code>.n64</code>, <code>.v64</code>, <code>.m64</code></td>
-<td><code>N64Rom</code>, <code>DmaTableArchive</code>, <code>Fast3DParser</code>, <code>Fast3DBuilder</code>, <code>N64TextureDecoder</code>, IPL3 CIC verification</td>
+<td><code>N64Rom</code>, <code>DmaTableArchive</code>, <code>Fast3DParser</code>, <code>Fast3DBuilder</code>, <code>N64TextureDecoder</code>, <code>Yay0</code>, IPL3 CIC verification</td>
 </tr>
 <tr>
 <td><span class="chip-badge gba">Game Boy Advance</span></td>
 <td><code>.gba</code>, <code>.agb</code>, <code>.bin</code></td>
-<td><code>GBARom</code>, <code>LZ10</code>, <code>LZ11</code>, <code>ArmSnippet</code>, complement check validation</td>
+<td><code>GBARom</code>, <code>LZ10</code>, <code>LZ11</code>, <code>ArmSnippet</code>, <code>ThumbSnippet</code>, <code>APLib</code>, complement check validation</td>
 </tr>
 <tr>
 <td><span class="chip-badge wii">Wii / GameCube</span></td>
 <td><code>.iso</code>, <code>.gcm</code>, <code>.u8</code>, <code>.arc</code>, <code>.tpl</code>, <code>.dol</code></td>
-<td><code>GameCubeDisc</code>, <code>U8Archive</code>, <code>TPLFile</code>, <code>DolBinary</code>, <code>FstInjector</code>, 32-byte sector alignment</td>
+<td><code>GameCubeDisc</code>, <code>U8Archive</code>, <code>TPLFile</code>, <code>DolBinary</code>, <code>PpcSnippet</code>, <code>DSPADPCMCodec</code>, <code>Yay0</code>, <code>Yaz0</code>, 32-byte alignment</td>
 </tr>
 <tr>
 <td><span class="chip-badge ps1">PlayStation 1</span></td>
-<td><code>.bin/.cue</code>, <code>.iso</code>, <code>.exe</code>, <code>.tim</code></td>
-<td><code>ISO9660</code>, <code>CueBinDisc</code>, <code>TIMImage</code>, <code>PSXExe</code>, <code>CdXaDecoder</code> (ADPCM)</td>
+<td><code>.bin/.cue</code>, <code>.iso</code>, <code>.exe</code>, <code>.tim</code>, <code>.vag</code></td>
+<td><code>ISO9660</code>, <code>CueBinDisc</code>, <code>TIMImage</code>, <code>PSXExe</code>, <code>VAGFile</code>, <code>VAGCodec</code> (SPU-ADPCM), <code>CdXaDecoder</code></td>
 </tr>
 <tr>
 <td><span class="chip-badge snes">Super Nintendo</span></td>
-<td><code>.sfc</code>, <code>.smc</code></td>
-<td><code>SNESRom</code>, LoROM / HiROM complement checksum fixer</td>
+<td><code>.sfc</code>, <code>.smc</code>, <code>.brr</code></td>
+<td><code>SNESRom</code>, <code>BRRCodec</code> (SPC700 audio), <code>SnesSnippet</code>, W65C816 disasm with dynamic REP/SEP tracking</td>
+</tr>
+<tr>
+<td><span class="chip-badge nes">NES / Famicom</span></td>
+<td><code>.nes</code>, <code>.unf</code></td>
+<td><code>NESRom</code>, <code>NESHeaderStruct</code> (iNES / NES 2.0), mapper identification, PRG/CHR separation, MOS 6502 disasm</td>
 </tr>
 <tr>
 <td><span class="chip-badge gba">Sega Genesis / MD</span></td>
@@ -1249,6 +1323,15 @@
 <a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="n">ScriptCatalog</span><span class="o">.</span><span class="n">script_to_csv</span><span class="p">(</span><span class="s2">&quot;script_translated.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;base.csv&quot;</span><span class="p">,</span> <span class="s2">&quot;updated.csv&quot;</span><span class="p">)</span>
 </code></pre></div>
 <hr />
+<h3 id="5-fan-translation-reverse-engineering-toolkit">5. Fan Translation Reverse Engineering Toolkit<a class="headerlink" href="#5-fan-translation-reverse-engineering-toolkit" title="Permanent link">&para;</a></h3>
+<p>Surgical primitives for dissecting and translating retro game ROMs:
+- <strong><code>JapaneseCharMapMiner</code></strong>: Gojūon relative search engine auto-generating draft <code>.tbl</code> character tables from raw ROM binaries.
+- <strong><code>FontDissector</code></strong>: Heuristic font scanner, VWF width table hunter, and PNG spritesheet round-trip pipeline.
+- <strong><code>TextCompressionHunter</code></strong>: Retro Huffman tree graph walker and DTE bigram forensic scanner with optimal re-compressor.
+- <strong><code>ScriptVMDissector</code></strong>: Event script bytecode disassembler and branch relinker recalculating all jump targets automatically.
+- <strong><code>TilemapDissector</code></strong>: Menu nametable text scanner, ASCII layout visualizer, and translated graphic label splicer.
+- <strong><code>VWFHookEngine</code></strong>: End-to-end VWF hook deployer across ARM32, Thumb, MIPS32, SNES 65816, and MOS 6502 with automatic code cave allocation.</p>
+<hr />
 <h2 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h2>
 <p>Install MioROM from PyPI:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>pip<span class="w"> </span>install<span class="w"> </span>miorom
@@ -1268,12 +1351,17 @@
 <li>
 <p>:material-chip: <strong><a href="BINARY_PRIMITIVES/">Binary &amp; Assembly Primitives</a></strong>
     ---
-    Fluent micro-assemblers (<code>MipsSnippet</code>, <code>ArmSnippet</code>), patch writers, and symbol maps.</p>
+    Fluent binary reader/writers, micro-assemblers (<code>MipsSnippet</code>, <code>ArmSnippet</code>), patch writers, and symbol maps.</p>
 </li>
 <li>
 <p>:material-console: <strong><a href="CLI_REFERENCE/">CLI Reference</a></strong>
     ---
     Terminal manual for <code>miorom unpack</code>, <code>repack</code>, <code>scan</code>, <code>diff</code>, and more.</p>
+</li>
+<li>
+<p>:material-chef-hat: <strong><a href="COOKBOOK/">Cookbook &amp; Golden Pipelines</a></strong>
+    ---
+    10 golden pipelines: NDS, GBA, SNES, N64, GC, PS1, Sega, and PC-Engine recipes.</p>
 </li>
 <li>
 <p>:material-gamepad: <strong><a href="PLATFORMS/">Platform Specifications</a></strong>
@@ -1288,7 +1376,22 @@
 <li>
 <p>:material-code-json: <strong><a href="API_REFERENCE/">API Reference</a></strong>
     ---
-    Complete programmatic index across all 10 core subpackages.</p>
+    Complete programmatic index across 70+ classes and all 10 core subpackages.</p>
+</li>
+<li>
+<p>:material-file-certificate: <strong><a href="LIBRARY_CONTRACTS/">Library Contracts</a></strong>
+    ---
+    Serialization, streaming, structured exceptions, and pipeline extension contracts.</p>
+</li>
+<li>
+<p>:material-shield-check: <strong><a href="SECURITY/">Security &amp; Path Safety</a></strong>
+    ---
+    Directory traversal protection, zip-slip defense, and untrusted archive checklist.</p>
+</li>
+<li>
+<p>:material-history: <strong><a href="CHANGELOG/">Release Changelog</a></strong>
+    ---
+    Detailed version history, migration notes, and v1.0.0 release summary.</p>
 </li>
 </ul>
 </div>
