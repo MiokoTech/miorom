@@ -1,6 +1,6 @@
 # MioROM API Reference & Architecture Guide
 
-MioROM v1.0.0 is an all-in-one modular Python framework for ROM hacking, fan translation engineering, and game reverse engineering.
+MioROM v1.0.1 is an all-in-one modular Python framework for ROM hacking, fan translation engineering, and game reverse engineering.
 
 ### Companion Guides
 - [Binary & Assembly Primitives Guide](BINARY_PRIMITIVES.md) - Low-level patching, micro-assembly, and struct serialization.

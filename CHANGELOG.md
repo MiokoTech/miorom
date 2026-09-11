@@ -2,6 +2,11 @@
 
 All notable changes to MioROM will be documented in this file.
 
+## [1.0.1] — 2026-11-11
+
+### Fixed
+- Update documentation reference links.
+
 ## [1.0.0] — 2026-11-11
 
 ### Added

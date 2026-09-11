@@ -284,7 +284,7 @@ miorom/
 ├── README.md                   # Project overview and quickstart
 ├── CHANGELOG.md                # Version history and release notes
 ├── docs/
-│   ├── API_REFERENCE.md        # Comprehensive 70+ class API reference (updated v1.0.0)
+│   ├── API_REFERENCE.md        # Comprehensive 70+ class API reference (updated v1.0.1)
 │   ├── BINARY_PRIMITIVES.md    # Low-level primitives developer guide
 │   ├── CLI_REFERENCE.md        # Terminal command manual
 │   ├── COOKBOOK.md             # 10 end-to-end golden pipelines and recipes
@@ -341,7 +341,7 @@ Technical documentation, hardware specifications, and prior-art resources consul
 - [MIPS Architecture Reference Manual](https://www.cs.cmu.edu/afs/cs/academic/class/15740-f97/public/doc/mips-isa.pdf) — R3000 / R4300i ISA, COP1 floating-point, delay slot behavior (PS1, N64).
 - [WiiBrew — Broadway PowerPC Architecture](https://wiibrew.org/wiki/Broadway) — Wii Broadway PPC 32-bit instruction set, registers, paired single SIMD (GameCube/Wii).
 - [GBATEK — ARM and Thumb CPU Reference](https://problemkaputt.de/gbatek.htm#armcpureference) — ARMv4T / ARMv5TE 32-bit and Thumb-16 ISA, BL/BX encoding, pipeline compensation (GBA/NDS).
-- [Motorola 68000 Programmer's Reference Manual](https://raw.githubusercontent.com/M680x0/Literature/master/M68000PM_AD_Rev_1_Programmers_Reference_Manual_1992.pdf) — M68K opcode encoding, effective address modes, BRA/BSR displacement.
+- [Motorola 68000 Programmer's Reference Manual](https://www.nxp.com/docs/en/reference-manual/M68000PRM.pdf) — M68K opcode encoding, effective address modes, BRA/BSR displacement.
 
 ### Console ROM & Disc Format Documentation
 - [NDSPY Documentation](https://ndspy.readthedocs.io/) — Nintendo DS ROM structure, NARC filesystem, FAT/FNT layout, ARM9/ARM7 overlay tables.

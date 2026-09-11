@@ -1,7 +1,7 @@
 # MioROM
 
 <div class="retro-hero">
-  <div class="title">&gt; MIOROM // RE_FRAMEWORK_v1.0.0</div>
+  <div class="title">&gt; MIOROM // RE_FRAMEWORK_v1.0.1</div>
   <div class="subtitle">Modular Low-Level Binary &amp; Assembly Primitives for Console ROM Hacking</div>
   <div>
     <span class="chip-badge nds">NDS ARM9/ARM7/THUMB</span>
