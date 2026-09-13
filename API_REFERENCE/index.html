@@ -1293,7 +1293,7 @@
 
 
 <h1 id="miorom-api-reference-architecture-guide">MioROM API Reference &amp; Architecture Guide<a class="headerlink" href="#miorom-api-reference-architecture-guide" title="Permanent link">&para;</a></h1>
-<p>MioROM v1.0.1 is an all-in-one modular Python framework for ROM hacking, fan translation engineering, and game reverse engineering.</p>
+<p>MioROM v1.0.2 is an all-in-one modular Python framework for ROM hacking, fan translation engineering, and game reverse engineering.</p>
 <h3 id="companion-guides">Companion Guides<a class="headerlink" href="#companion-guides" title="Permanent link">&para;</a></h3>
 <ul>
 <li><a href="../BINARY_PRIMITIVES/">Binary &amp; Assembly Primitives Guide</a> - Low-level patching, micro-assembly, and struct serialization.</li>
@@ -1715,12 +1715,16 @@
 <td style="text-align: left;">Script delimiter &amp; control code auto-detector: discovers 1-byte/multi-byte string terminators across pointer boundaries (<code>detect_delimiters</code>), identifies embedded bytecode opcodes and estimates parameter arguments (<code>detect_control_codes</code>), generates <code>ScriptBoundaryReport</code> (<code>analyze_script_boundaries</code>), and extracts cleanly bounded script entries (<code>slice_script_entries</code>).</td>
 </tr>
 <tr>
+<td style="text-align: left;"><code>DialogueDissector</code>, <code>DialogueBlock</code></td>
+<td style="text-align: left;">Automated ROM dialogue pointer table scanner and extractor: maps console base addresses, extracts dialogue blocks to GNU gettext <code>.po</code> or JSON, and reinjects translated text with automatic free-space relocation (<code>scan_dialogue_tables()</code>, <code>reinject_dialogues()</code>).</td>
+</tr>
+<tr>
 <td style="text-align: left;"><code>VMOpcodeType</code></td>
 <td style="text-align: left;">Enumeration of VM instruction categories: <code>TEXT</code>, <code>BRANCH_REL</code>, <code>BRANCH_ABS</code>, <code>SWITCH</code>, <code>CONTROL</code>, and <code>TERMINATOR</code>.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>VMInstructionDef</code></td>
-<td style="text-align: left;">Opcode schema definition carrying opcode byte, mnemonic, type, fixed length, text terminator, length-prefix flag, and operand format string.</td>
+<td style="text-align: left;">Opcode schema definition carrying opcode byte, mnemonic, type, fixed length, text terminator, length-prefix flag, declarative <code>schema</code> (<code>SchemaField</code> / <code>BinaryStruct</code>), and legacy operand format string.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>DissectedInstruction</code></td>
@@ -1732,7 +1736,7 @@
 </tr>
 <tr>
 <td style="text-align: left;"><code>ScriptVMDissector</code></td>
-<td style="text-align: left;">Linear sweep bytecode disassembler for arbitrary opcode schemas (<code>disassemble()</code>); dynamic text replacement engine that rewrites translated strings and recalculates all branch deltas, absolute jump targets, and switch tables in-place (<code>splice_and_relink()</code>).</td>
+<td style="text-align: left;">Linear sweep bytecode disassembler for arbitrary opcode schemas (<code>disassemble()</code>); dynamic text replacement and relinking engine that rewrites translated strings and recalculates all relative branch deltas, absolute jump targets, and switch tables in-place using declarative <code>BinaryStruct</code> schemas (<code>splice_and_relink()</code>).</td>
 </tr>
 </tbody>
 </table>
@@ -1847,36 +1851,56 @@
 <td style="text-align: left;">Statistical n-gram character matrix miner reconstructing unknown <code>.tbl</code> tables.</td>
 </tr>
 <tr>
+<td style="text-align: left;"><code>JapaneseCharmap</code></td>
+<td style="text-align: left;">Multi-byte character encoding handler supporting Shift-JIS and EUC-JP with bidirectional dakuten and handakuten composition/decomposition.</td>
+</tr>
+<tr>
 <td style="text-align: left;"><code>TrieTranscoder</code></td>
 <td style="text-align: left;">High-performance greedy longest-prefix transcoder for complex DTE dictionaries.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><code>PixelWordWrapper</code></td>
-<td style="text-align: left;">True on-screen Variable Width Font (VWF) word-wrapper and boundary checker.</td>
+<td style="text-align: left;"><code>WordWrapper</code></td>
+<td style="text-align: left;">Fixed-width character-count word-wrapper and textbox dimension validator (<code>miorom.text.line_wrapper</code>).</td>
 </tr>
 <tr>
-<td style="text-align: left;"><code>VwfLineWrapper</code></td>
+<td style="text-align: left;"><code>PixelWordWrapper</code></td>
+<td style="text-align: left;">True on-screen Variable Width Font (VWF) word-wrapper and boundary checker (<code>miorom.text.line_wrapper</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>FontMetrics</code></td>
+<td style="text-align: left;">Proportional character glyph width and kerning registry (<code>miorom.text.line_wrapper</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>VwfLineWrapper</code>, <code>AdaptiveLineWrapper</code></td>
 <td style="text-align: left;">Pixel-accurate VWF word-wrapper and paginator accepting dicts, binary table bytes, callables, <code>FontGlyphInjector</code>, or <code>FontMetrics</code> instances. Preserves game control codes (<code>[wait]</code>, <code>{hero}</code>, <code>&lt;color:red&gt;</code>) during line measurement.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><code>LineWrapResult</code></td>
-<td style="text-align: left;">Structured result of <code>VwfLineWrapper.analyze()</code> containing pages, per-line pixel widths, and overflow diagnostics.</td>
+<td style="text-align: left;"><code>LineWrapResult</code>, <code>TextBoxPage</code></td>
+<td style="text-align: left;">Structured results containing paginated dialogue pages, per-line pixel widths, and overflow diagnostics.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><code>TextBoxPage</code></td>
-<td style="text-align: left;">Single paginated dialogue page with <code>lines</code>, <code>pixel_widths</code>, and <code>max_line_width</code>.</td>
+<td style="text-align: left;"><code>DTEMiner</code>, <code>DTEToken</code></td>
+<td style="text-align: left;">Dual-Tile and Multi-Tile Encoding (DTE/MTE) frequency miner and token dictionary builder (<code>miorom.text.dte</code>).</td>
 </tr>
 <tr>
-<td style="text-align: left;"><code>DteOptimizer</code></td>
-<td style="text-align: left;">DTE/MTE n-gram frequency analyzer and net-savings dictionary builder. Returns <code>DteStats</code> with compression ratio metrics and supports <code>.tbl</code> round-trip export/import.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><code>DteCodec</code></td>
-<td style="text-align: left;">Greedy two-way DTE/MTE encoder and decoder integrated with <code>CharMap</code> for full translation round-trips.</td>
+<td style="text-align: left;"><code>DteOptimizer</code>, <code>DteCodec</code></td>
+<td style="text-align: left;">DTE/MTE n-gram frequency optimizer and greedy two-way transcoder integrated with <code>CharMap</code> for net-savings dictionary compression.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>DteStats</code>, <code>DteEntry</code></td>
 <td style="text-align: left;">Result dataclasses for dictionary compression metadata (bytes saved, ratio, per-token frequency).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>TagManager</code>, <code>TagSyntaxValidator</code></td>
+<td style="text-align: left;">Complete markup control tag lifecycle suite: bidirectional code-to-tag conversion, bracket balance verification, and translation variable fidelity checks (<code>miorom.text.tags</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>TagValidationReport</code></td>
+<td style="text-align: left;">Structured diagnostic report of tag syntax validity, unmatched brackets, and missing game variables.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>TextDialoguePipeline</code></td>
+<td style="text-align: left;">End-to-end dialogue translation pipeline integrating table discovery, tokenization, line wrapping, and relocation (<code>miorom.text.pipeline</code>).</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>PointerRelinker</code></td>
@@ -1893,10 +1917,6 @@
 <tr>
 <td style="text-align: left;"><code>TmLookupResult</code>, <code>TmMatch</code></td>
 <td style="text-align: left;">Translation memory search candidate records with similarity scoring.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><code>FontMetrics</code></td>
-<td style="text-align: left;">Proportional character glyph width and kerning registry.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>BMFont</code></td>
