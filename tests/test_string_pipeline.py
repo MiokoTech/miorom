@@ -197,3 +197,135 @@ def test_string_pipeline_dte_compression_and_integrity():
     # Integrity verification must pass
     rep = RomIntegrityManager.verify(bytes(rom), platform="GBA")
     assert rep.is_valid is True
+
+
+def test_string_pipeline_schema_and_paginator():
+    from miorom.text.tokenizer import ControlCodeDef, ControlCodeSchema
+    from miorom.text.paginator import SmartAutoPaginator, PaginationConfig
+
+    buf = bytearray(512)
+    schema = ControlCodeSchema(
+        codes=[
+            ControlCodeDef(byte_id=0x01, name="NL", bracket="[]"),
+            ControlCodeDef(byte_id=0x05, name="COLOR", arg_bytes=1, bracket="[]"),
+            ControlCodeDef(byte_id=0x09, name="PAGE", bracket="[]"),
+        ],
+        terminator=b"\x00",
+    )
+
+    # String with embedded control codes at 0x80
+    buf[0x80:0x8E] = b"Hero\x05\x01\x01Sword\x00"
+    struct.pack_into("<I", buf, 0x10, 0x80)
+
+    # Extract with schema
+    extracted = StringTablePipeline.extract_strings(
+        buffer=bytes(buf),
+        table_offset=0x10,
+        entry_count=1,
+        schema=schema,
+    )
+    assert extracted[0].decoded_text == "Hero[COLOR:01][NL]Sword"
+
+    # Dump to PO
+    po = StringTablePipeline.dump_to_po(
+        buffer=bytes(buf),
+        table_offset=0x10,
+        entry_count=1,
+        schema=schema,
+    )
+    assert po.entries[0].msgid == "Hero[COLOR:01][NL]Sword"
+
+    # Set long translation
+    po.entries[0].msgstr = "Pahlawan yang agung, ambil pedang ini dan selamatkan dunia dari kehancuran abadi!"
+
+    paginator = SmartAutoPaginator(
+        config=PaginationConfig(
+            max_width_px=80,
+            max_lines_per_page=2,
+            page_break_tag="[PAGE]",
+            line_break_tag="[NL]",
+            default_char_width_px=6,
+        )
+    )
+
+    summary = StringTablePipeline.inject_from_po(
+        buffer=buf,
+        po_source=po,
+        table_offset=0x10,
+        schema=schema,
+        paginator=paginator,
+        auto_fix_integrity=False,
+    )
+
+    assert summary.total_items == 1
+    # Check that injected payload has PAGE tag byte (0x09) and NL tag byte (0x01)
+    new_target = struct.unpack_from("<I", buf, 0x10)[0]
+    payload = bytes(buf[new_target : new_target + 64])
+    assert b"\x09" in payload
+    assert b"\x01" in payload
+
+
+def test_string_pipeline_snes_24bit_pointers():
+    buf = bytearray(0x4000)
+
+    # Put strings at 0x1000 and 0x1050
+    buf[0x1000:0x1006] = b"ItemA\x00"
+    buf[0x1050:0x1056] = b"ItemB\x00"
+
+    # 3-byte SNES pointers at 0x200
+    table_offset = 0x200
+    buf[table_offset : table_offset + 3] = (0x1000).to_bytes(3, "little")
+    buf[table_offset + 3 : table_offset + 6] = (0x1050).to_bytes(3, "little")
+
+    # Extract strings with pointer_size=3
+    extracted = StringTablePipeline.extract_strings(
+        buffer=bytes(buf),
+        table_offset=table_offset,
+        entry_count=2,
+        pointer_size=3,
+        endian="<",
+    )
+
+    assert len(extracted) == 2
+    assert extracted[0].offset == 0x1000
+    assert extracted[0].decoded_text == "ItemA"
+    assert extracted[1].offset == 0x1050
+    assert extracted[1].decoded_text == "ItemB"
+
+    # Dump and inject expanded text
+    po = StringTablePipeline.dump_to_po(
+        buffer=bytes(buf),
+        table_offset=table_offset,
+        entry_count=2,
+        pointer_size=3,
+        endian="<",
+    )
+    po.entries[0].msgstr = "Ramuan Penyembuh Ajaib Yang Sangat Langka"
+
+    summary = StringTablePipeline.inject_from_po(
+        buffer=buf,
+        po_source=po,
+        table_offset=table_offset,
+        pointer_size=3,
+        endian="<",
+        auto_fix_integrity=False,
+    )
+
+    assert summary.total_items == 2
+    assert summary.relocated_count >= 1
+
+    # Verify 3-byte pointer readback and re-extraction
+    new_ptr_bytes = bytes(buf[table_offset : table_offset + 3])
+    new_ptr = int.from_bytes(new_ptr_bytes, "little")
+    assert new_ptr != 0x1000
+
+    re_extracted = StringTablePipeline.extract_strings(
+        buffer=bytes(buf),
+        table_offset=table_offset,
+        entry_count=2,
+        pointer_size=3,
+        endian="<",
+    )
+    assert re_extracted[0].decoded_text == "Ramuan Penyembuh Ajaib Yang Sangat Langka"
+    assert re_extracted[1].decoded_text == "ItemB"
+

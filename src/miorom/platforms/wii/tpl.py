@@ -14,7 +14,7 @@ import os
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from miorom.core.binary import BinaryReader, BinaryWriter
-from miorom.core.schema import BinaryStruct, U16, U32
+from miorom.core.schema import BinaryStruct, U8, U16, U32
 from miorom.errors import ParseError
 from miorom.result import MioRomResult
 
@@ -39,6 +39,12 @@ TPL_FORMAT_NAMES = {
     14: "CMPR",  # S3TC / DXT1
 }
 
+TPL_PALETTE_FORMAT_NAMES = {
+    0: "IA8",
+    1: "RGB565",
+    2: "RGB5A3",
+}
+
 
 class TPLHeaderStruct(BinaryStruct):
     _endian = ">"
@@ -51,6 +57,15 @@ class TPLImageTableEntryStruct(BinaryStruct):
     _endian = ">"
     image_header_offset = U32()
     palette_header_offset = U32()
+
+
+class TPLPaletteHeaderStruct(BinaryStruct):
+    _endian = ">"
+    num_entries = U16()
+    unpacked = U8()
+    pad = U8()
+    format_id = U32()
+    data_offset = U32()
 
 
 class TPLImageHeaderStruct(BinaryStruct):
@@ -70,7 +85,160 @@ class TPLColorStruct(BinaryStruct):
     value = U16()
 
 
-def decode_gx_texture(raw: bytes, width: int, height: int, format_id: int) -> bytes:
+def decode_gx_palette(raw: bytes, num_entries: int, format_id: int) -> List[Tuple[int, int, int, int]]:
+    """
+    Decodes raw Nintendo GX TLUT (Texture LookUp Table) palette bytes into RGBA8888 tuples.
+
+    Supported formats:
+    - 0: IA8 (8-bit alpha, 8-bit intensity)
+    - 1: RGB565 (5-bit R, 6-bit G, 5-bit B, opaque)
+    - 2: RGB5A3 (15-bit RGB opaque or 12-bit RGB with 3-bit alpha)
+    """
+    palette: List[Tuple[int, int, int, int]] = []
+    pos = 0
+    for _ in range(num_entries):
+        if pos + 2 > len(raw):
+            palette.append((0, 0, 0, 0))
+            continue
+        val = (raw[pos] << 8) | raw[pos + 1]
+        pos += 2
+        if format_id == 0:  # IA8
+            a = val >> 8
+            i = val & 0xFF
+            palette.append((i, i, i, a))
+        elif format_id == 1:  # RGB565
+            r = ((val >> 11) & 0x1F) * 255 // 31
+            g = ((val >> 5) & 0x3F) * 255 // 63
+            b = (val & 0x1F) * 255 // 31
+            palette.append((r, g, b, 255))
+        elif format_id == 2:  # RGB5A3
+            if val & 0x8000:
+                r = ((val >> 10) & 0x1F) * 255 // 31
+                g = ((val >> 5) & 0x1F) * 255 // 31
+                b = (val & 0x1F) * 255 // 31
+                a = 255
+            else:
+                a = ((val >> 12) & 0x07) * 255 // 7
+                r = ((val >> 8) & 0x0F) * 255 // 15
+                g = ((val >> 4) & 0x0F) * 255 // 15
+                b = (val & 0x0F) * 255 // 15
+            palette.append((r, g, b, a))
+        else:
+            palette.append((0, 0, 0, 0))
+    return palette
+
+
+def encode_gx_palette(palette: List[Tuple[int, int, int, int]], format_id: int) -> bytes:
+    """
+    Encodes a list of RGBA8888 tuples into raw big-endian 16-bit Nintendo GX palette bytes.
+    """
+    out = bytearray()
+    for col in palette:
+        r, g, b, a = col
+        if format_id == 0:  # IA8
+            i = (r * 30 + g * 59 + b * 11) // 100
+            out.extend([a & 0xFF, i & 0xFF])
+        elif format_id == 1:  # RGB565
+            r5 = r >> 3
+            g6 = g >> 2
+            b5 = b >> 3
+            val = (r5 << 11) | (g6 << 5) | b5
+            out.extend([(val >> 8) & 0xFF, val & 0xFF])
+        elif format_id == 2:  # RGB5A3
+            if a >= 224:
+                val = 0x8000 | ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3)
+            else:
+                val = ((a >> 5) << 12) | ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4)
+            out.extend([(val >> 8) & 0xFF, val & 0xFF])
+        else:
+            out.extend([0, 0])
+    return bytes(out)
+
+
+def extract_or_quantize_palette(
+    rgba_bytes: bytes,
+    width: int,
+    height: int,
+    max_colors: int = 16,
+) -> Tuple[List[Tuple[int, int, int, int]], List[int]]:
+    """
+    Extracts an optimal RGBA palette and pixel index array.
+    If unique colors <= max_colors, extracts exact colors (lossless).
+    If greater, quantizes down to max_colors using centroid frequency clustering.
+    """
+    pixels: List[Tuple[int, int, int, int]] = []
+    total_pixels = width * height
+    for i in range(0, total_pixels * 4, 4):
+        pixels.append((rgba_bytes[i], rgba_bytes[i + 1], rgba_bytes[i + 2], rgba_bytes[i + 3]))
+
+    color_counts: Dict[Tuple[int, int, int, int], int] = {}
+    for p in pixels:
+        color_counts[p] = color_counts.get(p, 0) + 1
+
+    unique_colors = list(color_counts.keys())
+    has_transparent = any(c[3] < 128 for c in unique_colors)
+    transparent_color = (0, 0, 0, 0)
+
+    palette: List[Tuple[int, int, int, int]] = []
+    if has_transparent:
+        palette.append(transparent_color)
+
+    if len(unique_colors) <= max_colors:
+        for c in unique_colors:
+            if has_transparent and c[3] < 128:
+                continue
+            if c not in palette:
+                palette.append(c)
+    else:
+        sorted_colors = sorted(
+            [c for c in unique_colors if not (has_transparent and c[3] < 128)],
+            key=lambda c: color_counts[c],
+            reverse=True,
+        )
+        needed = max_colors - len(palette)
+        palette.extend(sorted_colors[:needed])
+
+    while len(palette) < max_colors:
+        palette.append((0, 0, 0, 0))
+
+    color_to_idx: Dict[Tuple[int, int, int, int], int] = {}
+    for idx, col in enumerate(palette):
+        if col not in color_to_idx:
+            color_to_idx[col] = idx
+
+    indices: List[int] = []
+    cache: Dict[Tuple[int, int, int, int], int] = dict(color_to_idx)
+
+    for p in pixels:
+        if p in cache:
+            indices.append(cache[p])
+        elif has_transparent and p[3] < 32:
+            indices.append(0)
+        else:
+            best_idx = 0
+            best_dist = float("inf")
+            for idx, c in enumerate(palette):
+                dr = p[0] - c[0]
+                dg = p[1] - c[1]
+                db = p[2] - c[2]
+                da = p[3] - c[3]
+                dist = dr * dr + dg * dg + db * db + (da * da * 2)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_idx = idx
+            cache[p] = best_idx
+            indices.append(best_idx)
+
+    return palette, indices
+
+
+def decode_gx_texture(
+    raw: bytes,
+    width: int,
+    height: int,
+    format_id: int,
+    palette: Optional[List[Tuple[int, int, int, int]]] = None,
+) -> bytes:
     """
     Decodes GameCube/Wii tiled texture data into linear uncompressed RGBA8888 bytes.
     """
@@ -275,10 +443,64 @@ def decode_gx_texture(raw: bytes, width: int, height: int, format_id: int) -> by
                                 c = palette[p_code]
                                 out[idx : idx + 4] = bytes([c[0], c[1], c[2], c[3]])
 
+    elif fmt == 8:  # CI4 (8x8 tiles, 4 bpp, 2 pixels per byte)
+        if not palette:
+            raise ParseError("Paletted texture (CI4) requires a palette for decoding.")
+        tiles_x = (w + 7) // 8
+        tiles_y = (h + 7) // 8
+        pos = 0
+        pal_len = len(palette)
+        for ty in range(tiles_y):
+            for tx in range(tiles_x):
+                for py in range(8):
+                    for px in range(0, 8, 2):
+                        if pos < len(raw):
+                            b = raw[pos]
+                            idx0 = (b >> 4) & 0x0F
+                            idx1 = b & 0x0F
+                            x0 = tx * 8 + px
+                            y0 = ty * 8 + py
+                            if x0 < w and y0 < h:
+                                col = palette[idx0] if idx0 < pal_len else (0, 0, 0, 0)
+                                pidx = (y0 * w + x0) * 4
+                                out[pidx : pidx + 4] = bytes(col)
+                            x1 = x0 + 1
+                            if x1 < w and y0 < h:
+                                col = palette[idx1] if idx1 < pal_len else (0, 0, 0, 0)
+                                pidx = (y0 * w + x1) * 4
+                                out[pidx : pidx + 4] = bytes(col)
+                            pos += 1
+
+    elif fmt == 9:  # CI8 (8x4 tiles, 8 bpp, 1 pixel per byte)
+        if not palette:
+            raise ParseError("Paletted texture (CI8) requires a palette for decoding.")
+        tiles_x = (w + 7) // 8
+        tiles_y = (h + 3) // 4
+        pos = 0
+        pal_len = len(palette)
+        for ty in range(tiles_y):
+            for tx in range(tiles_x):
+                for py in range(4):
+                    for px in range(8):
+                        x = tx * 8 + px
+                        y = ty * 4 + py
+                        if pos < len(raw) and x < w and y < h:
+                            idx = raw[pos]
+                            col = palette[idx] if idx < pal_len else (0, 0, 0, 0)
+                            pidx = (y * w + x) * 4
+                            out[pidx : pidx + 4] = bytes(col)
+                        pos += 1
+
     return bytes(out)
 
 
-def encode_gx_texture(rgba: bytes, width: int, height: int, format_id: int) -> bytes:
+def encode_gx_texture(
+    rgba: bytes,
+    width: int,
+    height: int,
+    format_id: int,
+    palette: Optional[List[Tuple[int, int, int, int]]] = None,
+) -> bytes:
     """
     Encodes linear RGBA8888 bytes into GameCube/Wii tiled texture format.
     """
@@ -490,6 +712,79 @@ def encode_gx_texture(rgba: bytes, width: int, height: int, format_id: int) -> b
                     out.append((bits >> 8) & 0xFF)
                     out.append(bits & 0xFF)
 
+    elif fmt == 8:  # CI4 (8x8 tiles, 4 bpp, 32 bytes/tile)
+        if not palette:
+            raise ValueError("CI4 texture encoding requires a palette.")
+        pal_len = len(palette)
+        color_map: Dict[Tuple[int, int, int, int], int] = {}
+        for idx, col in enumerate(palette):
+            if col not in color_map:
+                color_map[col] = idx
+
+        tiles_x = (w + 7) // 8
+        tiles_y = (h + 7) // 8
+        for ty in range(tiles_y):
+            for tx in range(tiles_x):
+                for py in range(8):
+                    for px in range(0, 8, 2):
+                        x0 = tx * 8 + px
+                        y0 = ty * 8 + py
+                        x1 = x0 + 1
+                        idx0 = 0
+                        if x0 < w and y0 < h:
+                            p0 = (y0 * w + x0) * 4
+                            pix0 = (rgba[p0], rgba[p0 + 1], rgba[p0 + 2], rgba[p0 + 3])
+                            if pix0 in color_map:
+                                idx0 = color_map[pix0]
+                            else:
+                                idx0 = min(
+                                    range(pal_len),
+                                    key=lambda i: sum((pix0[c] - palette[i][c]) ** 2 for c in range(4)),
+                                )
+                        idx1 = 0
+                        if x1 < w and y0 < h:
+                            p1 = (y0 * w + x1) * 4
+                            pix1 = (rgba[p1], rgba[p1 + 1], rgba[p1 + 2], rgba[p1 + 3])
+                            if pix1 in color_map:
+                                idx1 = color_map[pix1]
+                            else:
+                                idx1 = min(
+                                    range(pal_len),
+                                    key=lambda i: sum((pix1[c] - palette[i][c]) ** 2 for c in range(4)),
+                                )
+                        out.append(((idx0 & 0x0F) << 4) | (idx1 & 0x0F))
+
+    elif fmt == 9:  # CI8 (8x4 tiles, 8 bpp, 32 bytes/tile)
+        if not palette:
+            raise ValueError("CI8 texture encoding requires a palette.")
+        pal_len = len(palette)
+        color_map: Dict[Tuple[int, int, int, int], int] = {}
+        for idx, col in enumerate(palette):
+            if col not in color_map:
+                color_map[col] = idx
+
+        tiles_x = (w + 7) // 8
+        tiles_y = (h + 3) // 4
+        for ty in range(tiles_y):
+            for tx in range(tiles_x):
+                for py in range(4):
+                    for px in range(8):
+                        x = tx * 8 + px
+                        y = ty * 4 + py
+                        if x < w and y < h:
+                            p = (y * w + x) * 4
+                            pix = (rgba[p], rgba[p + 1], rgba[p + 2], rgba[p + 3])
+                            if pix in color_map:
+                                idx = color_map[pix]
+                            else:
+                                idx = min(
+                                    range(pal_len),
+                                    key=lambda i: sum((pix[c] - palette[i][c]) ** 2 for c in range(4)),
+                                )
+                            out.append(idx & 0xFF)
+                        else:
+                            out.append(0)
+
     return bytes(out)
 
 
@@ -506,15 +801,68 @@ class TPLImage(MioRomResult):
     mag_filter: int = 1
     palette_header_offset: int = 0
     raw_data: bytes = b""
+    palette: Optional[List[Tuple[int, int, int, int]]] = None
+    palette_format_id: int = 2
 
     @property
     def format_name(self) -> str:
         return TPL_FORMAT_NAMES.get(self.format_id, f"Unknown (0x{self.format_id:X})")
 
+    @property
+    def is_paletted(self) -> bool:
+        return self.format_id in (8, 9, 10)
+
+    @property
+    def palette_format_name(self) -> str:
+        return TPL_PALETTE_FORMAT_NAMES.get(self.palette_format_id, f"Unknown (0x{self.palette_format_id:X})")
+
+    @property
+    def color_count(self) -> int:
+        return len(self.palette) if self.palette else 0
+
+    def summary(self) -> str:
+        pal_info = f", Paletted ({self.palette_format_name}, {self.color_count} colors)" if self.is_paletted else ""
+        return (
+            f"TPLImage #{self.index}: {self.width}x{self.height} | "
+            f"Format: {self.format_name} (0x{self.format_id:02X}){pal_info} | "
+            f"Data Size: {len(self.raw_data)} bytes"
+        )
+
+    def to_terminal_ascii(self, max_width: int = 40) -> str:
+        """
+        Renders an ASCII art representation of the texture for terminal diagnostics.
+        """
+        rgba = decode_gx_texture(self.raw_data, self.width, self.height, self.format_id, palette=self.palette)
+        tw = min(self.width, max_width)
+        th = max(1, int(self.height * (tw / self.width) * 0.5))
+
+        ascii_chars = " .:-=+*#%@"
+        lines = []
+        for ty in range(th):
+            line = []
+            for tx in range(tw):
+                src_x = int(tx * self.width / tw)
+                src_y = int(ty * self.height / th)
+                idx = (src_y * self.width + src_x) * 4
+                r = rgba[idx]
+                g = rgba[idx + 1]
+                b = rgba[idx + 2]
+                a = rgba[idx + 3]
+                if a < 32:
+                    line.append(" ")
+                else:
+                    lum = (r * 299 + g * 587 + b * 114) // 1000
+                    lum = lum * a // 255
+                    char_idx = lum * (len(ascii_chars) - 1) // 255
+                    line.append(ascii_chars[char_idx])
+            lines.append("".join(line))
+        return "\n".join(lines)
+
     def __repr__(self) -> str:
+        pal_info = f" palette={self.palette_format_name}[{self.color_count}]" if self.is_paletted else ""
         return (
             f"<TPLImage #{self.index} {self.width}x{self.height} "
-            f"format={self.format_name} offset=0x{self.data_offset:06X} "
+            f"format={self.format_name}{pal_info} offset=0x{self.data_offset:06X} "
             f"({len(self.raw_data)} bytes)>"
         )
 def calc_gx_texture_size(width: int, height: int, format_id: int) -> int:
@@ -592,6 +940,18 @@ class TPLFile:
                 else data[data_offset:]
             )
 
+            palette_colors = None
+            pal_format_id = 2
+            if (
+                entry.palette_header_offset != 0
+                and entry.palette_header_offset + TPLPaletteHeaderStruct.sizeof() <= len(data)
+            ):
+                pal_header = TPLPaletteHeaderStruct.from_bytes(data, offset=entry.palette_header_offset)
+                pal_format_id = pal_header.format_id
+                pal_size = pal_header.num_entries * 2
+                pal_raw = data[pal_header.data_offset : pal_header.data_offset + pal_size]
+                palette_colors = decode_gx_palette(pal_raw, pal_header.num_entries, pal_header.format_id)
+
             images.append(
                 TPLImage(
                     index=i,
@@ -605,6 +965,8 @@ class TPLFile:
                     mag_filter=image_header.mag_filter,
                     palette_header_offset=entry.palette_header_offset,
                     raw_data=raw_bytes,
+                    palette=palette_colors,
+                    palette_format_id=pal_format_id,
                 )
             )
 
@@ -621,7 +983,7 @@ class TPLFile:
             raise IndexError(f"Image index {image_index} out of range.")
 
         img = self.images[image_index]
-        return decode_gx_texture(img.raw_data, img.width, img.height, img.format_id)
+        return decode_gx_texture(img.raw_data, img.width, img.height, img.format_id, palette=img.palette)
 
     def to_image(self, image_index: int = 0) -> "Image.Image":
         """
@@ -642,10 +1004,13 @@ class TPLFile:
         cls,
         image_or_path: Union[str, "Image.Image"],
         format_id: int = 5,
+        palette_format_id: int = 2,
+        palette: Optional[List[Tuple[int, int, int, int]]] = None,
     ) -> "TPLFile":
         """
         Creates a TPLFile container containing a single encoded image.
         Default format: 5 (RGB5A3).
+        Supports paletted formats: 8 (CI4) and 9 (CI8).
         """
         if not HAS_PIL:
             raise ImportError("Pillow is required for TPLFile.from_image().")
@@ -659,7 +1024,15 @@ class TPLFile:
         width, height = pil_img.size
         rgba_bytes = pil_img.tobytes()
 
-        raw_data = encode_gx_texture(rgba_bytes, width, height, format_id)
+        final_palette = palette
+        if format_id in (8, 9):
+            if final_palette is None:
+                max_colors = 16 if format_id == 8 else 256
+                final_palette, _ = extract_or_quantize_palette(rgba_bytes, width, height, max_colors=max_colors)
+            raw_data = encode_gx_texture(rgba_bytes, width, height, format_id, palette=final_palette)
+        else:
+            raw_data = encode_gx_texture(rgba_bytes, width, height, format_id)
+
         tpl_img = TPLImage(
             index=0,
             width=width,
@@ -667,12 +1040,15 @@ class TPLFile:
             format_id=format_id,
             data_offset=0,
             raw_data=raw_data,
+            palette=final_palette,
+            palette_format_id=palette_format_id,
         )
         return cls(images=[tpl_img])
 
     def to_bytes(self) -> bytes:
         """
         Serializes the TPLFile back into standard Nintendo GameCube/Wii TPL binary format.
+        Preserves full 32-byte alignment for hardware DMA texture and palette transfers.
         """
         num_images = len(self.images)
         writer = BinaryWriter(endian=">")
@@ -695,7 +1071,51 @@ class TPLFile:
         # Pad table to 32 bytes
         writer.align(32)
 
-        # 3. Write Image Headers
+        # 3. Palette Headers (if any)
+        pal_header_offsets: List[int] = [0] * num_images
+        for i, img in enumerate(self.images):
+            if img.palette is not None and len(img.palette) > 0:
+                pal_header_offsets[i] = writer.tell()
+                writer.write_struct(
+                    TPLPaletteHeaderStruct(
+                        num_entries=len(img.palette),
+                        unpacked=0,
+                        pad=0,
+                        format_id=img.palette_format_id,
+                        data_offset=0,  # placeholder
+                    )
+                )
+
+        if any(pal_header_offsets):
+            writer.align(32)
+
+        # 4. Palette Color Data (if any)
+        pal_data_offsets: List[int] = [0] * num_images
+        for i, img in enumerate(self.images):
+            if pal_header_offsets[i] != 0 and img.palette:
+                writer.align(32)
+                pal_data_offsets[i] = writer.tell()
+                pal_bytes = encode_gx_palette(img.palette, img.palette_format_id)
+                writer.write_bytes(pal_bytes)
+
+        # Patch palette headers with palette data offsets
+        for i, h_off in enumerate(pal_header_offsets):
+            if h_off != 0 and self.images[i].palette:
+                img = self.images[i]
+                with writer.at(h_off):
+                    writer.write_struct(
+                        TPLPaletteHeaderStruct(
+                            num_entries=len(img.palette),
+                            unpacked=0,
+                            pad=0,
+                            format_id=img.palette_format_id,
+                            data_offset=pal_data_offsets[i],
+                        )
+                    )
+
+        writer.align(32)
+
+        # 5. Write Image Headers
         img_header_offsets: List[int] = []
         for img in self.images:
             img_header_offsets.append(writer.tell())
@@ -714,20 +1134,24 @@ class TPLFile:
 
         writer.align(32)
 
-        # 4. Write Texture Data
+        # 6. Write Texture Data
         data_offsets: List[int] = []
         for img in self.images:
             writer.align(32)
             data_offsets.append(writer.tell())
             writer.write_bytes(img.raw_data)
 
-        # 5. Patch table and headers with actual offsets
+        # 7. Patch table with image header & palette header offsets
         with writer.at(table_offset):
-            for h_off in img_header_offsets:
+            for i in range(num_images):
                 writer.write_struct(
-                    TPLImageTableEntryStruct(image_header_offset=h_off, palette_header_offset=0)
+                    TPLImageTableEntryStruct(
+                        image_header_offset=img_header_offsets[i],
+                        palette_header_offset=pal_header_offsets[i],
+                    )
                 )
 
+        # 8. Patch image headers with actual texture data offsets
         for i, h_off in enumerate(img_header_offsets):
             img = self.images[i]
             d_off = data_offsets[i]

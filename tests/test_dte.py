@@ -1,5 +1,5 @@
 import pytest
-from miorom.text.dte_miner import DTEMiner, DTEToken
+from miorom.text.dte import DTEMiner, DTEToken
 from miorom.text.charmap import CharMap
 
 

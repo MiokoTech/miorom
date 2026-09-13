@@ -1,7 +1,6 @@
 import struct
 import pytest
-from miorom.asm.xref_engine import SymbolicXrefEngine, XRefDatabase, XRefRecord
-from miorom.asm.xref import XRefType
+from miorom.asm.xref import SymbolicXrefEngine, XRefDatabase, XRefRecord, XRefType
 from miorom.asm.disasm import UniversalDisassembler, DisasmInstruction
 
 

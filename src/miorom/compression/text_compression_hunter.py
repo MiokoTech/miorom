@@ -161,6 +161,10 @@ class TextCompressionHunter:
     Automated Retro Text Compression Scanner, Huffman Tree Reconstructor, and DTE Hunter.
     """
 
+    def __init__(self) -> None:
+        # Default instance initializer
+        pass
+
     @classmethod
     def parse_huffman_node_array(
         cls,
@@ -361,6 +365,7 @@ class TextCompressionHunter:
         min_nodes: int = 16,
         max_nodes: int = 256,
         step: int = 4,
+        confidence_threshold: float = 0.0,
     ) -> List[HuffmanTreeCandidate]:
         """
         Scans a binary ROM buffer for array-based Huffman trees.
@@ -370,6 +375,7 @@ class TextCompressionHunter:
             min_nodes: Minimum number of internal nodes in the tree.
             max_nodes: Maximum number of internal nodes to check.
             step: Offset stepping increment.
+            confidence_threshold: Minimum confidence score to retain candidate.
         """
         candidates: List[HuffmanTreeCandidate] = []
         data_len = len(data)
@@ -397,18 +403,19 @@ class TextCompressionHunter:
                         unique_ratio = len(set(leaves)) / len(leaves)
                         conf = min(0.99, 0.70 + unique_ratio * 0.25)
 
-                        candidates.append(
-                            HuffmanTreeCandidate(
-                                offset=pos,
-                                node_count=node_count,
-                                entry_size=entry_size,
-                                endian=endian,
-                                leaf_symbols=leaves,
-                                confidence=round(conf, 4),
-                                nodes=nodes,
-                                root_index=0,
+                        if conf >= confidence_threshold:
+                            candidates.append(
+                                HuffmanTreeCandidate(
+                                    offset=pos,
+                                    node_count=node_count,
+                                    entry_size=entry_size,
+                                    endian=endian,
+                                    leaf_symbols=leaves,
+                                    confidence=round(conf, 4),
+                                    nodes=nodes,
+                                    root_index=0,
+                                )
                             )
-                        )
                         pos += node_count * node_size
                         continue
 

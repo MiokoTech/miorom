@@ -1,5 +1,8 @@
-from miorom.asm.branch import ARMBranch, ThumbBranch, PowerPCBranch, MIPSBranch
-from miorom.asm.branch_calc import (
+from miorom.asm.branch import (
+    ARMBranch,
+    ThumbBranch,
+    PowerPCBranch,
+    MIPSBranch,
     calc_arm_branch,
     resolve_arm_branch,
     calc_thumb_branch,
@@ -51,8 +54,6 @@ from miorom.asm.xref import (
     XRef,
     XRefType,
     CallerGraph,
-)
-from miorom.asm.xref_engine import (
     SymbolicXrefEngine,
     XRefDatabase,
     XRefRecord,

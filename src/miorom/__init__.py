@@ -3,7 +3,7 @@ MioROM: A Python library for ROM hacking and game reverse engineering.
 Designed as a modular building block for reverse engineering tools, unpackers, and custom ROM editors.
 """
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 from miorom.errors import (
     MioromError,
@@ -85,7 +85,7 @@ from miorom.asm import (
     VWFDeploymentReport,
 )
 from miorom.script.vm import ScriptVM
-from miorom.text.pixel_wrapper import FontMetrics, PixelWordWrapper
+from miorom.text.line_wrapper import FontMetrics, PixelWordWrapper
 from miorom.debug import (
     DolphinClient,
     DolphinMemoryMock,
@@ -119,7 +119,7 @@ from miorom.diff import (
 
 from miorom.text.tags import TagManager
 from miorom.text.charmap import CharMap
-from miorom.text.wrapper import WordWrapper
+from miorom.text.line_wrapper import WordWrapper
 from miorom.text.font_builder import Glyph, BitmapFont
 from miorom.text.bmfont import (
     BMFont,

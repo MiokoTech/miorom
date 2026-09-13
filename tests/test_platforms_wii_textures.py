@@ -128,3 +128,150 @@ def test_bti_yaz0_compression():
 
     out_img = loaded.to_image()
     assert out_img.size == (16, 16)
+
+
+def test_tpl_palette_roundtrip_rgb5a3():
+    from miorom.platforms.wii.tpl import decode_gx_palette, encode_gx_palette
+    orig_palette = [
+        (0, 0, 0, 0),         # Fully transparent
+        (255, 0, 0, 255),     # Solid red (RGB555)
+        (0, 255, 0, 255),     # Solid green (RGB555)
+        (0, 0, 255, 255),     # Solid blue (RGB555)
+        (255, 255, 255, 128), # Translucent white (ARGB3444)
+    ]
+    raw = encode_gx_palette(orig_palette, format_id=2)
+    assert len(raw) == len(orig_palette) * 2
+    decoded = decode_gx_palette(raw, len(orig_palette), format_id=2)
+    assert len(decoded) == len(orig_palette)
+    assert decoded[0][3] == 0
+    assert decoded[1][0] > 240 and decoded[1][1] < 15 and decoded[1][3] == 255
+    assert 100 < decoded[4][3] < 160
+
+
+def test_tpl_palette_roundtrip_rgb565():
+    from miorom.platforms.wii.tpl import decode_gx_palette, encode_gx_palette
+    orig_palette = [
+        (255, 0, 0, 255),
+        (0, 255, 0, 255),
+        (0, 0, 255, 255),
+    ]
+    raw = encode_gx_palette(orig_palette, format_id=1)
+    decoded = decode_gx_palette(raw, len(orig_palette), format_id=1)
+    assert decoded[0][0] > 240
+    assert decoded[1][1] > 240
+    assert decoded[2][2] > 240
+
+
+def test_tpl_palette_roundtrip_ia8():
+    from miorom.platforms.wii.tpl import decode_gx_palette, encode_gx_palette
+    orig_palette = [
+        (200, 200, 200, 255),
+        (50, 50, 50, 128),
+    ]
+    raw = encode_gx_palette(orig_palette, format_id=0)
+    decoded = decode_gx_palette(raw, len(orig_palette), format_id=0)
+    assert decoded[0][3] == 255
+    assert decoded[1][3] == 128
+
+
+def test_tpl_ci4_roundtrip():
+    img = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+    colors = [
+        (0, 0, 0, 0),
+        (255, 0, 0, 255),
+        (0, 255, 0, 255),
+        (0, 0, 255, 255),
+        (255, 255, 0, 255),
+        (255, 0, 255, 255),
+        (0, 255, 255, 255),
+        (128, 128, 128, 255),
+    ]
+    for y in range(16):
+        for x in range(16):
+            c_idx = (x // 4 + (y // 4) * 4) % len(colors)
+            img.putpixel((x, y), colors[c_idx])
+
+    tpl = TPLFile.from_image(img, format_id=8, palette_format_id=2)
+    assert len(tpl.images) == 1
+    t_img = tpl.images[0]
+    assert t_img.format_id == 8
+    assert t_img.is_paletted
+    assert t_img.color_count == 16
+    assert "CI4" in t_img.summary()
+
+    # Serialize
+    tpl_bytes = tpl.to_bytes()
+    assert len(tpl_bytes) > 0
+
+    # Deserialize
+    loaded = TPLFile.from_bytes(tpl_bytes)
+    assert len(loaded.images) == 1
+    loaded_img = loaded.images[0]
+    assert loaded_img.format_id == 8
+    assert loaded_img.is_paletted
+    assert loaded_img.color_count == 16
+
+    # Decode and verify dimensions and colors
+    dec_img = loaded.to_image(0)
+    assert dec_img.size == (16, 16)
+    red_pix = dec_img.getpixel((4, 0))
+    assert red_pix[0] > 240 and red_pix[1] < 15
+
+    # Check terminal ascii rendering
+    ascii_art = loaded_img.to_terminal_ascii(max_width=16)
+    assert len(ascii_art) > 0
+    assert isinstance(ascii_art, str)
+
+
+def test_tpl_ci8_roundtrip():
+    img = Image.new("RGBA", (32, 16))
+    for y in range(16):
+        for x in range(32):
+            img.putpixel((x, y), (x * 8, y * 16, 100, 255))
+
+    tpl = TPLFile.from_image(img, format_id=9, palette_format_id=2)
+    assert tpl.images[0].format_id == 9
+    assert tpl.images[0].is_paletted
+    assert tpl.images[0].color_count == 256
+
+    tpl_bytes = tpl.to_bytes()
+    loaded = TPLFile.from_bytes(tpl_bytes)
+    assert loaded.images[0].format_id == 9
+    assert loaded.images[0].color_count == 256
+
+    dec_img = loaded.to_image(0)
+    assert dec_img.size == (32, 16)
+
+
+def test_retail_gfontc29_tpl():
+    import os
+    path = "/sdcard/MiokoTech/Rune Factory - Frontier/workspace/graphics/menu_arc/win_recipe/win_recipe/timg/gfontC29.tpl"
+    if not os.path.exists(path):
+        pytest.skip("Retail sample gfontC29.tpl not found on test system.")
+
+    tpl = TPLFile.from_file(path)
+    assert len(tpl.images) == 1
+    img = tpl.images[0]
+    assert img.width == 80
+    assert img.height == 20
+    assert img.format_id == 8  # CI4
+    assert img.is_paletted
+    assert img.palette_format_id == 2  # RGB5A3
+    assert img.color_count == 16
+    assert len(img.raw_data) == 960
+
+    # Test decoding
+    pil_img = tpl.to_image(0)
+    assert pil_img.size == (80, 20)
+
+    # Test roundtrip serialization
+    data = tpl.to_bytes()
+    reloaded = TPLFile.from_bytes(data)
+    assert reloaded.images[0].width == 80
+    assert reloaded.images[0].height == 20
+    assert reloaded.images[0].format_id == 8
+    assert reloaded.images[0].color_count == 16
+
+    reloaded_img = reloaded.to_image(0)
+    assert reloaded_img.tobytes() == pil_img.tobytes()
+

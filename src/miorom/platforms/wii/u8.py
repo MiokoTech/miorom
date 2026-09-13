@@ -186,7 +186,157 @@ class U8Archive:
         return entries, file_data_map
 
     @classmethod
-    def pack(cls, input_dir: str, output_archive_path: str) -> None:
+    def extract_dict(cls, data: bytes) -> Dict[str, bytes]:
+        """
+        Extracts all files from an in-memory U8 archive (.arc / .szs) into a dict of {relative_path: bytes}.
+        Automatically decompresses Yaz0 or LZ11 if present.
+        Zero disk I/O.
+        """
+        if not cls.is_u8(data):
+            if data[:4] == b"Yaz0":
+                data = cls._decompress_yaz0(data)
+            elif len(data) > 0 and data[0] == 0x11:
+                data = decompress(data)
+
+        if not cls.is_u8(data):
+            raise ParseError("Data is not a valid Nintendo U8 archive.")
+
+        entries, file_data_map = cls._parse_archive(data, read_data=True)
+        result: Dict[str, bytes] = {}
+        for entry in entries:
+            if not entry.is_dir:
+                result[entry.path.replace("\\", "/")] = file_data_map.get(entry.index, b"")
+        return result
+
+    @classmethod
+    def pack_dict(
+        cls,
+        files_dict: Dict[str, bytes],
+        exclude_extensions: Optional[List[str]] = None,
+    ) -> bytes:
+        """
+        Packs an in-memory dictionary of {relative_path: bytes} into a standard Nintendo U8 archive (.arc).
+        Ensures 32-byte data alignment according to Nintendo Wii SDK standards.
+        Zero disk I/O.
+        """
+        filtered: Dict[str, bytes] = {}
+        for path, data in files_dict.items():
+            norm_path = path.replace("\\", "/").strip("/")
+            if exclude_extensions and any(norm_path.lower().endswith(ext.lower()) for ext in exclude_extensions):
+                continue
+            filtered[norm_path] = data
+
+        tree: Dict[str, Any] = {"is_dir": True, "children": {}}
+        for path, data in sorted(filtered.items()):
+            parts = path.split("/")
+            curr = tree
+            for p in parts[:-1]:
+                if p not in curr["children"]:
+                    curr["children"][p] = {"is_dir": True, "children": {}}
+                curr = curr["children"][p]
+            curr["children"][parts[-1]] = {"is_dir": False, "data": data}
+
+        nodes_info = []
+        string_pool = bytearray(b"\x00")
+        node_index_counter = 0
+
+        def traverse_tree(name: str, node: Dict[str, Any], parent_idx: int):
+            nonlocal node_index_counter
+            my_idx = node_index_counter
+            node_index_counter += 1
+
+            info = {
+                "index": my_idx,
+                "is_dir": node["is_dir"],
+                "name": name if my_idx > 0 else "",
+                "parent_index": parent_idx,
+                "end_index": 0,
+                "data": node.get("data", b""),
+                "size": len(node.get("data", b"")),
+            }
+            nodes_info.append(info)
+
+            if node["is_dir"]:
+                sorted_keys = sorted(node["children"].keys())
+                dirs = [k for k in sorted_keys if node["children"][k]["is_dir"]]
+                files = [k for k in sorted_keys if not node["children"][k]["is_dir"]]
+                for d in dirs:
+                    traverse_tree(d, node["children"][d], my_idx)
+                for f in files:
+                    traverse_tree(f, node["children"][f], my_idx)
+                info["end_index"] = node_index_counter
+
+        traverse_tree("", tree, 0)
+        total_nodes = len(nodes_info)
+
+        for node in nodes_info:
+            if node["index"] == 0:
+                node["name_offset"] = 0
+            else:
+                name_bytes = node["name"].encode("latin1") + b"\x00"
+                node["name_offset"] = len(string_pool)
+                string_pool.extend(name_bytes)
+
+        root_node_offset = 0x20
+        nodes_size = total_nodes * 12
+        header_size = nodes_size + len(string_pool)
+        data_offset = (root_node_offset + header_size + 31) & ~31
+
+        curr_file_offset = data_offset
+        file_payloads = []
+        for node in nodes_info:
+            if not node["is_dir"]:
+                node["data_offset"] = curr_file_offset
+                payload = node["data"]
+                file_payloads.append((curr_file_offset, payload))
+                curr_file_offset = (curr_file_offset + len(payload) + 31) & ~31
+
+        out = bytearray()
+        archive_header = U8HeaderStruct(
+            magic=b"\x55\xAA\x38\x2D",
+            root_node_offset=root_node_offset,
+            header_size=header_size,
+            data_offset=data_offset,
+        )
+        out.extend(archive_header.to_bytes())
+
+        for node in nodes_info:
+            type_byte = 1 if node["is_dir"] else 0
+            name_hi = (node["name_offset"] >> 16) & 0xFF
+            name_lo = node["name_offset"] & 0xFFFF
+            val1 = node["parent_index"] if node["is_dir"] else node["data_offset"]
+            val2 = node["end_index"] if node["is_dir"] else node["size"]
+
+            out.extend(U8NodeStruct(
+                kind=type_byte,
+                name_high=name_hi,
+                name_low=name_lo,
+                value1=val1,
+                value2=val2,
+            ).to_bytes())
+
+        out.extend(string_pool)
+
+        while len(out) < data_offset:
+            out.append(0)
+
+        for offset, content in file_payloads:
+            while len(out) < offset:
+                out.append(0)
+            out.extend(content)
+
+        while len(out) % 32 != 0:
+            out.append(0)
+
+        return bytes(out)
+
+    @classmethod
+    def pack(
+        cls,
+        input_dir: str,
+        output_archive_path: str,
+        exclude_extensions: Optional[List[str]] = None,
+    ) -> None:
         """
         Packs a folder into a standard Nintendo U8 archive (.arc).
         Ensures 32-byte data alignment according to Nintendo Wii SDK standards.
@@ -211,6 +361,12 @@ class U8Archive:
             entries = sorted(os.listdir(current_dir))
             dirs = [e for e in entries if os.path.isdir(os.path.join(current_dir, e))]
             files = [e for e in entries if os.path.isfile(os.path.join(current_dir, e))]
+            if exclude_extensions:
+                files = [
+                    e
+                    for e in files
+                    if not any(e.lower().endswith(ext.lower()) for ext in exclude_extensions)
+                ]
 
             dir_entry = {
                 "index": dir_node_idx,

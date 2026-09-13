@@ -1,17 +1,14 @@
-from miorom.text.tags import TagManager
+from miorom.text.tags import TagManager, TagSyntaxValidator, TagValidationReport
 from miorom.text.charmap import CharMap
-from miorom.text.wrapper import WordWrapper
 from miorom.text.font_builder import Glyph, BitmapFont
 from miorom.text.aligner import StringAligner, AlignedString
 from miorom.text.ttf_compiler import TTFCompiler
 from miorom.text.textbox_sim import TextboxConfig, DialoguePage, AutoPaginator, TextboxSimulator
 from miorom.text.transcoder import TrieTranscoder
 from miorom.text.po_handler import PoHandler, PoEntry
-from miorom.text.pixel_wrapper import FontMetrics, PixelWordWrapper
 from miorom.text.charmap_miner import CharMapMiner, MinedCharMapResult
 from miorom.text.relative_search import RelativeSearcher, RelativeMatch
 from miorom.text.vwf import GlyphWidthTable, VWFMetrics, VWFMetricsInspector, TextboxCollisionReport
-from miorom.text.dte_miner import DTEMiner, DTEToken
 from miorom.text.pipeline import StringTablePipeline, ExtractedString
 from miorom.text.paginator import SmartAutoPaginator, PaginationConfig
 from miorom.text.sanitizer import ControlTagSanitizer, TagValidationResult
@@ -23,7 +20,6 @@ from miorom.text.metrics_measurer import (
     WordWrapSplitter,
     DialoguePagePartitioner,
 )
-from miorom.text.tag_validator import TagSyntaxValidator, TagValidationReport
 from miorom.text.template import GameTextTemplate
 from miorom.text.tokenizer import ControlCodeDef, ControlCodeSchema, ControlCodeTokenizer
 from miorom.text.bmfont import (
@@ -35,8 +31,22 @@ from miorom.text.bmfont import (
     BMFontKerning,
     PNGCodec,
 )
-from miorom.text.line_wrapper import VwfLineWrapper, TextBoxPage, LineWrapResult
-from miorom.text.dte import DteEntry, DteStats, DteOptimizer, DteCodec
+from miorom.text.line_wrapper import (
+    VwfLineWrapper,
+    TextBoxPage,
+    LineWrapResult,
+    WordWrapper,
+    FontMetrics,
+    PixelWordWrapper,
+)
+from miorom.text.dte import (
+    DteEntry,
+    DteStats,
+    DteOptimizer,
+    DteCodec,
+    DTEMiner,
+    DTEToken,
+)
 from miorom.text.pointer_relinker import PointerRecord, RelinkReport, PointerRelinker
 from miorom.text.translation_memory import TmMatch, TmLookupResult, TranslationMemory
 from miorom.text.bmg import BMGFile, BMGMessage

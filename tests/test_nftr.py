@@ -32,3 +32,31 @@ def test_nftr_font_roundtrip_and_metrics():
     assert g_a is not None
     assert g_a.advance == 7
     assert g_a.tile == tile_a
+
+
+def test_nftr_nitro_finf_pointers_and_cmap_chain():
+    font = NFTRFont(height=12, cell_width=9, bpp=2)
+    # Add contiguous run 0x20..0x25 (6 glyphs -> Type 0)
+    for c in range(0x20, 0x26):
+        font.set_glyph(c, [1] * (9 * 12), advance=8)
+    # Add isolated glyph 0x20AC (Euro -> Type 2)
+    font.set_glyph(0x20AC, [2] * (9 * 12), advance=9)
+
+    raw = font.to_bytes()
+    assert raw[:4] == b"RTFN"
+    assert raw[0x10:0x14] == b"FNIF"
+
+    import struct
+    magic, size, ftype, h, null_g, def_w, enc, cw, ch, bpp, p_glyph, p_width, p_map = struct.unpack('<4sIBBBBBBBBIII', raw[0x10:0x2C])
+    assert magic == b"FNIF"
+    assert size == 28
+    assert p_glyph == 0x34
+    assert p_width > p_glyph
+    assert p_map > p_width
+    assert raw[p_glyph - 8:p_glyph - 4] == b"PLGC"
+    assert raw[p_width - 8:p_width - 4] == b"HDWC"
+    assert raw[p_map - 8:p_map - 4] == b"PAMC"
+
+    loaded = NFTRFont.from_bytes(raw)
+    assert loaded.get_glyph(0x20AC).advance == 9
+    assert loaded.get_glyph(0x20).advance == 8

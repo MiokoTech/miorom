@@ -318,3 +318,16 @@ class VirtualFileSystem:
                 )
                 idx += 1
         return ArchiveContainer(entries)
+
+
+# Expose NestedArchiveVFS from core.vfs
+from miorom.core.vfs import NestedArchiveVFS
+
+__all__ = [
+    "VFSNode",
+    "VFSFile",
+    "VFSDirectory",
+    "VirtualFileSystem",
+    "NestedArchiveVFS",
+]
+

@@ -158,6 +158,7 @@ from miorom.core.symbol_map import SymbolMap, SymbolEntry
 from miorom.core.hex_diff import HexDiffHighlighter
 from miorom.core.cstruct import CStructOverlay, CStructInstance, CField
 from miorom.core.bitfield import BitField, BitFieldSchema, BitFieldCodec
+from miorom.core.vfs import NestedArchiveVFS
 
 __all__ = [
     "BinaryReader",
@@ -312,4 +313,5 @@ __all__ = [
     "BitField",
     "BitFieldSchema",
     "BitFieldCodec",
+    "NestedArchiveVFS",
 ]

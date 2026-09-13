@@ -1,7 +1,6 @@
 import pytest
 from miorom.graphics.font_injector import FontGlyphInjector
-from miorom.text.line_wrapper import VwfLineWrapper, TextBoxPage, LineWrapResult
-from miorom.text.pixel_wrapper import FontMetrics
+from miorom.text.line_wrapper import VwfLineWrapper, TextBoxPage, LineWrapResult, FontMetrics
 
 
 def test_vwf_line_wrapper_basic_measurement():

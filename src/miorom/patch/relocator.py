@@ -76,8 +76,13 @@ class AutoRelocationManager:
 
     def read_pointer_value(self, ptr_def: RelocatablePointer) -> int:
         """Decodes raw pointer value from buffer according to its definition."""
-        fmt = f"{ptr_def.endian}{'I' if ptr_def.pointer_size == 4 else 'H'}"
-        raw_val = struct.unpack_from(fmt, self.buffer, ptr_def.pointer_offset)[0]
+        if ptr_def.pointer_size == 3:
+            raw_bytes = self.buffer[ptr_def.pointer_offset : ptr_def.pointer_offset + 3]
+            raw_val = int.from_bytes(raw_bytes, "little" if ptr_def.endian == "<" else "big")
+        else:
+            fmt = f"{ptr_def.endian}{'I' if ptr_def.pointer_size == 4 else 'H'}"
+            raw_val = struct.unpack_from(fmt, self.buffer, ptr_def.pointer_offset)[0]
+
         if ptr_def.shift:
             raw_val <<= ptr_def.shift
         if ptr_def.is_relative:
@@ -95,13 +100,18 @@ class AutoRelocationManager:
         if ptr_def.shift:
             val_to_write >>= ptr_def.shift
 
-        fmt = f"{ptr_def.endian}{'I' if ptr_def.pointer_size == 4 else 'H'}"
         max_val = (1 << (ptr_def.pointer_size * 8)) - 1
         if not (0 <= val_to_write <= max_val):
             raise OverflowError(
                 f"Pointer value 0x{val_to_write:X} exceeds capacity for {ptr_def.pointer_size}-byte pointer at 0x{ptr_def.pointer_offset:X}"
             )
-        struct.pack_into(fmt, self.buffer, ptr_def.pointer_offset, val_to_write)
+
+        if ptr_def.pointer_size == 3:
+            endian_str = "little" if ptr_def.endian == "<" else "big"
+            self.buffer[ptr_def.pointer_offset : ptr_def.pointer_offset + 3] = val_to_write.to_bytes(3, endian_str)
+        else:
+            fmt = f"{ptr_def.endian}{'I' if ptr_def.pointer_size == 4 else 'H'}"
+            struct.pack_into(fmt, self.buffer, ptr_def.pointer_offset, val_to_write)
 
     def relocate_item(
         self,

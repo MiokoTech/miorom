@@ -1,5 +1,5 @@
 from miorom.text.tags import TagManager
-from miorom.text.wrapper import WordWrapper
+from miorom.text.line_wrapper import WordWrapper
 
 
 def test_tag_manager():

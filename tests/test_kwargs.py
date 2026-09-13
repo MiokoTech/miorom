@@ -11,7 +11,7 @@ from miorom.helper.relocator import BinaryRelocator
 from miorom.helper.dual_table import DualTableHelper
 from miorom.archive.toc_pair import TocPair
 from miorom.formats.csv_handler import CsvHandler, TranslationRow
-from miorom.text.pixel_wrapper import FontMetrics, PixelWordWrapper
+from miorom.text.line_wrapper import FontMetrics, PixelWordWrapper
 
 
 def test_string_scanner_kwargs():

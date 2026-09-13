@@ -18,7 +18,8 @@ from miorom.core.integrity import RomIntegrityManager, IntegrityReport
 from miorom.text.po_handler import PoHandler, PoEntry
 from miorom.patch.relocator import AutoRelocationManager, RelocationSummary, RelocatablePointer
 from miorom.text.charmap import CharMap
-from miorom.text.dte_miner import DTEMiner
+from miorom.text.dte import DTEMiner
+from miorom.text.tokenizer import ControlCodeSchema, ControlCodeTokenizer
 
 
 @dataclass
@@ -50,18 +51,25 @@ class StringTablePipeline:
         base_address: int = 0,
         is_relative: bool = False,
         stop_byte: bytes = b"\x00",
+        schema: Optional[ControlCodeSchema] = None,
     ) -> List[ExtractedString]:
         """
         Traverses a pointer table and extracts all referenced strings.
         """
         extracted: List[ExtractedString] = []
-        fmt = f"{endian}{'I' if pointer_size == 4 else 'H'}"
 
         for i in range(entry_count):
             ptr_loc = table_offset + (i * pointer_size)
             if ptr_loc + pointer_size > len(buffer):
                 break
-            raw_ptr = struct.unpack_from(fmt, buffer, ptr_loc)[0]
+
+            if pointer_size == 3:
+                raw_bytes = buffer[ptr_loc : ptr_loc + 3]
+                raw_ptr = int.from_bytes(raw_bytes, "little" if endian == "<" else "big")
+            else:
+                fmt = f"{endian}{'I' if pointer_size == 4 else 'H'}"
+                raw_ptr = struct.unpack_from(fmt, buffer, ptr_loc)[0]
+
             target_off = (base_address + raw_ptr) if is_relative else (raw_ptr - base_address)
 
             if not (0 <= target_off < len(buffer)):
@@ -73,7 +81,15 @@ class StringTablePipeline:
             else:
                 str_bytes = buffer[target_off : target_off + 100]
 
-            if charmap is not None:
+            if schema is not None:
+                text = ControlCodeTokenizer.decode(
+                    str_bytes,
+                    schema=schema,
+                    encoding=encoding,
+                    charmap=charmap,
+                    strip_terminator=False,
+                )
+            elif charmap is not None:
                 text = charmap.decode(str_bytes)
             else:
                 text = str_bytes.decode(encoding, errors="replace")
@@ -104,6 +120,7 @@ class StringTablePipeline:
         base_address: int = 0,
         is_relative: bool = False,
         stop_byte: bytes = b"\x00",
+        schema: Optional[ControlCodeSchema] = None,
     ) -> PoHandler:
         """
         Dumps strings into GNU gettext PO format with offset & max length metadata.
@@ -119,6 +136,7 @@ class StringTablePipeline:
             base_address=base_address,
             is_relative=is_relative,
             stop_byte=stop_byte,
+            schema=schema,
         )
 
         handler = PoHandler()
@@ -152,6 +170,8 @@ class StringTablePipeline:
         auto_relocate: bool = True,
         auto_fix_integrity: bool = True,
         platform: Optional[str] = None,
+        schema: Optional[ControlCodeSchema] = None,
+        paginator: Optional[Any] = None,
     ) -> RelocationSummary:
         """
         Injects translated text from a PO file back into the binary ROM buffer.
@@ -175,6 +195,7 @@ class StringTablePipeline:
             base_address=base_address,
             is_relative=is_relative,
             stop_byte=stop_byte,
+            schema=schema,
         )
 
         item_sizes = [item.length + len(stop_byte) for item in extracted]
@@ -184,8 +205,20 @@ class StringTablePipeline:
             # Use msgstr if present, else fallback to msgid
             text = entry.msgstr if entry.msgstr else entry.msgid
 
-            # Encode
-            if dte_dict:
+            # Apply smart auto-pagination if paginator supplied
+            if paginator is not None and hasattr(paginator, "paginate_text"):
+                text = paginator.paginate_text(text)
+
+            # Encode payload
+            if schema is not None:
+                encoded = ControlCodeTokenizer.encode(
+                    text,
+                    schema=schema,
+                    encoding=encoding,
+                    charmap=charmap,
+                    append_terminator=False,
+                )
+            elif dte_dict:
                 encoded = DTEMiner.compress_text(text, dte_dict, base_charmap=charmap)
             elif charmap is not None:
                 encoded = charmap.encode(text)

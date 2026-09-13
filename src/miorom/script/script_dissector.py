@@ -48,6 +48,7 @@ class VMInstructionDef(MioRomResult):
     operand_format: str = ""      # Struct format for operands, e.g. '<H', '<h', '<b'
     text_terminator: Optional[bytes] = b"\x00"  # For TEXT type: delimiter marking end of string
     has_length_prefix: bool = False             # If True, first byte after opcode is text length
+    schema: Optional[Any] = None                # Declarative BinaryStruct or SchemaField
 
 
 @dataclass
@@ -195,22 +196,41 @@ class ScriptVMDissector:
             # 2. RELATIVE BRANCH instruction
             elif defn.opcode_type == VMOpcodeType.BRANCH_REL:
                 operand_offset = pos
-                fmt = defn.operand_format or "<h"
-                op_size = BinaryReader.calcsize(fmt)
-                if pos + op_size <= end_limit:
-                    relative_delta = BinaryReader.unpack_from(fmt, data, pos)[0]
+                if defn.schema is not None and hasattr(defn.schema, "unpack"):
+                    relative_delta, op_size = defn.schema.unpack(data, pos)
                     pos += op_size
-                    # Target is relative to instruction start or operand position
                     branch_target = inst_start + relative_delta
+                elif defn.schema is not None and hasattr(defn.schema, "from_bytes"):
+                    inst_obj = defn.schema.from_bytes(data, offset=pos)
+                    op_size = defn.schema.sizeof(inst_obj)
+                    relative_delta = getattr(inst_obj, "delta", getattr(inst_obj, "target", 0))
+                    pos += op_size
+                    branch_target = inst_start + relative_delta
+                else:
+                    fmt = defn.operand_format or "<h"
+                    op_size = BinaryReader.calcsize(fmt)
+                    if pos + op_size <= end_limit:
+                        relative_delta = BinaryReader.unpack_from(fmt, data, pos)[0]
+                        pos += op_size
+                        branch_target = inst_start + relative_delta
 
             # 3. ABSOLUTE JUMP instruction
             elif defn.opcode_type == VMOpcodeType.BRANCH_ABS:
                 operand_offset = pos
-                fmt = defn.operand_format or "<H"
-                op_size = BinaryReader.calcsize(fmt)
-                if pos + op_size <= end_limit:
-                    branch_target = BinaryReader.unpack_from(fmt, data, pos)[0]
+                if defn.schema is not None and hasattr(defn.schema, "unpack"):
+                    branch_target, op_size = defn.schema.unpack(data, pos)
                     pos += op_size
+                elif defn.schema is not None and hasattr(defn.schema, "from_bytes"):
+                    inst_obj = defn.schema.from_bytes(data, offset=pos)
+                    op_size = defn.schema.sizeof(inst_obj)
+                    branch_target = getattr(inst_obj, "target", getattr(inst_obj, "address", 0))
+                    pos += op_size
+                else:
+                    fmt = defn.operand_format or "<H"
+                    op_size = BinaryReader.calcsize(fmt)
+                    if pos + op_size <= end_limit:
+                        branch_target = BinaryReader.unpack_from(fmt, data, pos)[0]
+                        pos += op_size
 
             # 4. SWITCH / JUMP TABLE instruction
             elif defn.opcode_type == VMOpcodeType.SWITCH:
@@ -218,13 +238,20 @@ class ScriptVMDissector:
                 if pos < end_limit:
                     case_count = data[pos]
                     pos += 1
-                    fmt = defn.operand_format or "<H"
-                    op_size = BinaryReader.calcsize(fmt)
-                    for _ in range(case_count):
-                        if pos + op_size <= end_limit:
-                            tgt = BinaryReader.unpack_from(fmt, data, pos)[0]
-                            switch_targets.append(tgt)
-                            pos += op_size
+                    if defn.schema is not None and hasattr(defn.schema, "unpack"):
+                        for _ in range(case_count):
+                            if pos < end_limit:
+                                tgt, op_size = defn.schema.unpack(data, pos)
+                                switch_targets.append(tgt)
+                                pos += op_size
+                    else:
+                        fmt = defn.operand_format or "<H"
+                        op_size = BinaryReader.calcsize(fmt)
+                        for _ in range(case_count):
+                            if pos + op_size <= end_limit:
+                                tgt = BinaryReader.unpack_from(fmt, data, pos)[0]
+                                switch_targets.append(tgt)
+                                pos += op_size
 
             # 5. CONTROL or TERMINATOR instruction
             else:
@@ -352,28 +379,40 @@ class ScriptVMDissector:
             if defn.opcode_type == VMOpcodeType.BRANCH_REL and inst.branch_target is not None:
                 new_target = map_offset(inst.branch_target)
                 new_delta = new_target - new_inst_offset
-                fmt = defn.operand_format or "<h"
-
-                # Relative operand position in new buffer
                 op_pos = new_inst_offset + 1  # 1 byte opcode
-                BinaryWriter.pack_into(fmt, new_buf, op_pos, new_delta)
+                if defn.schema is not None and hasattr(defn.schema, "pack"):
+                    packed_val = defn.schema.pack(new_delta)
+                    new_buf[op_pos : op_pos + len(packed_val)] = packed_val
+                else:
+                    fmt = defn.operand_format or "<h"
+                    BinaryWriter.pack_into(fmt, new_buf, op_pos, new_delta)
 
             # B. Absolute jump recalculation
             elif defn.opcode_type == VMOpcodeType.BRANCH_ABS and inst.branch_target is not None:
                 new_target = map_offset(inst.branch_target)
-                fmt = defn.operand_format or "<H"
                 op_pos = new_inst_offset + 1
-                BinaryWriter.pack_into(fmt, new_buf, op_pos, new_target)
+                if defn.schema is not None and hasattr(defn.schema, "pack"):
+                    packed_val = defn.schema.pack(new_target)
+                    new_buf[op_pos : op_pos + len(packed_val)] = packed_val
+                else:
+                    fmt = defn.operand_format or "<H"
+                    BinaryWriter.pack_into(fmt, new_buf, op_pos, new_target)
 
             # C. Switch / Jump table recalculation
             elif defn.opcode_type == VMOpcodeType.SWITCH and inst.switch_targets:
-                fmt = defn.operand_format or "<H"
-                op_size = BinaryReader.calcsize(fmt)
-                # Offset past opcode + case_count
                 curr_op_pos = new_inst_offset + 2
-                for old_target in inst.switch_targets:
-                    new_target = map_offset(old_target)
-                    BinaryWriter.pack_into(fmt, new_buf, curr_op_pos, new_target)
-                    curr_op_pos += op_size
+                if defn.schema is not None and hasattr(defn.schema, "pack"):
+                    for old_target in inst.switch_targets:
+                        new_target = map_offset(old_target)
+                        packed_val = defn.schema.pack(new_target)
+                        new_buf[curr_op_pos : curr_op_pos + len(packed_val)] = packed_val
+                        curr_op_pos += len(packed_val)
+                else:
+                    fmt = defn.operand_format or "<H"
+                    op_size = BinaryReader.calcsize(fmt)
+                    for old_target in inst.switch_targets:
+                        new_target = map_offset(old_target)
+                        BinaryWriter.pack_into(fmt, new_buf, curr_op_pos, new_target)
+                        curr_op_pos += op_size
 
         return new_buf

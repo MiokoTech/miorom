@@ -36,8 +36,8 @@ def test_ttf_compiler_to_nftr():
     nftr_bytes = nftr.to_bytes()
     assert nftr_bytes[:4] == b"RTFN"
     assert b"PLGC" in nftr_bytes
-    assert b"CWDH" in nftr_bytes
-    assert b"CMAP" in nftr_bytes
+    assert b"HDWC" in nftr_bytes
+    assert b"PAMC" in nftr_bytes
 
 
 def test_ttf_compiler_to_bitmap_font():

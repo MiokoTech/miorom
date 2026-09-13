@@ -340,3 +340,147 @@ class VwfLineWrapper:
             total_lines=total_lines,
             warnings=warnings,
         )
+
+
+class WordWrapper:
+    """
+    Fixed-width character count text-wrapping and dialogue box validator.
+    """
+
+    def __init__(self, max_chars_per_line: int = 36, max_lines_per_box: int = 3, newline_tag: str = "<ENTER>"):
+        self.max_chars_per_line = max_chars_per_line
+        self.max_lines_per_box = max_lines_per_box
+        self.newline_tag = newline_tag
+
+    def wrap_text(self, text: str) -> str:
+        """
+        Auto-wrap a paragraph into lines delimited by newline_tag.
+        Preserves existing newlines / newline_tags.
+        """
+        normalized = text.replace(self.newline_tag, "\n")
+        paragraphs = normalized.split("\n")
+        wrapped_lines = []
+
+        for para in paragraphs:
+            words = para.split(" ")
+            current_line = []
+            current_len = 0
+
+            for word in words:
+                word_len = len(word)
+                if not current_line:
+                    current_line.append(word)
+                    current_len = word_len
+                elif current_len + 1 + word_len <= self.max_chars_per_line:
+                    current_line.append(word)
+                    current_len += 1 + word_len
+                else:
+                    wrapped_lines.append(" ".join(current_line))
+                    current_line = [word]
+                    current_len = word_len
+
+            if current_line:
+                wrapped_lines.append(" ".join(current_line))
+
+        return self.newline_tag.join(wrapped_lines)
+
+    def validate_textbox(self, text: str) -> Tuple[bool, List[str]]:
+        """
+        Check if text exceeds line length or box height.
+        Returns (is_valid, list_of_warnings).
+        """
+        normalized = text.replace(self.newline_tag, "\n")
+        lines = normalized.split("\n")
+        warnings = []
+
+        if len(lines) > self.max_lines_per_box:
+            warnings.append(f"Too many lines: {len(lines)} > {self.max_lines_per_box} lines max")
+
+        for idx, line in enumerate(lines):
+            if len(line) > self.max_chars_per_line:
+                warnings.append(
+                    f"Line {idx+1} exceeds max width: {len(line)} > {self.max_chars_per_line} chars ('{line[:20]}...')"
+                )
+
+        return len(warnings) == 0, warnings
+
+
+class FontMetrics:
+    """
+    Holds per-character pixel width metrics for proportional/VWF game fonts.
+    """
+
+    DEFAULT_WIDTHS = {
+        "i": 4, "l": 4, "j": 5, "f": 5, "t": 5, "r": 6, "1": 6, "!": 4, ".": 4, ",": 4, ":": 4,
+        "m": 12, "w": 12, "M": 14, "W": 14, "@": 14, "%": 12,
+        "A": 9, "B": 9, "C": 9, "D": 9, "E": 8, "F": 8, "G": 10, "H": 9, "I": 4, "J": 7,
+        "K": 9, "L": 8, "N": 9, "O": 10, "P": 9, "Q": 10, "R": 9, "S": 8, "T": 8, "U": 9,
+        "V": 9, "X": 9, "Y": 9, "Z": 8, " ": 5,
+    }
+
+    def __init__(self, widths: Optional[Dict[str, int]] = None, default_width: int = 8):
+        self.widths: Dict[str, int] = dict(self.DEFAULT_WIDTHS)
+        if widths:
+            self.widths.update(widths)
+        self.default_width = default_width
+        self._tag_regex = re.compile(r"<[^>]+>|\[0x[0-9a-fA-F]+\]")
+
+    def measure_char(self, ch: str) -> int:
+        return self.widths.get(ch, self.default_width)
+
+    def measure_text(self, text: str) -> int:
+        """Measure total pixel width of a string, ignoring formatting/control tags."""
+        clean = self._tag_regex.sub("", text)
+        return sum(self.measure_char(ch) for ch in clean)
+
+
+class PixelWordWrapper:
+    """
+    Word-wrapper that wraps text lines based on pixel width constraints.
+    """
+
+    def __init__(
+        self,
+        metrics: Optional[FontMetrics] = None,
+        max_pixel_width: int = 240,
+        max_lines: int = 3,
+    ):
+        self.metrics = metrics or FontMetrics()
+        self.max_pixel_width = max_pixel_width
+        self.max_lines = max_lines
+
+    def wrap(
+        self,
+        text: str,
+        max_pixel_width: Optional[int] = None,
+        newline: str = "\n",
+        strip_lines: bool = True,
+    ) -> str:
+        target_width = max_pixel_width if max_pixel_width is not None else self.max_pixel_width
+        vwf = VwfLineWrapper(width_source=self.metrics, max_pixel_width=target_width)
+        return vwf.wrap(text, max_pixel_width=target_width, newline=newline, strip_lines=strip_lines)
+
+    def validate(
+        self,
+        text: str,
+        max_pixel_width: Optional[int] = None,
+        max_lines: Optional[int] = None,
+    ) -> Tuple[bool, List[str]]:
+        target_width = max_pixel_width if max_pixel_width is not None else self.max_pixel_width
+        target_lines = max_lines if max_lines is not None else self.max_lines
+
+        warnings: List[str] = []
+        lines = text.split("\n")
+
+        if len(lines) > target_lines:
+            warnings.append(f"Line count ({len(lines)}) exceeds maximum lines ({target_lines})")
+
+        for idx, line in enumerate(lines, start=1):
+            px_w = self.metrics.measure_text(line)
+            if px_w > target_width:
+                warnings.append(
+                    f"Line {idx} pixel width ({px_w}px) exceeds boundary ({target_width}px): '{line[:40]}...'"
+                )
+
+        return (len(warnings) == 0, warnings)
+

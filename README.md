@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Tests: 547 Passed](https://img.shields.io/badge/Tests-547%20Passed-brightgreen.svg)](tests/)
+[![Tests: 1143 Passed](https://img.shields.io/badge/Tests-1143%20Passed-brightgreen.svg)](tests/)
 [![Documentation](https://img.shields.io/badge/docs-miokotech.github.io%2Fmiorom-06b6d4.svg?style=flat&logo=materialformkdocs&logoColor=white)](MioROM Documentations)
 [![Platforms: Multi-Console](https://img.shields.io/badge/Platforms-NDS%20%7C%20Wii%20%7C%20GC%20%7C%20N64%20%7C%20GBA%20%7C%20SNES%20%7C%20NES%20%7C%20PS1-orange.svg)](https://miokotech.github.io/miorom/PLATFORMS/)
 
@@ -84,7 +84,8 @@ MioROM provides native parsers, serializers, and filesystem handlers across mult
 
 ### 2. Disassembly, Assembly & Static Analysis
 - **`UniversalDisassembler`**: Multi-architecture disassembler supporting 8 architectures: **ARM32**, **Thumb-16**, **PowerPC**, **MIPS I-IV / COP1**, **Game Boy (SM83)**, **Motorola 68000**, **MOS 6502 (NES)**, and **W65C816 (SNES with dynamic REP/SEP tracking)** without native C dependencies.
-- **`SymbolicXrefEngine` & `XRefDatabase`**: Multi-architecture symbolic cross-reference discovery (ARM, Thumb, PowerPC, MIPS, W65C816, MOS 6502) and call graph builder with IDA/Ghidra style `; CODE XREF:` and `; DATA XREF:` disassembly annotations.
+- **`SymbolicXrefEngine` & `XRefDatabase` (`miorom.asm.xref`)**: Multi-architecture symbolic cross-reference discovery (ARM, Thumb, PowerPC, MIPS, W65C816, MOS 6502) and call graph builder with IDA/Ghidra style `; CODE XREF:` and `; DATA XREF:` disassembly annotations.
+- **`ARMBranch`, `ThumbBranch`, `PowerPCBranch`, `MIPSBranch` (`miorom.asm.branch`)**: Precise branch encoding, decoding, and direct relative displacement calculation for multi-architecture patch generation.
 - **`AsmSnippet`**: Fluent pure-Python micro-assembler for compiling instruction sequences without external toolchains:
   - `AsmSnippet.arm()` (ARM32)
   - `AsmSnippet.thumb()` (16-bit Thumb for GBA / NDS)
@@ -103,7 +104,10 @@ MioROM provides native parsers, serializers, and filesystem handlers across mult
 - **`FarPointerRelocator` & `RomLayoutExpander`**: Relocates binary assets into expanded ROM memory banks (GBA 32MB, N64 64MB) with automatic hardware checksum repairs.
 
 ### 4. Text, Typography & Localization Engineering
-- **`PixelWordWrapper` & `FontMetrics`**: Measures dialogue lines against true on-screen pixel boundaries for Variable-Width Fonts (VWF), preventing textbox overflows.
+- **`VwfLineWrapper`, `FontMetrics` & `WordWrapper` (`miorom.text.line_wrapper`)**: Pixel-accurate word wrapper and paginator for Variable-Width Fonts (VWF), preventing dialogue overflows in proportional typography.
+- **`TagSyntaxValidator` & `TagManager` (`miorom.text.tags`)**: Complete markup lifecycle suite — bracket balancing, variable tag integrity checks across translations, and bidirectional control code conversion.
+- **`DTEMiner`, `DteOptimizer` & `DteCodec` (`miorom.text.dte`)**: Dual-Tile and Multi-Tile Encoding (DTE/MTE) frequency analyzer and dictionary compressor maximizing net byte savings under tight ROM constraints.
+- **`JapaneseCharmap` (`miorom.text.japanese_charmap`)**: Full Shift-JIS / EUC-JP multi-byte character mapping and bidirectional dakuten/handakuten decomposition and composition.
 - **`BMFont` & `PNGCodec`**: AngelCode BMFont reader/writer (Text & XML formats), automatic glyph atlas texture packing, and built-in pure-Python PNG encoder/decoder without external dependencies.
 - **`TrieTranscoder`**: High-performance greedy longest-prefix transcoder for Dual-Tile Encoding (DTE), Byte-Pair Encoding (BPE), and custom `.tbl` character tables.
 - **`GameTextTemplate`**: Bidirectional dialogue template engine with dynamic control tags and reverse parameter extraction.
@@ -111,12 +115,13 @@ MioROM provides native parsers, serializers, and filesystem handlers across mult
 - **`PoHandler`**: Two-way bridge connecting game text to GNU gettext PO files for standard translation toolchains (Weblate, Crowdin, Poedit).
 
 ### 5. Fan Translation Reverse Engineering Toolkit
-- **`JapaneseCharMapMiner`**: Gojūon relative search engine that discovers game-specific Japanese encodings by mining hiragana/katakana character rows with dakuten variants; auto-generates draft `.tbl` files without prior encoding knowledge.
-- **`FontDissector`**: Heuristic font bank scanner combining entropy scoring, stroke density analysis, and glyph diversity checks; locates adjacent VWF width tables, exports PNG spritesheets, and round-trips glyph and width data back into ROM buffers.
-- **`TextCompressionHunter`**: Forensic scanner discovering embedded Huffman trees via root-0 graph traversal (no fixed node count required), DTE bigram tables, and produces optimal re-compressed bitstreams for translated text.
-- **`ScriptVMDissector`**: Linear sweep bytecode disassembler for arbitrary opcode schemas with full handling of TEXT, BRANCH_REL, BRANCH_ABS, SWITCH, CONTROL, and TERMINATOR categories; `splice_and_relink()` rewrites translated strings and automatically recalculates all branch deltas, absolute jump targets, and switch tables in-place.
-- **`TilemapDissector`**: Menu nametable RE suite — scans horizontal/vertical graphic text runs, renders ASCII grid layouts, splices translated labels with left/center/right alignment and boundary guards, exports/imports JSON layout files for pipeline integration, and applies batch translations in a single pass.
-- **`VWFHookEngine`**: End-to-end VWF hook deployer — verifies hook site byte integrity, synthesizes architecture-specific width lookup routines (ARM32, Thumb, MIPS32, SNES W65C816, MOS 6502), allocates code caves automatically, and atomically patches ROM buffers with simulate mode for safe preflight validation.
+- **`DialogueDissector` (`miorom.script.dialogue_dissector`)**: Automated ROM dialogue table and string scanner — maps console base addresses, extracts dialogue blocks to GNU gettext `.po` or JSON, and reinjects translated text with automatic free-space relocation.
+- **`JapaneseCharMapMiner`**: Gojūon relative search engine discovering proprietary game character encodings by mining hiragana/katakana matrices; auto-generates `.tbl` files.
+- **`FontDissector`**: Heuristic font bank scanner combining entropy scoring, stroke density analysis, and glyph diversity checks; locates adjacent VWF width tables and exports PNG sheets.
+- **`TextCompressionHunter`**: Forensic scanner discovering embedded Huffman trees via root-0 graph traversal, DTE bigram tables, and produces optimal re-compressed bitstreams.
+- **`ScriptVMDissector` (`miorom.script.script_dissector`)**: Declarative bytecode disassembler and relinker; `splice_and_relink()` rewrites translated strings and automatically recalculates all branch deltas, absolute jump targets, and switch tables using declarative `BinaryStruct` schemas.
+- **`TilemapDissector`**: Menu nametable RE suite — scans graphic text runs, renders ASCII layouts, splices translated labels with alignment guards, and exports/imports JSON layout files.
+- **`VWFHookEngine`**: End-to-end VWF hook deployer — synthesizes architecture-specific width lookup routines (ARM32, Thumb, MIPS32, SNES W65C816, MOS 6502), allocates code caves, and atomically patches ROM buffers.
 
 ### 6. Filesystem, Containers & Disc Images
 - **`RomManager`**: Unified auto-detecting ROM unpacker and repacker for NDS, GameCube/Wii ISO, U8 Archive, NARC, NES, ISO9660, and Cartridges.

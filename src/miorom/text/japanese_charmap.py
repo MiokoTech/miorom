@@ -297,6 +297,10 @@ class JapaneseCharMapMiner:
         "half_width_kana": HALF_WIDTH_KANA,
     }
 
+    def __init__(self) -> None:
+        # Default instance initializer
+        pass
+
     @classmethod
     def search_kana_word(
         cls,
@@ -474,6 +478,30 @@ class JapaneseCharMapMiner:
         # Sort clusters by confidence and match count
         clusters.sort(key=lambda c: (c.confidence, len(c.matches)), reverse=True)
         return clusters
+
+    @classmethod
+    def mine_clusters(
+        cls,
+        data: bytes,
+        dictionary: Optional[Sequence[str]] = None,
+        orderings: Optional[Sequence[str]] = None,
+        min_consensus: int = 2,
+        min_consensus_words: Optional[int] = None,
+        proximity_limit: int = 65536,
+        mode: str = "1byte",
+    ) -> List[JapaneseMiningCluster]:
+        """
+        Alias for mine_charmap returning discovered JapaneseMiningClusters.
+        """
+        consensus = min_consensus_words if min_consensus_words is not None else min_consensus
+        return cls.mine_charmap(
+            data=data,
+            dictionary=dictionary,
+            orderings=orderings,
+            min_consensus=consensus,
+            proximity_limit=proximity_limit,
+            mode=mode,
+        )
 
     @classmethod
     def _evaluate_and_add_cluster(

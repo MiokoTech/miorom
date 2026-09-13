@@ -20,6 +20,7 @@ from miorom.script.boundary_detector import detect_delimiters
 from miorom.text.charmap import CharMap
 from miorom.text.po_handler import PoEntry, PoHandler
 from miorom.text.pointer_relinker import PointerRelinker
+from miorom.text.tokenizer import ControlCodeSchema, ControlCodeTokenizer
 
 
 @dataclass
@@ -124,9 +125,10 @@ class DialogueDissector:
         encoding: str = "shift_jis",
         charmap: Optional[CharMap] = None,
         min_entries: int = 4,
-        pointer_sizes: Sequence[int] = (2, 4),
+        pointer_sizes: Sequence[int] = (2, 3, 4),
         endians: Sequence[str] = ("<", ">"),
         base_addresses: Optional[Sequence[int]] = None,
+        schema: Optional[ControlCodeSchema] = None,
     ) -> List[DialogueBlock]:
         """
         Scans a ROM or binary blob for pointer tables and extracts all discovered dialogue blocks.
@@ -163,6 +165,7 @@ class DialogueDissector:
                             encoding=encoding,
                             charmap=charmap,
                             block_id=f"table_{cand.offset:06X}",
+                            schema=schema,
                         )
                         if len(block.entries) >= min_entries:
                             discovered_blocks.append(block)
@@ -183,11 +186,12 @@ class DialogueDissector:
         charmap: Optional[CharMap] = None,
         block_id: str = "block_0",
         control_codes: Optional[Dict[bytes, str]] = None,
+        schema: Optional[ControlCodeSchema] = None,
     ) -> DialogueBlock:
         """
         Extracts a dialogue block from a specific known pointer table location.
         """
-        if pointer_size not in (2, 3, 4):
+        if pointer_size not in (1, 2, 3, 4):
             raise ValueError(f"Unsupported pointer_size: {pointer_size}")
         endian_flag = "little" if endian == "<" else "big"
         relinker = PointerRelinker(pointer_size=pointer_size, endian=endian_flag, base_address=base_address)
@@ -235,7 +239,7 @@ class DialogueDissector:
             if t_off == -1:
                 continue
 
-            # Read until terminator or EOF or next pointer
+            # Read until terminator or EOF
             curr = t_off
             while curr + term_len <= data_len:
                 if data[curr : curr + term_len] == primary_term:
@@ -246,17 +250,28 @@ class DialogueDissector:
             raw_chunk = data[t_off:curr]
             text_bytes = raw_chunk[:-term_len] if raw_chunk.endswith(primary_term) else raw_chunk
 
-            # Decode text
-            if charmap is not None:
+            # Decode text with schema or fallback
+            found_cc: List[str] = []
+            if schema is not None:
+                decoded_text = ControlCodeTokenizer.decode(
+                    text_bytes,
+                    schema=schema,
+                    encoding=encoding,
+                    charmap=charmap,
+                    strip_terminator=False,
+                )
+                for cdef in schema.codes_by_name.values():
+                    if f"<{cdef.name}" in decoded_text or f"[{cdef.name}" in decoded_text:
+                        found_cc.append(cdef.name)
+            elif charmap is not None:
                 decoded_text = charmap.decode(text_bytes)
             else:
                 decoded_text = text_bytes.decode(encoding, errors="replace")
 
-            # Detect control codes if provided
-            found_cc: List[str] = []
+            # Detect manual control codes if provided
             if control_codes:
                 for code_bytes, tag in control_codes.items():
-                    if code_bytes in text_bytes:
+                    if code_bytes in text_bytes and tag not in found_cc:
                         found_cc.append(tag)
 
             entries.append(
@@ -287,10 +302,12 @@ class DialogueDissector:
         cls,
         data: bytearray,
         block: DialogueBlock,
-        translations: Union[Dict[int, str], PoFile, str],
+        translations: Union[Dict[int, str], PoHandler, str],
         charmap: Optional[CharMap] = None,
         encoding: str = "shift_jis",
         free_space_ranges: Optional[List[Tuple[int, int]]] = None,
+        schema: Optional[ControlCodeSchema] = None,
+        paginator: Optional[Any] = None,
     ) -> DissectionPatchReport:
         """
         Injects translated dialogue into the ROM buffer.
@@ -335,8 +352,21 @@ class DialogueDissector:
                 continue
 
             new_text = trans_map[entry.index]
-            # Encode string
-            if charmap is not None:
+
+            # Paginate text if paginator provided
+            if paginator is not None and hasattr(paginator, "paginate_text"):
+                new_text = paginator.paginate_text(new_text)
+
+            # Encode string with schema or fallback
+            if schema is not None:
+                encoded_body = ControlCodeTokenizer.encode(
+                    new_text,
+                    schema=schema,
+                    encoding=encoding,
+                    charmap=charmap,
+                    append_terminator=False,
+                )
+            elif charmap is not None:
                 encoded_body = charmap.encode(new_text)
             else:
                 encoded_body = new_text.encode(encoding, errors="replace")

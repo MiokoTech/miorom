@@ -1,6 +1,6 @@
 # MioROM API Reference & Architecture Guide
 
-MioROM v1.0.1 is an all-in-one modular Python framework for ROM hacking, fan translation engineering, and game reverse engineering.
+MioROM v1.0.2 is an all-in-one modular Python framework for ROM hacking, fan translation engineering, and game reverse engineering.
 
 ### Companion Guides
 - [Binary & Assembly Primitives Guide](BINARY_PRIMITIVES.md) - Low-level patching, micro-assembly, and struct serialization.
@@ -123,11 +123,12 @@ MioROM v1.0.1 is an all-in-one modular Python framework for ROM hacking, fan tra
 | `ExtractionResult`, `ExtractedEntry` | Structured container holding extracted script entries, offsets, raw bytes, and control code tags. |
 | `InsertionReport` | Diagnostic summary of script reinsertion with inserted counts and overflow warnings. |
 | `detect_delimiters`, `detect_control_codes` | Script delimiter & control code auto-detector: discovers 1-byte/multi-byte string terminators across pointer boundaries (`detect_delimiters`), identifies embedded bytecode opcodes and estimates parameter arguments (`detect_control_codes`), generates `ScriptBoundaryReport` (`analyze_script_boundaries`), and extracts cleanly bounded script entries (`slice_script_entries`). |
+| `DialogueDissector`, `DialogueBlock` | Automated ROM dialogue pointer table scanner and extractor: maps console base addresses, extracts dialogue blocks to GNU gettext `.po` or JSON, and reinjects translated text with automatic free-space relocation (`scan_dialogue_tables()`, `reinject_dialogues()`). |
 | `VMOpcodeType` | Enumeration of VM instruction categories: `TEXT`, `BRANCH_REL`, `BRANCH_ABS`, `SWITCH`, `CONTROL`, and `TERMINATOR`. |
-| `VMInstructionDef` | Opcode schema definition carrying opcode byte, mnemonic, type, fixed length, text terminator, length-prefix flag, and operand format string. |
+| `VMInstructionDef` | Opcode schema definition carrying opcode byte, mnemonic, type, fixed length, text terminator, length-prefix flag, declarative `schema` (`SchemaField` / `BinaryStruct`), and legacy operand format string. |
 | `DissectedInstruction` | Fully decoded script instruction: index, ROM offset, byte length, opcode, raw bytes, text payload, branch target, relative delta, switch targets, and operand offset. |
 | `DissectedScriptVM` | Disassembled script container with instruction list and base offset; provides `get_dialogues()` for dialogue extraction and `to_po()` for GNU gettext PO export. |
-| `ScriptVMDissector` | Linear sweep bytecode disassembler for arbitrary opcode schemas (`disassemble()`); dynamic text replacement engine that rewrites translated strings and recalculates all branch deltas, absolute jump targets, and switch tables in-place (`splice_and_relink()`). |
+| `ScriptVMDissector` | Linear sweep bytecode disassembler for arbitrary opcode schemas (`disassemble()`); dynamic text replacement and relinking engine that rewrites translated strings and recalculates all relative branch deltas, absolute jump targets, and switch tables in-place using declarative `BinaryStruct` schemas (`splice_and_relink()`). |
 
 
 ---
@@ -166,19 +167,23 @@ MioROM v1.0.1 is an all-in-one modular Python framework for ROM hacking, fan tra
 | :--- | :--- |
 | `CharMap` | Custom `.tbl` character table transcoder for 1-byte, 2-byte, and multi-byte encodings. |
 | `CharMapMiner` | Statistical n-gram character matrix miner reconstructing unknown `.tbl` tables. |
+| `JapaneseCharmap` | Multi-byte character encoding handler supporting Shift-JIS and EUC-JP with bidirectional dakuten and handakuten composition/decomposition. |
 | `TrieTranscoder` | High-performance greedy longest-prefix transcoder for complex DTE dictionaries. |
-| `PixelWordWrapper` | True on-screen Variable Width Font (VWF) word-wrapper and boundary checker. |
-| `VwfLineWrapper` | Pixel-accurate VWF word-wrapper and paginator accepting dicts, binary table bytes, callables, `FontGlyphInjector`, or `FontMetrics` instances. Preserves game control codes (`[wait]`, `{hero}`, `<color:red>`) during line measurement. |
-| `LineWrapResult` | Structured result of `VwfLineWrapper.analyze()` containing pages, per-line pixel widths, and overflow diagnostics. |
-| `TextBoxPage` | Single paginated dialogue page with `lines`, `pixel_widths`, and `max_line_width`. |
-| `DteOptimizer` | DTE/MTE n-gram frequency analyzer and net-savings dictionary builder. Returns `DteStats` with compression ratio metrics and supports `.tbl` round-trip export/import. |
-| `DteCodec` | Greedy two-way DTE/MTE encoder and decoder integrated with `CharMap` for full translation round-trips. |
+| `WordWrapper` | Fixed-width character-count word-wrapper and textbox dimension validator (`miorom.text.line_wrapper`). |
+| `PixelWordWrapper` | True on-screen Variable Width Font (VWF) word-wrapper and boundary checker (`miorom.text.line_wrapper`). |
+| `FontMetrics` | Proportional character glyph width and kerning registry (`miorom.text.line_wrapper`). |
+| `VwfLineWrapper`, `AdaptiveLineWrapper` | Pixel-accurate VWF word-wrapper and paginator accepting dicts, binary table bytes, callables, `FontGlyphInjector`, or `FontMetrics` instances. Preserves game control codes (`[wait]`, `{hero}`, `<color:red>`) during line measurement. |
+| `LineWrapResult`, `TextBoxPage` | Structured results containing paginated dialogue pages, per-line pixel widths, and overflow diagnostics. |
+| `DTEMiner`, `DTEToken` | Dual-Tile and Multi-Tile Encoding (DTE/MTE) frequency miner and token dictionary builder (`miorom.text.dte`). |
+| `DteOptimizer`, `DteCodec` | DTE/MTE n-gram frequency optimizer and greedy two-way transcoder integrated with `CharMap` for net-savings dictionary compression. |
 | `DteStats`, `DteEntry` | Result dataclasses for dictionary compression metadata (bytes saved, ratio, per-token frequency). |
+| `TagManager`, `TagSyntaxValidator` | Complete markup control tag lifecycle suite: bidirectional code-to-tag conversion, bracket balance verification, and translation variable fidelity checks (`miorom.text.tags`). |
+| `TagValidationReport` | Structured diagnostic report of tag syntax validity, unmatched brackets, and missing game variables. |
+| `TextDialoguePipeline` | End-to-end dialogue translation pipeline integrating table discovery, tokenization, line wrapping, and relocation (`miorom.text.pipeline`). |
 | `PointerRelinker` | Scans pointer tables (1..4 bytes, big/little-endian) and updates targets, auto-relocating overflowing strings to ROM free space. |
 | `PointerRecord`, `RelinkReport` | Structured records for discovered pointers and relinking operation diagnostics. |
 | `TranslationMemory` | In-memory translation memory leveraging pure-Python Levenshtein distance for exact (100%) and fuzzy matching. |
 | `TmLookupResult`, `TmMatch` | Translation memory search candidate records with similarity scoring. |
-| `FontMetrics` | Proportional character glyph width and kerning registry. |
 | `BMFont` | AngelCode BMFont parser and serializer supporting both Text and XML formats with automatic atlas shelf packing. |
 | `PNGCodec` | Built-in 100% pure-Python minimal PNG encoder and decoder (grayscale & RGBA) using only standard library `zlib`. |
 | `PlanarTileCodec` | Pure-Python planar bitplane and chunky 8x8 tile codec (1bpp, 2bpp GB/NES/SNES, 3bpp Capcom SNES, 4bpp SNES planar, 4bpp Genesis chunky, 4bpp GBA, 8bpp Mode 7). Supports `split_bitplanes()`, `combine_bitplanes()`, `planar_to_linear()`, and `linear_to_planar()`. |

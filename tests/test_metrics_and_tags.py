@@ -4,7 +4,7 @@ from miorom.text.metrics_measurer import (
     WordWrapSplitter,
     DialoguePagePartitioner,
 )
-from miorom.text.tag_validator import (
+from miorom.text.tags import (
     TagSyntaxValidator,
     TagValidationReport,
 )

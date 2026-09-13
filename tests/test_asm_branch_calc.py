@@ -1,5 +1,5 @@
 import pytest
-from miorom.asm.branch_calc import (
+from miorom.asm.branch import (
     calc_arm_branch,
     resolve_arm_branch,
     calc_thumb_branch,

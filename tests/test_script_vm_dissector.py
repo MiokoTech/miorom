@@ -197,3 +197,59 @@ def test_splice_and_relink_multiple_expansions_with_switch():
     # Verify final opcode at shifted target is END
     final_offset = 0x17 + 16 + 24
     assert patched_code[final_offset] == OP_END
+
+
+def test_disassemble_and_relink_using_declarative_schema():
+    from miorom.core.binary import BinaryWriter
+    from miorom.core.schema import I16, U16
+
+    # Define opcodes with declarative Schema fields instead of format strings
+    OP_SPEAKER = 0x10
+    OP_TEXT = 0x20
+    OP_BRANCH = 0x30
+    OP_JUMP = 0x40
+    OP_END = 0xFF
+
+    schema_opcodes = {
+        OP_SPEAKER: VMInstructionDef(OP_SPEAKER, "SPEAKER", VMOpcodeType.CONTROL, fixed_length=2),
+        OP_TEXT: VMInstructionDef(OP_TEXT, "TEXT", VMOpcodeType.TEXT, text_terminator=b"\x00"),
+        OP_BRANCH: VMInstructionDef(OP_BRANCH, "BRANCH", VMOpcodeType.BRANCH_REL, schema=I16(endian="<")),
+        OP_JUMP: VMInstructionDef(OP_JUMP, "JUMP", VMOpcodeType.BRANCH_ABS, schema=U16(endian="<")),
+        OP_END: VMInstructionDef(OP_END, "END", VMOpcodeType.TERMINATOR, fixed_length=1),
+    }
+
+    # Assemble bytecode using pure BinaryWriter without standard struct module
+    writer = BinaryWriter(endian="<")
+    writer.write_u8(OP_SPEAKER).write_u8(1)
+    writer.write_u8(OP_TEXT).write_string("Hello", encoding="ascii", null_terminated=True)
+    writer.write_u8(OP_BRANCH).write_s16(6)  # Target: 0x09 + 6 = 0x0F (END)
+    writer.write_u8(OP_JUMP).write_u16(0x0F) # Target: 0x0F (END)
+    writer.write_u8(OP_END)
+    bytecode = writer.to_bytes()
+
+    # Disassemble script
+    script = ScriptVMDissector.disassemble(bytecode, opcode_table=schema_opcodes)
+    assert len(script.instructions) == 5
+    assert script.instructions[1].text_payload == "Hello"
+    assert script.instructions[2].branch_target == 0x0F
+    assert script.instructions[3].branch_target == 0x0F
+
+    # Expand text and relink
+    translations = {1: "Greetings brave adventurer from across the realm!"}
+    patched = ScriptVMDissector.splice_and_relink(
+        bytecode,
+        script,
+        translations,
+        opcode_table=schema_opcodes,
+    )
+
+    # Verify patched script
+    patched_script = ScriptVMDissector.disassemble(patched, opcode_table=schema_opcodes)
+    assert patched_script.instructions[1].text_payload == "Greetings brave adventurer from across the realm!"
+
+    # Verify relinked branch and jump targets
+    delta_shift = len("Greetings brave adventurer from across the realm!\x00") - len(b"Hello\x00")
+    expected_target = 0x0F + delta_shift
+    assert patched_script.instructions[2].branch_target == expected_target
+    assert patched_script.instructions[3].branch_target == expected_target
+    assert patched[expected_target] == OP_END

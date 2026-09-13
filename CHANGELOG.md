@@ -2,6 +2,64 @@
 
 All notable changes to MioROM will be documented in this file.
 
+## [1.0.2] — 2026-09-12
+
+### Added
+- **Nintendo GX Paletted Texture Codecs & TPL TLUT Serialization (`miorom.platforms.wii.tpl`)**:
+  - Full decoding and encoding support for CI4 (Format 8, 4bpp, 8x8 tiles) and CI8 (Format 9, 8bpp, 8x4 tiles).
+  - `TPLPaletteHeaderStruct`: Binary struct representing standard Nintendo GX 12-byte palette descriptor.
+  - `decode_gx_palette()` & `encode_gx_palette()`: Pure Python 16-bit big-endian palette codecs for `IA8` (0), `RGB565` (1), and `RGB5A3` (2).
+  - `extract_or_quantize_palette()`: Adaptive RGBA color palette extraction providing lossless 100% exact colors when unique count <= 16 (CI4) or <= 256 (CI8), with frequency-based clustering fallback.
+  - `TPLFile.to_bytes()`: Full binary serialization for paletted textures with strict 32-byte hardware DMA sector alignment and offset backpatching.
+  - `TPLImage.summary()` and `TPLImage.to_terminal_ascii()`: Terminal visual inspection and summary metadata.
+  - `U8Archive.pack_dict()` & `U8Archive.extract_dict()`: In-memory packing and unpacking of U8 archives without touching physical disk.
+- **Forensic Texture Inspector & Visual Regression Engine (`miorom.graphics.texture_inspector`)**:
+  - `TextureInspector.inspect()`: Deep forensic analysis of texture containers (TPL, BTI, PNG), validating dimensions, tile strides, format bit depths, palette capacity vs unique colors, and payload truncation warnings.
+  - `TextureInspector.diff()`: Mathematical visual regression comparator computing exact modified pixel count, percentage, bounding box $(x_{\min}, y_{\min}, x_{\max}, y_{\max})$, max channel delta, and multi-level alpha preservation checks.
+  - `TextureInspector.render_ascii()`: Console ASCII art rendering of texture images.
+  - CLI commands: `miorom gfx inspect <file> [--json]`, `miorom gfx ascii <file> [-w 40]`, `miorom gfx diff <orig> <mod> [--json]`.
+- **Glyph Harvester & Bitmap Font Recomposer (`miorom.graphics.glyph_bank`)**:
+  - `Glyph`: Bitmap character representation preserving exact pixel channels, dimensions, and advance metrics.
+  - `GlyphBank.harvest_boxes()`: Harvests glyphs via explicit bounding box coordinates.
+  - `GlyphBank.harvest_widths()`: Harvests horizontal glyph strips with variable character widths.
+  - `GlyphBank.harvest_grid()`: Harvests glyphs from regular grids with optional blank column trimming.
+  - `GlyphBank.auto_dissect()`: Automatically segments glyph blocks from horizontal text strips by analyzing empty column intervals.
+  - `GlyphBank.recompose()` & `recompose_rgba()`: Reassembles target translated phrases using source glyphs with source-over alpha blending, kerning/tracking, and 1-px border overlap without destroying adjacent bevel highlights.
+  - CLI command: `miorom gfx recompose <source_image> -t <target> -o <out.png>`.
+- **Declarative Script VM Dissector & Relinking Engine (`miorom.script.script_dissector`)**:
+  - `VMInstructionDef`: Added `schema` parameter supporting declarative `SchemaField` instances (`I16`, `U16`, `U32`, or `BinaryStruct` subclasses) to eliminate brittle `struct` format strings.
+  - `ScriptVMDissector.disassemble()`: Decodes instruction streams dynamically via `schema.unpack()`, resolving relative branches (`BranchType.RELATIVE`), absolute jumps (`BranchType.ABSOLUTE`), and switch jump tables.
+  - `ScriptVMDissector.splice_and_relink()`: Automatically calculates bytecode deltas, adjusts instruction offsets, recalculates relative/absolute jump operands, and repacks updated operands via `schema.pack()`, preventing corruptions during arbitrary text expansion.
+- **End-to-End Dialogue Localization Pipeline (`miorom.text.pipeline`)**:
+  - `TextDialoguePipeline`: Orchestrates dialogue table scanning, control code tokenization (`ControlCodeTokenizer`), variable-width font line wrapping (`AdaptiveLineWrapper`), and pointer table relocation (`PointerRelinker`).
+  - `JapaneseCharmap` (`miorom.text.japanese_charmap`): Full Shift-JIS and EUC-JP multi-byte character mapping with bidirectional dakuten/handakuten decomposition and composition.
+- **Architecture Consolidation & Legacy Shim Removal**:
+  - `miorom.text.line_wrapper`: Consolidated typography and word wrapping; unified `WordWrapper`, `FontMetrics`, and `PixelWordWrapper` with `VwfLineWrapper`.
+  - `miorom.text.dte`: Consolidated Dual-Tile Encoding; unified `DTEToken` and `DTEMiner` with `DteOptimizer` and `DteCodec`.
+  - `miorom.text.tags`: Consolidated markup control tags; unified `TagSyntaxValidator` and `TagValidationReport` with `TagManager`.
+  - `miorom.asm.branch`: Consolidated low-level branch arithmetic; unified `calc_arm_branch`, `resolve_arm_branch`, `calc_thumb_branch`, `resolve_thumb_branch`, `calc_mips_jump`, `resolve_mips_jump`, `calc_mips_branch`, `resolve_mips_branch`, `calc_6502_branch`, and `resolve_6502_branch` directly into `branch.py`.
+  - `miorom.asm.xref`: Consolidated cross-reference analysis; unified `XRefDatabase`, `XRefRecord`, `XRefDirection`, and `SymbolicXrefEngine` with `GlobalXrefEngine`.
+  - Purged 6 redundant legacy modules (`wrapper.py`, `pixel_wrapper.py`, `dte_miner.py`, `tag_validator.py`, `branch_calc.py`, `xref_engine.py`) and migrated all imports directly to canonical modules across the entire codebase and test suites.
+- **Pure Binary Primitives & Schema Dogfooding**:
+  - Replaced standard library `struct` dependencies in dialogue pipelines, script VM relinkers, and user workflows with pure primitives: `BinaryReader`, `BinaryWriter`, and `BinaryStruct`.
+- **Nested Container Virtual File System (`miorom.core.vfs`)**:
+  - `NestedArchiveVFS`: Unified URI addressing for deeply nested container hierarchies (`outer.arc::inner.arc::path/to/file.ext`).
+  - In-memory traversal and extraction for U8 (`.arc`), Yaz0 (`.szs`), RARC, and AFS archives with zero temporary disk files.
+  - Atomic outward repacking (`write_uri()`): Injects modified assets into innermost containers and automatically rebuilds all enclosing parent archives outward, maintaining 32-byte alignment and transparent compression.
+  - CLI commands: `miorom vfs list <uri>`, `miorom vfs read <uri> -o <out>`, `miorom vfs write <uri> -i <in>`.
+
+### Fixed
+- **`nds.nftr` — NFTR Builder Conformance Rewrite (`miorom.platforms.nds.nftr`)**:
+  - `NFTRFont.to_bytes()` now serializes Nitro SDK conforming NFTR binaries, resolving game engine freezes caused by non-conforming structures.
+  - **FINF block (28-byte `FNIF`)**: Header correctly serializes a 28-byte `FNIF` block including pre-calculated pointer fields `pGlyph`, `pWidth`, and `pMap` required by `NNS_G2dFontInit` (ARM9 `0x02058E54`). Legacy implementation generated a 16-byte stub with garbage pointers, causing Data Aborts during `New Game` / save selection screens.
+  - **CMAP multi-block chaining**: CMAP blocks (`PAMC`) are now segmented by run type and linked via `next_block_offset`. Contiguous runs of ≥4 codes produce 24-byte **Type 0 (Direct)** blocks; isolated glyphs or sparse runs produce **Type 2 (Scan list)** blocks. Eliminates monolithic 64KB Type 1 tables (`0x0000–0xFFFF`) that caused runtime parsing timeouts.
+  - **PLGC (`CGLP`) block**: `baseline`, `max_width`, and `bpp` fields are accurately serialized from corresponding `NFTRFont` attributes instead of zeroes.
+  - **HDWC (`CWDH`) block**: Per-glyph width triplets `(left_margin, width, advance)` are fully preserved during both read and write operations. The legacy implementation always wrote `(0, cell_width, advance)`, corrupting proportional typography.
+  - **Bitwise pixel codec**: Legacy string-based bitstream codec replaced with fast bitwise helpers `_encode_glyph_pixels()` / `_decode_glyph_pixels()` supporting 1, 2, 4, and 8 bpp tile formats.
+  - **`NFTRFont.from_bytes()`**: Reads all three CWDH fields `(left_margin, width, advance)` as per-glyph triplets; parses `baseline` and `max_width` from PLGC; extracts `cell_height` from FINF.
+  - **`NFTRGlyph`**: Added `left_margin` attribute storing per-glyph horizontal bearing, preserved across serialization round-trips.
+  - **Round-trip fidelity**: `from_bytes() -> to_bytes()` generates bit-for-bit identical output against retail NDS NFTR fonts (`font12x12.NFTR`, `ed_font12x12.NFTR`). Verified with `pytest tests/test_nftr.py` (2 passed).
+
 ## [1.0.1] — 2026-11-11
 
 ### Fixed

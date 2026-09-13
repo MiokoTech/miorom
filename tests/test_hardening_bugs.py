@@ -33,8 +33,7 @@ from miorom.platforms.nes.rom import NESRom
 from miorom.platforms.psx.tim import TIMImage
 from miorom.platforms.gc.disc import GameCubeDisc, GCHeader
 from miorom.platforms.iso.iso9660 import ISO9660
-from miorom.asm.xref_engine import XRefDatabase
-from miorom.asm.xref import XRefType
+from miorom.asm.xref import XRefDatabase, XRefType
 from miorom.text.charmap import CharMap
 from miorom.graphics.palette import FloydSteinbergDitherer, Palette, Color
 from miorom.rom.handlers.nds import NDSRomHandler

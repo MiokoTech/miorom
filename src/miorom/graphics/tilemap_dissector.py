@@ -74,10 +74,36 @@ class TilemapMenuBox(MioRomResult):
     items: List[TilemapTextRun] = field(default_factory=list)
 
 
+class _HybridDissectorMethod:
+    """Descriptor supporting both instance-bound and classmethod execution."""
+
+    def __init__(self, func):
+        self.func = func
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return lambda *args, **kwargs: self.func(owner, *args, **kwargs)
+        return lambda *args, **kwargs: self.func(instance, *args, **kwargs)
+
+
 class TilemapDissector:
     """
     Reverse engineering tool for analyzing and modifying tilemap-based menu layouts.
     """
+
+    def __init__(
+        self,
+        tilemap: Optional[Tilemap] = None,
+        charmap: Optional[CharMap] = None,
+        min_length: int = 2,
+        base_tile_index: int = 0,
+        blank_tile_indices: Optional[Sequence[int]] = None,
+    ) -> None:
+        self.tilemap = tilemap
+        self.charmap = charmap
+        self.min_length = min_length
+        self.base_tile_index = base_tile_index
+        self.blank_tile_indices = blank_tile_indices
 
     @classmethod
     def _decode_tile(
@@ -110,14 +136,14 @@ class TilemapDissector:
 
         return None
 
-    @classmethod
+    @_HybridDissectorMethod
     def scan_text_runs(
-        cls,
-        tilemap: Tilemap,
-        charmap: CharMap,
-        min_length: int = 2,
+        target,
+        tilemap: Optional[Union[Tilemap, str]] = None,
+        charmap: Optional[CharMap] = None,
+        min_length: Optional[int] = None,
         direction: str = "horizontal",
-        base_tile_index: int = 0,
+        base_tile_index: Optional[int] = None,
         blank_tile_indices: Optional[Sequence[int]] = None,
     ) -> List[TilemapTextRun]:
         """
@@ -131,6 +157,30 @@ class TilemapDissector:
             base_tile_index: Offset subtracted from tile_index before charmap lookup.
             blank_tile_indices: Tile indices considered empty space / padding. Defaults to [0].
         """
+        if isinstance(target, TilemapDissector):
+            if isinstance(tilemap, str):
+                direction = tilemap
+                tilemap = target.tilemap
+            elif tilemap is None:
+                tilemap = target.tilemap
+
+            if charmap is None:
+                charmap = target.charmap
+            if min_length is None:
+                min_length = target.min_length
+            if base_tile_index is None:
+                base_tile_index = target.base_tile_index
+            if blank_tile_indices is None:
+                blank_tile_indices = target.blank_tile_indices
+        else:
+            if min_length is None:
+                min_length = 2
+            if base_tile_index is None:
+                base_tile_index = 0
+
+        if tilemap is None or charmap is None:
+            raise ValueError("scan_text_runs requires both tilemap and charmap.")
+
         blanks = set(blank_tile_indices if blank_tile_indices is not None else [0])
         runs: List[TilemapTextRun] = []
 
@@ -139,7 +189,7 @@ class TilemapDissector:
                 c = 0
                 while c < tilemap.width:
                     entry = tilemap.get_entry(c, r)
-                    char = cls._decode_tile(entry.tile_index, charmap, base_tile_index)
+                    char = TilemapDissector._decode_tile(entry.tile_index, charmap, base_tile_index)
 
                     if char is not None and entry.tile_index not in blanks:
                         start_c = c
@@ -152,7 +202,7 @@ class TilemapDissector:
 
                         while c < tilemap.width:
                             next_entry = tilemap.get_entry(c, r)
-                            next_char = cls._decode_tile(next_entry.tile_index, charmap, base_tile_index)
+                            next_char = TilemapDissector._decode_tile(next_entry.tile_index, charmap, base_tile_index)
                             if next_char is not None and next_entry.tile_index not in blanks:
                                 run_tiles.append(next_entry.tile_index)
                                 run_chars.append(next_char)
@@ -193,7 +243,7 @@ class TilemapDissector:
                 r = 0
                 while r < tilemap.height:
                     entry = tilemap.get_entry(c, r)
-                    char = cls._decode_tile(entry.tile_index, charmap, base_tile_index)
+                    char = TilemapDissector._decode_tile(entry.tile_index, charmap, base_tile_index)
 
                     if char is not None and entry.tile_index not in blanks:
                         start_r = r
@@ -206,7 +256,7 @@ class TilemapDissector:
 
                         while r < tilemap.height:
                             next_entry = tilemap.get_entry(c, r)
-                            next_char = cls._decode_tile(next_entry.tile_index, charmap, base_tile_index)
+                            next_char = TilemapDissector._decode_tile(next_entry.tile_index, charmap, base_tile_index)
                             if next_char is not None and next_entry.tile_index not in blanks:
                                 run_tiles.append(next_entry.tile_index)
                                 run_chars.append(next_char)
@@ -246,24 +296,38 @@ class TilemapDissector:
 
         return runs
 
-    @classmethod
+    @_HybridDissectorMethod
     def export_text_grid(
-        cls,
-        tilemap: Tilemap,
-        charmap: CharMap,
-        base_tile_index: int = 0,
+        target,
+        tilemap: Optional[Tilemap] = None,
+        charmap: Optional[CharMap] = None,
+        base_tile_index: Optional[int] = None,
         blank_char: str = ".",
     ) -> str:
         """
         Renders a 2D ASCII/Unicode visualization of the tilemap text contents.
         Unmapped or blank tiles are represented by blank_char.
         """
+        if isinstance(target, TilemapDissector):
+            if tilemap is None:
+                tilemap = target.tilemap
+            if charmap is None:
+                charmap = target.charmap
+            if base_tile_index is None:
+                base_tile_index = target.base_tile_index
+        else:
+            if base_tile_index is None:
+                base_tile_index = 0
+
+        if tilemap is None or charmap is None:
+            raise ValueError("export_text_grid requires both tilemap and charmap.")
+
         lines = []
         for r in range(tilemap.height):
             row_chars = []
             for c in range(tilemap.width):
                 entry = tilemap.get_entry(c, r)
-                char = cls._decode_tile(entry.tile_index, charmap, base_tile_index)
+                char = TilemapDissector._decode_tile(entry.tile_index, charmap, base_tile_index)
                 if char is not None and char.strip():
                     row_chars.append(char[0])  # First glyph character
                 else:
@@ -271,15 +335,16 @@ class TilemapDissector:
             lines.append("".join(row_chars))
         return "\n".join(lines)
 
-    @classmethod
+    @_HybridDissectorMethod
     def splice_label(
-        cls,
-        tilemap: Tilemap,
-        row: int,
-        col: int,
-        new_text: str,
-        charmap: CharMap,
-        base_tile_index: int = 0,
+        target,
+        *args,
+        tilemap: Optional[Tilemap] = None,
+        row: Optional[int] = None,
+        col: Optional[int] = None,
+        new_text: Optional[str] = None,
+        charmap: Optional[CharMap] = None,
+        base_tile_index: Optional[int] = None,
         palette_bank: Optional[int] = None,
         pad_tile: int = 0,
         max_width: Optional[int] = None,
@@ -300,6 +365,44 @@ class TilemapDissector:
             max_width: Maximum allowed width in tiles.
             align: 'left', 'center', or 'right'.
         """
+        pos_args = list(args)
+        if pos_args and isinstance(pos_args[0], Tilemap):
+            tilemap = pos_args.pop(0)
+        elif isinstance(target, TilemapDissector) and tilemap is None:
+            tilemap = target.tilemap
+
+        if pos_args and row is None:
+            row = pos_args.pop(0)
+        if pos_args and col is None:
+            col = pos_args.pop(0)
+        if pos_args and new_text is None:
+            new_text = pos_args.pop(0)
+        if pos_args and charmap is None:
+            charmap = pos_args.pop(0)
+        if pos_args and base_tile_index is None:
+            base_tile_index = pos_args.pop(0)
+        if pos_args and palette_bank is None:
+            palette_bank = pos_args.pop(0)
+        if pos_args:
+            pad_tile = pos_args.pop(0)
+        if pos_args:
+            max_width = pos_args.pop(0)
+        if pos_args:
+            align = pos_args.pop(0)
+
+        if isinstance(target, TilemapDissector):
+            if tilemap is None:
+                tilemap = target.tilemap
+            if charmap is None:
+                charmap = target.charmap
+            if base_tile_index is None:
+                base_tile_index = target.base_tile_index
+
+        if base_tile_index is None:
+            base_tile_index = 0
+
+        if tilemap is None or charmap is None or row is None or col is None or new_text is None:
+            raise ValueError("splice_label requires tilemap, row, col, new_text, and charmap.")
         # Encode characters to tile indices
         new_tiles: List[int] = []
         for ch in new_text:
@@ -372,23 +475,60 @@ class TilemapDissector:
 
         return tilemap
 
-    @classmethod
+    @_HybridDissectorMethod
     def extract_menu_box(
-        cls,
-        tilemap: Tilemap,
-        charmap: CharMap,
-        top: int,
-        left: int,
-        width: int,
-        height: int,
-        base_tile_index: int = 0,
+        target,
+        *args,
+        tilemap: Optional[Tilemap] = None,
+        charmap: Optional[CharMap] = None,
+        top: Optional[int] = None,
+        left: Optional[int] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        base_tile_index: Optional[int] = None,
         blank_tile_indices: Optional[Sequence[int]] = None,
     ) -> TilemapMenuBox:
         """
         Extracts a rectangular sub-region and analyzes all horizontal text runs within it.
         """
+        pos_args = list(args)
+        if pos_args and isinstance(pos_args[0], Tilemap):
+            tilemap = pos_args.pop(0)
+        elif isinstance(target, TilemapDissector) and tilemap is None:
+            tilemap = target.tilemap
+
+        if pos_args and isinstance(pos_args[0], CharMap):
+            charmap = pos_args.pop(0)
+        elif isinstance(target, TilemapDissector) and charmap is None:
+            charmap = target.charmap
+
+        if pos_args and top is None:
+            top = pos_args.pop(0)
+        if pos_args and left is None:
+            left = pos_args.pop(0)
+        if pos_args and width is None:
+            width = pos_args.pop(0)
+        if pos_args and height is None:
+            height = pos_args.pop(0)
+
+        if isinstance(target, TilemapDissector):
+            if tilemap is None:
+                tilemap = target.tilemap
+            if charmap is None:
+                charmap = target.charmap
+            if base_tile_index is None:
+                base_tile_index = target.base_tile_index
+            if blank_tile_indices is None:
+                blank_tile_indices = target.blank_tile_indices
+
+        if base_tile_index is None:
+            base_tile_index = 0
+
+        if tilemap is None or charmap is None or top is None or left is None or width is None or height is None:
+            raise ValueError("extract_menu_box requires tilemap, charmap, top, left, width, height.")
+
         sub = tilemap.submap(left, top, width, height)
-        sub_runs = cls.scan_text_runs(
+        sub_runs = TilemapDissector.scan_text_runs(
             sub,
             charmap=charmap,
             min_length=1,
@@ -416,20 +556,46 @@ class TilemapDissector:
 
         return TilemapMenuBox(top=top, left=left, width=width, height=height, items=box_items)
 
-    @classmethod
+    @_HybridDissectorMethod
     def clear_region(
-        cls,
-        tilemap: Tilemap,
-        row: int,
-        col: int,
-        width: int,
-        height: int,
+        target,
+        *args,
+        tilemap: Optional[Tilemap] = None,
+        row: Optional[int] = None,
+        col: Optional[int] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
         clear_tile: int = 0,
         palette_bank: int = 0,
     ) -> None:
         """
         Fills a rectangular region with clear_tile.
         """
+        pos_args = list(args)
+        if pos_args and isinstance(pos_args[0], Tilemap):
+            tilemap = pos_args.pop(0)
+        elif isinstance(target, TilemapDissector) and tilemap is None:
+            tilemap = target.tilemap
+
+        if pos_args and row is None:
+            row = pos_args.pop(0)
+        if pos_args and col is None:
+            col = pos_args.pop(0)
+        if pos_args and width is None:
+            width = pos_args.pop(0)
+        if pos_args and height is None:
+            height = pos_args.pop(0)
+        if pos_args:
+            clear_tile = pos_args.pop(0)
+        if pos_args:
+            palette_bank = pos_args.pop(0)
+
+        if isinstance(target, TilemapDissector) and tilemap is None:
+            tilemap = target.tilemap
+
+        if tilemap is None or row is None or col is None or width is None or height is None:
+            raise ValueError("clear_region requires tilemap, row, col, width, height.")
+
         for r in range(row, row + height):
             for c in range(col, col + width):
                 if 0 <= r < tilemap.height and 0 <= c < tilemap.width:
@@ -451,19 +617,49 @@ class TilemapDissector:
         data = json.loads(json_str)
         return [TilemapTextRun.from_dict(item) for item in data]
 
-    @classmethod
+    @_HybridDissectorMethod
     def apply_layout_dict(
-        cls,
-        tilemap: Tilemap,
-        translations: List[Dict[str, Any]],
-        charmap: CharMap,
-        base_tile_index: int = 0,
+        target,
+        *args,
+        tilemap: Optional[Tilemap] = None,
+        translations: Optional[List[Dict[str, Any]]] = None,
+        charmap: Optional[CharMap] = None,
+        base_tile_index: Optional[int] = None,
         pad_tile: int = 0,
     ) -> Tilemap:
         """
         Applies batch translation dictionary items to the tilemap.
         Each item in translations must have: 'row', 'col', 'new_text', and optionally 'max_width', 'align'.
         """
+        pos_args = list(args)
+        if pos_args and isinstance(pos_args[0], Tilemap):
+            tilemap = pos_args.pop(0)
+        elif isinstance(target, TilemapDissector) and tilemap is None:
+            tilemap = target.tilemap
+
+        if pos_args and translations is None:
+            translations = pos_args.pop(0)
+        if pos_args and isinstance(pos_args[0], CharMap):
+            charmap = pos_args.pop(0)
+        if pos_args and base_tile_index is None:
+            base_tile_index = pos_args.pop(0)
+        if pos_args:
+            pad_tile = pos_args.pop(0)
+
+        if isinstance(target, TilemapDissector):
+            if tilemap is None:
+                tilemap = target.tilemap
+            if charmap is None:
+                charmap = target.charmap
+            if base_tile_index is None:
+                base_tile_index = target.base_tile_index
+
+        if base_tile_index is None:
+            base_tile_index = 0
+
+        if tilemap is None or translations is None or charmap is None:
+            raise ValueError("apply_layout_dict requires tilemap, translations, and charmap.")
+
         for item in translations:
             row = item["row"]
             col = item["col"]
@@ -471,7 +667,7 @@ class TilemapDissector:
             max_width = item.get("max_width", item.get("max_available_tiles"))
             align = item.get("align", "left")
             pal = item.get("palette_bank")
-            cls.splice_label(
+            TilemapDissector.splice_label(
                 tilemap=tilemap,
                 row=row,
                 col=col,

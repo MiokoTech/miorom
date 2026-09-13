@@ -409,3 +409,126 @@ miorom tile-dedup <input_file> [--bpp BPP] [-f FORMAT] [--no-h-flip] [--no-v-fli
 - `--no-h-flip`: Disable horizontal flip matching.
 - `--no-v-flip`: Disable vertical flip matching.
 - `-o, --output`: Output path for deduplicated tile binary.
+
+---
+
+### 20. `inject-elf` - ELF C/ASM Payload Linker & Injector
+
+Links and injects a compiled C/ASM ELF object file directly into an executable binary (e.g. GameCube/Wii `main.dol`, NDS `arm9.bin`, or flat ROM binary). Automatically resolves relocations, allocates or targets a code cave, and installs an entry hook trampoline.
+
+```bash
+miorom inject-elf <target_bin> <payload_elf> [options]
+```
+
+#### Arguments & Options
+- `target_bin`: Target executable or ROM dump (e.g. `main.dol`, `arm9.bin`).
+- `payload_elf`: Compiled ELF object file (`.o` or `.elf`).
+- `-o, --output`: Output patched binary path (default: overwrite target).
+- `--hook`: Hook RAM address to hijack (e.g. `0x80001234`).
+- `--hook-offset`: Explicit hook file offset.
+- `--cave`: Code cave destination RAM address (e.g. `0x80500000`).
+- `--cave-offset`: Explicit code cave file offset.
+- `-b, --base`: Base RAM load address for flat binaries (default: `0`).
+- `-s, --symbols`: Path to external symbol map file (`.sym`, `.map`, `.json`, `.csv`).
+- `-e, --entry`: Payload entry function name (default: auto-detected).
+- `-a, --arch`: Target CPU architecture override (`ppc`, `arm`, `thumb`, `mips_le`, `mips_be`).
+- `-m, --hook-mode`: Hook mechanism (`trampoline`, `call`, `replace`). Default: `trampoline`.
+
+#### Example
+```bash
+miorom inject-elf main.dol custom_vwf.o --hook 0x80054320 --cave 0x805A0000 -m trampoline -o main_mod.dol
+```
+
+---
+
+### 21. `port-patch` - Cross-Region Binary Patch Porter
+
+Translates an IPS patch made against one regional game binary (e.g. Japanese release) into a corresponding patch for a target regional release (e.g. USA release) using symbolic BinDiff function matching.
+
+```bash
+miorom port-patch --from <source_bin> --to <target_bin> --patch <source.ips> -o <target.ips> [options]
+```
+
+#### Arguments & Options
+- `--from`: Source-region binary against which the original patch was created.
+- `--to`: Target-region binary to port the patch to.
+- `--patch`: Input source-region IPS patch.
+- `-o, --output`: Output translated IPS patch path.
+- `--source-base`: Base address for source binary (default: `0`).
+- `--target-base`: Base address for target binary (default: `0`).
+- `-a, --arch`: Lifter architecture (`ppc`, `arm`, `thumb`, `mips_le`, `mips_be`). Default: `ppc`.
+- `--threshold`: BinDiff isomorphism confidence threshold (0.0 to 1.0). Default: `0.75`.
+
+---
+
+### 22. `gfx` - Forensic Texture Inspector & Visual Diffing
+
+Forensic analysis, visual regression comparison, ASCII terminal rendering, and translated text banner recomposition for game textures (TPL, BTI, PNG).
+
+```bash
+miorom gfx <subcommand> [options] [arguments]
+```
+
+#### Subcommands
+
+##### `gfx inspect`
+Performs structural integrity analysis on texture files, verifying dimensions, format bit depths, palette capacity, and tile alignment.
+
+```bash
+miorom gfx inspect <input_file> [--json]
+```
+
+##### `gfx ascii`
+Renders a terminal-friendly ASCII grayscale representation of the texture image.
+
+```bash
+miorom gfx ascii <input_file> [-w WIDTH]
+```
+
+##### `gfx diff`
+Mathematically computes visual differences between an original reference texture and a modified texture, reporting modified pixel count, percentage, bounding box, and max channel delta.
+
+```bash
+miorom gfx diff <original_file> <modified_file> [--json]
+```
+
+##### `gfx recompose`
+Harvests glyph sprites from a reference graphic banner and recomposes a target localized phrase with customizable tracking, space width, border overlap, and alignment.
+
+```bash
+miorom gfx recompose <source_image> -t <target_phrase> -o <output.png> [options]
+```
+
+---
+
+### 23. `vfs` - Nested Container Virtual File System
+
+Traverses, extracts, and mutates files inside deeply nested container hierarchies (e.g. `outer.arc::inner.arc::path/to/texture.tpl`) with automatic outward recompression and sector alignment.
+
+```bash
+miorom vfs <subcommand> [options] [arguments]
+```
+
+#### Subcommands
+
+##### `vfs list`
+Lists all files and directories located inside a nested container URI.
+
+```bash
+miorom vfs list <uri>
+```
+
+##### `vfs read`
+Extracts a specific nested file directly to disk.
+
+```bash
+miorom vfs read <uri> -o <output_file>
+```
+
+##### `vfs write`
+Injects a modified local file into a nested container path and atomically rebuilds all parent archives outward.
+
+```bash
+miorom vfs write <uri> -i <input_file>
+```
+

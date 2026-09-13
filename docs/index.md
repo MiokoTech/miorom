@@ -1,7 +1,7 @@
 # MioROM
 
 <div class="retro-hero">
-  <div class="title">&gt; MIOROM // RE_FRAMEWORK_v1.0.1</div>
+  <div class="title">&gt; MIOROM // RE_FRAMEWORK_v1.0.2</div>
   <div class="subtitle">Modular Low-Level Binary &amp; Assembly Primitives for Console ROM Hacking</div>
   <div>
     <span class="chip-badge nds">NDS ARM9/ARM7/THUMB</span>
@@ -15,7 +15,7 @@
     <span class="chip-badge nds">GB SM83</span>
   </div>
   <div class="stats">
-    <span>TESTS: <strong>1050+ PASSED</strong></span>
+    <span>TESTS: <strong>1140+ PASSED</strong></span>
     <span>RUNTIME DEPS: <strong>ZERO (STDLIB ONLY)</strong></span>
     <span>DISASSEMBLER: <strong>8 ARCHITECTURES</strong></span>
     <span>LICENSE: <strong>MIT</strong></span>
@@ -216,6 +216,6 @@ pip install git+https://github.com/MiokoTech/miorom
 
 -   :material-history: **[Release Changelog](CHANGELOG.md)**
     ---
-    Detailed version history, migration notes, and v1.0.0 release summary.
+    Detailed version history, migration notes, and v1.0.2 release summary.
 
 </div>

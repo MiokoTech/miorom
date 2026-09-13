@@ -6,7 +6,7 @@ import struct
 from miorom import __version__
 from miorom.formats.batch import BatchSplitter, BatchMerger
 from miorom.formats.csv_handler import CsvHandler
-from miorom.text.wrapper import WordWrapper
+from miorom.text.line_wrapper import WordWrapper
 
 
 def cmd_split(args):
@@ -598,6 +598,70 @@ def cmd_tile_dedup(args):
     print(f"[✓] Saved deduplicated tiles to '{out_file}'!")
 
 
+def cmd_gfx(args):
+    from miorom.graphics.texture_inspector import TextureInspector
+    if args.gfx_command == "inspect":
+        report = TextureInspector.inspect(args.input_file)
+        if getattr(args, "json", False):
+            import json
+            print(json.dumps(report.to_dict(), indent=2))
+        else:
+            print(report.summary())
+    elif args.gfx_command == "ascii":
+        ascii_art = TextureInspector.render_ascii(args.input_file, max_width=args.width)
+        print(ascii_art)
+    elif args.gfx_command == "diff":
+        report = TextureInspector.diff(args.original_file, args.modified_file)
+        if getattr(args, "json", False):
+            import json
+            print(json.dumps(report.to_dict(), indent=2))
+        else:
+            print(report.summary())
+    elif args.gfx_command == "recompose":
+        from miorom.graphics.glyph_bank import GlyphBank
+        bank = GlyphBank()
+        if args.phrase:
+            bank.auto_dissect(args.source_image, chars=args.phrase)
+        elif args.grid:
+            gw, gh = [int(v) for v in args.grid.split("x")]
+            bank.harvest_grid(args.source_image, chars=args.grid_chars, cell_w=gw, cell_h=gh)
+        out_img = bank.recompose(
+            text=args.target,
+            tracking=args.tracking,
+            border_overlap=args.border_overlap,
+            space_width=args.space_width,
+            target_width=args.target_width,
+            target_height=args.target_height,
+            align=args.align,
+        )
+        out_img.save(args.output)
+        print(f"[✓] Recomposed '{args.target}' ({out_img.width}x{out_img.height}) -> '{args.output}'!")
+
+
+def cmd_vfs(args):
+    from miorom.core.vfs import NestedArchiveVFS
+    vfs = NestedArchiveVFS()
+    if args.vfs_command == "list":
+        entries = vfs.list_uri(args.uri)
+        print(f"[*] VFS Container Entries for '{args.uri}':")
+        for e in entries:
+            print(f"  - {e}")
+        print(f"[✓] Total: {len(entries)} entries")
+    elif args.vfs_command == "read":
+        data = vfs.read_uri(args.uri)
+        with open(args.output, "wb") as f:
+            f.write(data)
+        print(f"[✓] Extracted {len(data)} bytes from '{args.uri}' -> '{args.output}'!")
+    elif args.vfs_command == "write":
+        with open(args.input_file, "rb") as f:
+            data = f.read()
+        vfs.write_uri(args.uri, data, auto_save=True)
+        print(f"[✓] Injected {len(data)} bytes from '{args.input_file}' -> '{args.uri}' (repacked atomically)!")
+
+
+
+
+
 def main():
     argv = sys.argv
     parser = argparse.ArgumentParser(
@@ -807,6 +871,59 @@ def main():
     p_tile_dedup.add_argument("--no-v-flip", action="store_true", help="Disable vertical flip matching")
     p_tile_dedup.add_argument("-o", "--output", help="Output deduplicated tile binary path")
 
+    # GFX command (Forensic Texture Inspector)
+    p_gfx = subparsers.add_parser("gfx", help="Forensic texture inspection, diffing, and terminal ASCII preview")
+    gfx_subparsers = p_gfx.add_subparsers(dest="gfx_command", required=True)
+
+    # gfx inspect
+    p_gfx_inspect = gfx_subparsers.add_parser("inspect", help="Inspect texture format, palette, and dimensions")
+    p_gfx_inspect.add_argument("input_file", help="Path to texture file (TPL, BTI, PNG)")
+    p_gfx_inspect.add_argument("--json", action="store_true", help="Output report in JSON format")
+
+    # gfx ascii
+    p_gfx_ascii = gfx_subparsers.add_parser("ascii", help="Render ASCII preview in terminal")
+    p_gfx_ascii.add_argument("input_file", help="Path to texture file (TPL, BTI, PNG)")
+    p_gfx_ascii.add_argument("-w", "--width", type=int, default=40, help="Maximum preview character width (default: 40)")
+
+    # gfx diff
+    p_gfx_diff = gfx_subparsers.add_parser("diff", help="Mathematically diff original vs modified texture")
+    p_gfx_diff.add_argument("original_file", help="Path to original reference texture")
+    p_gfx_diff.add_argument("modified_file", help="Path to modified texture")
+    p_gfx_diff.add_argument("--json", action="store_true", help="Output diff in JSON format")
+
+    # gfx recompose
+    p_gfx_recomp = gfx_subparsers.add_parser("recompose", help="Harvest glyphs and recompose translated text banner")
+    p_gfx_recomp.add_argument("source_image", help="Path to reference texture containing glyphs")
+    p_gfx_recomp.add_argument("--phrase", help="Original text phrase contained in source image (e.g. 'ITEM NAME')")
+    p_gfx_recomp.add_argument("--grid", help="Grid cell size 'WxH' (e.g. '16x16')")
+    p_gfx_recomp.add_argument("--grid-chars", default="", help="Characters contained in grid")
+    p_gfx_recomp.add_argument("-t", "--target", required=True, help="Target localized text to recompose (e.g. 'NAMA ITEM')")
+    p_gfx_recomp.add_argument("-o", "--output", required=True, help="Output PNG image path")
+    p_gfx_recomp.add_argument("--tracking", type=int, default=0, help="Horizontal tracking / letter spacing delta (default: 0)")
+    p_gfx_recomp.add_argument("--border-overlap", type=int, default=0, help="Horizontal border overlap in pixels (default: 0)")
+    p_gfx_recomp.add_argument("--space-width", type=int, default=4, help="Width of space character in pixels (default: 4)")
+    p_gfx_recomp.add_argument("--target-width", type=int, default=None, help="Target canvas width (default: auto)")
+    p_gfx_recomp.add_argument("--target-height", type=int, default=None, help="Target canvas height (default: auto)")
+    p_gfx_recomp.add_argument("--align", choices=["left", "center", "right"], default="left", help="Text alignment in target canvas")
+
+    # VFS (Nested Container Virtual File System) command
+    p_vfs = subparsers.add_parser("vfs", help="Nested container virtual file system inspection and mutation")
+    vfs_subparsers = p_vfs.add_subparsers(dest="vfs_command", required=True)
+
+    # vfs list
+    p_vfs_list = vfs_subparsers.add_parser("list", help="List files inside a nested archive URI")
+    p_vfs_list.add_argument("uri", help="Nested archive URI (e.g. 'menu.arc::win_recipe.arc')")
+
+    # vfs read
+    p_vfs_read = vfs_subparsers.add_parser("read", help="Read/extract a file from a nested archive URI")
+    p_vfs_read.add_argument("uri", help="Nested file URI (e.g. 'menu.arc::win_recipe.arc::timg/gfontC29.tpl')")
+    p_vfs_read.add_argument("-o", "--output", required=True, help="Destination output file path")
+
+    # vfs write
+    p_vfs_write = vfs_subparsers.add_parser("write", help="Write/inject a file into a nested archive URI")
+    p_vfs_write.add_argument("uri", help="Nested file URI (e.g. 'menu.arc::win_recipe.arc::timg/gfontC29.tpl')")
+    p_vfs_write.add_argument("-i", "--input-file", required=True, help="Source input file path to inject")
+
     args = parser.parse_args(argv[1:])
 
     if args.command == "split":
@@ -857,6 +974,10 @@ def main():
         cmd_reloc_branch(args)
     elif args.command == "tile-dedup":
         cmd_tile_dedup(args)
+    elif args.command == "gfx":
+        cmd_gfx(args)
+    elif args.command == "vfs":
+        cmd_vfs(args)
     else:
         parser.print_help()
 
