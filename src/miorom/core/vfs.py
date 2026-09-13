@@ -47,7 +47,11 @@ class ContainerCodec:
             meta = {"type": "u8", "yaz0": was_yaz0}
             return files, meta
 
-        raise ParseError(f"Unsupported or unrecognized archive container format (header: {data[:4]!r}).")
+        raise ParseError(
+            f"Unsupported container format (header: {data[:4]!r}). "
+            f"NestedArchiveVFS currently supports: U8 (\\x55\\xAA\\x38\\x2D), "
+            f"Yaz0-compressed U8 ('Yaz0'). RARC and AFS are not yet implemented."
+        )
 
     @classmethod
     def pack_files(cls, files: Dict[str, bytes], meta: Dict[str, Any]) -> bytes:
@@ -227,8 +231,9 @@ class NestedArchiveVFS:
             files, _ = ContainerCodec.extract_files(data)
             return sorted(files.keys())
 
-        # If targeting nested container (e.g. root.arc::inner.arc)
-        layers = self._resolve_layers(parts + ["__leaf_placeholder__"])
+        # len(parts) >= 2: target URI points to a container, not a file.
+        extended_parts = list(parts) + ["__list_sentinel__"]
+        layers = self._resolve_layers(extended_parts)
         target_files = layers[-1][1]
         return sorted(target_files.keys())
 
@@ -250,12 +255,44 @@ class NestedArchiveVFS:
 
     @classmethod
     def read(cls, uri: str) -> bytes:
-        return cls().read_uri(uri)
+        """
+        Reads a file from a nested archive URI.
+        The root archive path is inferred from the first segment of the URI.
+        """
+        parts = cls._parse_uri(uri)
+        root_path = parts[0]
+        vfs = cls(root_path) if os.path.isfile(root_path) else cls()
+        return vfs.read_uri(uri)
 
     @classmethod
-    def write(cls, uri: str, data: bytes) -> None:
-        cls().write_uri(uri, data)
+    def write(cls, uri: str, data: bytes, output_path: Optional[str] = None) -> None:
+        """
+        Writes data to a file inside a nested archive addressed by URI,
+        then saves the updated root archive back to disk.
+
+        Args:
+            uri: VFS URI, e.g. ``"outer.arc::inner.arc::file.tpl"``.
+            data: Bytes to write.
+            output_path: Where to save the updated root archive.
+                Defaults to the root file path inferred from the first URI segment.
+                If the first segment is not an existing file and output_path is None,
+                the write is executed in-memory only (no disk save).
+        """
+        parts = cls._parse_uri(uri)
+        root_path = parts[0]
+        vfs = cls(root_path) if os.path.isfile(root_path) else cls()
+        vfs.write_uri(uri, data, auto_save=False)
+        save_target = output_path or (root_path if os.path.isfile(root_path) else None)
+        if save_target:
+            vfs.save(save_target)
 
     @classmethod
     def list(cls, uri: str) -> List[str]:
-        return cls().list_uri(uri)
+        """
+        Lists all files inside a container addressed by URI.
+        The root archive path is inferred from the first segment of the URI.
+        """
+        parts = cls._parse_uri(uri)
+        root_path = parts[0]
+        vfs = cls(root_path) if os.path.isfile(root_path) else cls()
+        return vfs.list_uri(uri)

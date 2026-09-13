@@ -2,7 +2,19 @@
 
 All notable changes to MioROM will be documented in this file.
 
-## [1.0.2] — 2026-09-12
+## [1.0.3] — 2026-09-14
+
+### Fixed
+- **`ScriptVMDissector.splice_and_relink` — branch operand offset off by `base_offset` (`miorom.script.script_dissector`)**: All branch operand write positions were computed as absolute ROM offsets, but `new_buf` is a 0-indexed local script slice. Every branch in a script not at ROM offset 0 was written to the wrong position. Fixed: all `op_pos` values now subtract `script.base_offset` before indexing into `new_buf`.
+- **`ScriptVMDissector.splice_and_relink` — return value is a script slice, not a full ROM buffer (`miorom.script.script_dissector`)**: Callers assigning the return value directly to `rom[:]` would silently truncate the ROM. Docstring now explicitly documents the splice contract and the correct pattern: `rom[base_offset : base_offset + len(new_script)] = new_script`.
+- **`ScriptVMDissector.splice_and_relink` — length-prefix overflow raises generic error (`miorom.script.script_dissector`)**: For `has_length_prefix=True` instructions, translations longer than 255 encoded bytes raised a bare `ValueError` from `bytearray.append()` with no indication of which instruction caused it. Now raises an explicit `ValueError` with the instruction index, ROM offset, and byte count.
+- **`StringTablePipeline.extract_strings` — `is_relative=True` pointer arithmetic inverted (`miorom.text.pipeline`)**: The formula `base_address + raw_ptr` was used for relative pointers, which is incorrect. A relative pointer is an offset from the pointer's own ROM location; the correct formula is `ptr_location + raw_ptr`. The previous behavior produced garbage file offsets whenever `base_address != 0`, causing silent extraction of wrong bytes and corrupted `.po` output.
+- **`StringTablePipeline.inject_from_po` — `RomIntegrityManager.fix()` size mismatch silently left checksum partially uncovered (`miorom.text.pipeline`)**: When the integrity manager returned a buffer shorter than the post-relocation ROM, the unconditional `buffer[:len(fixed_data)] = fixed_data` slice left the relocation tail with stale checksum coverage. Emits a `RuntimeWarning` when sizes differ; uses `buffer[:] = fixed_data` for the matching-size path.
+- **`NestedArchiveVFS` class methods `read` / `write` / `list` — writes silently discarded (`miorom.core.vfs`)**: All three class methods instantiated an empty `NestedArchiveVFS()` with no root path. `write()` mutations were never saved to disk. Methods now infer the root archive path from the first URI segment and load/save through it. `write()` accepts an optional `output_path` parameter.
+- **`NestedArchiveVFS` — unsupported container format error does not name supported formats (`miorom.core.vfs`)**: `ParseError` on unrecognized headers (e.g. RARC, AFS) now explicitly states which formats are supported (U8, Yaz0-compressed U8) instead of reporting a generic parse failure.
+- **`extract_or_quantize_palette` — all-transparent image collapses to single palette entry (`miorom.platforms.wii.tpl`)**: Images where all unique pixel colors have alpha < 128 (e.g. particle effects) produced a palette of only `(0,0,0,0)`, losing all pixel data silently. The function now preserves distinct semi-transparent colors as separate palette entries when no opaque colors are present.
+
+## [1.0.2] — 2026-09-14
 
 ### Added
 - **Nintendo GX Paletted Texture Codecs & TPL TLUT Serialization (`miorom.platforms.wii.tpl`)**:

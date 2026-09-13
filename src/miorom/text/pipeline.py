@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import json
 import struct
+import warnings
 
 from miorom.core.pointer import PointerTable, PointerEntry
 from miorom.core.integrity import RomIntegrityManager, IntegrityReport
@@ -70,7 +71,13 @@ class StringTablePipeline:
                 fmt = f"{endian}{'I' if pointer_size == 4 else 'H'}"
                 raw_ptr = struct.unpack_from(fmt, buffer, ptr_loc)[0]
 
-            target_off = (base_address + raw_ptr) if is_relative else (raw_ptr - base_address)
+            # is_relative=True: pointer value is a signed offset from the pointer's own ROM location.
+            # is_relative=False: pointer value is an absolute RAM address; subtract base_address to get ROM offset.
+            if is_relative:
+                ptr_loc_i = table_offset + (i * pointer_size)
+                target_off = ptr_loc_i + raw_ptr
+            else:
+                target_off = raw_ptr - base_address
 
             if not (0 <= target_off < len(buffer)):
                 continue
@@ -241,9 +248,21 @@ class StringTablePipeline:
             allow_eof_growth=True,
         )
 
-        # Auto-fix integrity checksums
+        # Auto-fix integrity checksums.
         if auto_fix_integrity:
             fixed_data, report = RomIntegrityManager.fix(bytes(buffer), platform=platform)
-            buffer[:len(fixed_data)] = fixed_data
+            if len(fixed_data) == len(buffer):
+                buffer[:] = fixed_data
+            else:
+                buffer[:len(fixed_data)] = fixed_data
+                if len(fixed_data) < len(buffer):
+                    warnings.warn(
+                        f"RomIntegrityManager.fix() returned {len(fixed_data)} bytes "
+                        f"but the buffer is {len(buffer)} bytes after relocation. "
+                        f"Only the first {len(fixed_data)} bytes were updated. "
+                        f"Checksum fields are patched; verify the trailing region manually.",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
 
         return summary

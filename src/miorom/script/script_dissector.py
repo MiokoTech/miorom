@@ -22,10 +22,6 @@ from miorom.text.charmap import CharMap
 from miorom.text.po_handler import PoEntry, PoHandler
 
 
-# ============================================================================
-# Opcode Types and Data Models
-# ============================================================================
-
 class VMOpcodeType(Enum):
     """Classification of VM bytecode instructions."""
     TEXT = "text"              # Inline text dialogue payload
@@ -33,7 +29,7 @@ class VMOpcodeType(Enum):
     BRANCH_ABS = "branch_abs"  # Absolute jump (pointer/target address)
     SWITCH = "switch"          # Multi-case jump table
     CONTROL = "control"        # General control / state modification
-    TERMINATOR = "terminator"  # Script termination (e.g. OP_END / OP_RETURN)
+    TERMINATOR = "terminator"  # Script termination
 
 
 @dataclass
@@ -45,7 +41,7 @@ class VMInstructionDef(MioRomResult):
     name: str
     opcode_type: VMOpcodeType
     fixed_length: int = 1         # Length of opcode + fixed operands (excluding variable text)
-    operand_format: str = ""      # Struct format for operands, e.g. '<H', '<h', '<b'
+    operand_format: str = ""      # Struct format for operands
     text_terminator: Optional[bytes] = b"\x00"  # For TEXT type: delimiter marking end of string
     has_length_prefix: bool = False             # If True, first byte after opcode is text length
     schema: Optional[Any] = None                # Declarative BinaryStruct or SchemaField
@@ -108,11 +104,6 @@ class DissectedScriptVM(MioRomResult):
                 )
         return handler.to_string()
 
-
-# ============================================================================
-# Disassembler and Splicer Engine
-# ============================================================================
-
 class ScriptVMDissector:
     """
     Event Script Bytecode Disassembler, Inline Dialogue Extractor, and Jump Splicer.
@@ -167,7 +158,7 @@ class ScriptVMDissector:
             operand_offset: Optional[int] = None
             switch_targets: List[int] = []
 
-            # 1. TEXT instruction
+            # TEXT instruction
             if defn.opcode_type == VMOpcodeType.TEXT:
                 if defn.has_length_prefix:
                     if pos >= end_limit:
@@ -193,7 +184,7 @@ class ScriptVMDissector:
                 else:
                     text_payload = raw_text_bytes.decode("utf-8", errors="replace")
 
-            # 2. RELATIVE BRANCH instruction
+            # RELATIVE BRANCH instruction
             elif defn.opcode_type == VMOpcodeType.BRANCH_REL:
                 operand_offset = pos
                 if defn.schema is not None and hasattr(defn.schema, "unpack"):
@@ -214,7 +205,7 @@ class ScriptVMDissector:
                         pos += op_size
                         branch_target = inst_start + relative_delta
 
-            # 3. ABSOLUTE JUMP instruction
+            # ABSOLUTE JUMP instruction
             elif defn.opcode_type == VMOpcodeType.BRANCH_ABS:
                 operand_offset = pos
                 if defn.schema is not None and hasattr(defn.schema, "unpack"):
@@ -232,7 +223,7 @@ class ScriptVMDissector:
                         branch_target = BinaryReader.unpack_from(fmt, data, pos)[0]
                         pos += op_size
 
-            # 4. SWITCH / JUMP TABLE instruction
+            # SWITCH / JUMP TABLE instruction
             elif defn.opcode_type == VMOpcodeType.SWITCH:
                 # First byte is case count
                 if pos < end_limit:
@@ -253,7 +244,7 @@ class ScriptVMDissector:
                                 switch_targets.append(tgt)
                                 pos += op_size
 
-            # 5. CONTROL or TERMINATOR instruction
+            # CONTROL or TERMINATOR instruction
             else:
                 extra_len = defn.fixed_length - 1
                 if extra_len > 0 and pos + extra_len <= end_limit:
@@ -305,13 +296,25 @@ class ScriptVMDissector:
         all subsequent bytecode, and recalculates all relative and absolute branches.
 
         Args:
-            bytecode: Original bytecode buffer.
+            bytecode: Original bytecode buffer (full ROM or script buffer).
             script: Disassembled DissectedScriptVM instance.
             translations: Mapping of instruction_index -> new translated text string.
             charmap: CharMap used to encode new text strings.
             opcode_table: Opcode schemas.
+
+        Returns:
+            A new bytearray representing the SCRIPT SLICE only — from
+            ``script.base_offset`` to end of script. The caller is responsible
+            for splicing this back into the full ROM at the correct offset::
+
+                rom[script.base_offset : script.base_offset + len(new_script)] = new_script
+
+            The slice length may differ from the original script length when
+            translations expand or shrink relative to originals.
         """
-        # 1. Determine replacement bytes for each modified instruction
+        base = script.base_offset
+
+        # Determine replacement bytes for each modified instruction
         replacements: Dict[int, bytes] = {}
         for inst_idx, new_text in translations.items():
             if inst_idx < 0 or inst_idx >= len(script.instructions):
@@ -329,7 +332,14 @@ class ScriptVMDissector:
             # Assemble replacement instruction bytes
             out_inst = bytearray([inst.opcode])
             if inst.definition.has_length_prefix:
-                out_inst.append(len(encoded_text))
+                encoded_len = len(encoded_text)
+                if encoded_len > 255:
+                    raise ValueError(
+                        f"Instruction {inst_idx} (offset 0x{inst.offset:08X}): "
+                        f"encoded text is {encoded_len} bytes but the length-prefix "
+                        f"field is 1 byte (max 255). Shorten the translation."
+                    )
+                out_inst.append(encoded_len)
                 out_inst.extend(encoded_text)
             else:
                 out_inst.extend(encoded_text)
@@ -337,49 +347,48 @@ class ScriptVMDissector:
 
             replacements[inst_idx] = bytes(out_inst)
 
-        # 2. Build cumulative offset shift map
-        # Track (orig_start, delta) for each replaced instruction
+        # Build cumulative shift map.
         shifts: List[Tuple[int, int]] = []
         for inst_idx, new_bytes in sorted(replacements.items()):
             inst = script.instructions[inst_idx]
             delta = len(new_bytes) - inst.length
-            # The shift occurs immediately after the end of this instruction
             shifts.append((inst.offset + inst.length, delta))
 
         def map_offset(orig_offset: int) -> int:
-            """Maps an original bytecode offset to its new position."""
+            """Maps an original absolute bytecode offset to its new absolute position."""
             cum_shift = 0
             for shift_pos, delta in shifts:
                 if orig_offset >= shift_pos:
                     cum_shift += delta
             return orig_offset + cum_shift
 
-        # 3. Assemble new bytecode stream with replaced text
+        # Assemble new script slice.
         new_buf = bytearray()
-        prev_orig_pos = script.base_offset
+        prev_orig_pos = base
 
         for inst in script.instructions:
             if inst.index in replacements:
-                # Copy preceding unchanged bytes
                 new_buf.extend(bytecode[prev_orig_pos : inst.offset])
-                # Insert replacement instruction
                 new_buf.extend(replacements[inst.index])
                 prev_orig_pos = inst.offset + inst.length
 
-        # Append trailing unchanged bytes of the script
-        script_end = script.base_offset + script.total_bytes
+        script_end = base + script.total_bytes
         new_buf.extend(bytecode[prev_orig_pos:script_end])
 
-        # 4. Recalculate and patch all branch operands in new_buf
+        # Recalculate and patch branch operands.
         for inst in script.instructions:
             defn = inst.definition
-            new_inst_offset = map_offset(inst.offset)
+            new_inst_abs = map_offset(inst.offset)       # absolute ROM offset after shift
+            new_inst_local = new_inst_abs - base         # index into new_buf
+
+            if new_inst_local < 0 or new_inst_local >= len(new_buf):
+                continue  # instruction mapped outside the script slice — skip
 
             # A. Relative branch recalculation
             if defn.opcode_type == VMOpcodeType.BRANCH_REL and inst.branch_target is not None:
-                new_target = map_offset(inst.branch_target)
-                new_delta = new_target - new_inst_offset
-                op_pos = new_inst_offset + 1  # 1 byte opcode
+                new_target_abs = map_offset(inst.branch_target)
+                new_delta = new_target_abs - new_inst_abs
+                op_pos = new_inst_local + 1  # 1-byte opcode
                 if defn.schema is not None and hasattr(defn.schema, "pack"):
                     packed_val = defn.schema.pack(new_delta)
                     new_buf[op_pos : op_pos + len(packed_val)] = packed_val
@@ -389,30 +398,30 @@ class ScriptVMDissector:
 
             # B. Absolute jump recalculation
             elif defn.opcode_type == VMOpcodeType.BRANCH_ABS and inst.branch_target is not None:
-                new_target = map_offset(inst.branch_target)
-                op_pos = new_inst_offset + 1
+                new_target_abs = map_offset(inst.branch_target)
+                op_pos = new_inst_local + 1
                 if defn.schema is not None and hasattr(defn.schema, "pack"):
-                    packed_val = defn.schema.pack(new_target)
+                    packed_val = defn.schema.pack(new_target_abs)
                     new_buf[op_pos : op_pos + len(packed_val)] = packed_val
                 else:
                     fmt = defn.operand_format or "<H"
-                    BinaryWriter.pack_into(fmt, new_buf, op_pos, new_target)
+                    BinaryWriter.pack_into(fmt, new_buf, op_pos, new_target_abs)
 
-            # C. Switch / Jump table recalculation
+            # C. Switch / jump table recalculation
             elif defn.opcode_type == VMOpcodeType.SWITCH and inst.switch_targets:
-                curr_op_pos = new_inst_offset + 2
+                curr_op_pos = new_inst_local + 2  # 1-byte opcode + 1-byte case count
                 if defn.schema is not None and hasattr(defn.schema, "pack"):
                     for old_target in inst.switch_targets:
-                        new_target = map_offset(old_target)
-                        packed_val = defn.schema.pack(new_target)
+                        new_target_abs = map_offset(old_target)
+                        packed_val = defn.schema.pack(new_target_abs)
                         new_buf[curr_op_pos : curr_op_pos + len(packed_val)] = packed_val
                         curr_op_pos += len(packed_val)
                 else:
                     fmt = defn.operand_format or "<H"
                     op_size = BinaryReader.calcsize(fmt)
                     for old_target in inst.switch_targets:
-                        new_target = map_offset(old_target)
-                        BinaryWriter.pack_into(fmt, new_buf, curr_op_pos, new_target)
+                        new_target_abs = map_offset(old_target)
+                        BinaryWriter.pack_into(fmt, new_buf, curr_op_pos, new_target_abs)
                         curr_op_pos += op_size
 
         return new_buf

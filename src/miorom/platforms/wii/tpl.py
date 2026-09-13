@@ -198,6 +198,16 @@ def extract_or_quantize_palette(
         needed = max_colors - len(palette)
         palette.extend(sorted_colors[:needed])
 
+    # BUG-07 fix: if the image consists entirely of semi-transparent pixels,
+    # the loop above skips every color, leaving palette=[transparent_sentinel].
+    # In this case preserve distinct alpha variants up to max_colors.
+    if has_transparent and len(palette) == 1:
+        for c in sorted(unique_colors, key=lambda c: color_counts[c], reverse=True):
+            if c not in palette:
+                palette.append(c)
+            if len(palette) >= max_colors:
+                break
+
     while len(palette) < max_colors:
         palette.append((0, 0, 0, 0))
 
