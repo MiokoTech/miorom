@@ -1,27 +1,66 @@
-from miorom.platforms.wii.u8 import U8Archive, U8Entry
-from miorom.platforms.wii.rarc import RARCArchive, RARCEntry
-from miorom.platforms.wii.tpl import TPLFile, TPLImage
-from miorom.platforms.wii.bti import BTIImage
+from miorom.link.dol import RelFile, RelHeader, RelocationEntry, RelSection
 from miorom.platforms.wii.brfnt import BRFNTFont
 from miorom.platforms.wii.brlyt import (
     BRLYTHeaderStruct,
-    BRLYTSectionHeaderStruct,
     BRLYTLyt1Struct,
     BRLYTPaneStruct,
     BRLYTPic1Struct,
+    BRLYTSectionHeaderStruct,
+    find_pane,
     parse_brlyt_sections,
     rebuild_brlyt,
-    find_pane,
     update_pane,
+)
+from miorom.platforms.wii.bti import BTIImage
+from miorom.platforms.wii.disc import (
+    WBFSDisc,
+    WiiDisc,
+    WiiDiscHeader,
+    WiiPartition,
+    WiiPartitionInfo,
+    build_hash_tree,
+    decrypt_cluster,
+    encrypt_cluster,
+)
+from miorom.platforms.wii.rarc import RARCArchive, RARCEntry
+from miorom.platforms.wii.tpl import (
+    BresIndexEntry,
+    BresIndexGroup,
+    BRRESFile,
+    PLT0Palette,
+    TEX0Image,
+    TPLFile,
+    TPLImage,
+)
+from miorom.platforms.wii.u8 import (
+    U8Archive,
+    U8Entry,
+    WADContentRecord,
+    WADFile,
+    WADTicket,
+    WADTmd,
+    aes128_cbc_decrypt,
+    aes128_cbc_encrypt,
 )
 
 __all__ = [
     "U8Archive",
     "U8Entry",
+    "WADFile",
+    "WADTicket",
+    "WADTmd",
+    "WADContentRecord",
+    "aes128_cbc_encrypt",
+    "aes128_cbc_decrypt",
     "RARCArchive",
     "RARCEntry",
     "TPLFile",
     "TPLImage",
+    "BRRESFile",
+    "TEX0Image",
+    "PLT0Palette",
+    "BresIndexGroup",
+    "BresIndexEntry",
     "BTIImage",
     "BRFNTFont",
     "BRLYTHeaderStruct",
@@ -33,5 +72,17 @@ __all__ = [
     "rebuild_brlyt",
     "find_pane",
     "update_pane",
+    "RelFile",
+    "RelHeader",
+    "RelSection",
+    "RelocationEntry",
+    "WiiDisc",
+    "WiiPartition",
+    "WiiDiscHeader",
+    "WiiPartitionInfo",
+    "WBFSDisc",
+    "decrypt_cluster",
+    "encrypt_cluster",
+    "build_hash_tree",
 ]
 
