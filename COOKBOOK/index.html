@@ -715,6 +715,72 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#recipe-6-gba-rom-expansion-pointer-relinking-sram-flashcart-patching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe 6: GBA ROM Expansion, Pointer Relinking &amp; SRAM Flashcart Patching
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-7-ps1-disc-asset-replacement-executable-patching-edc-recalculation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe 7: PS1 Disc Asset Replacement, Executable Patching &amp; EDC Recalculation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-8-nintendo-wii-disc-decryption-fst-file-replacement-trucha-bug-signing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe 8: Nintendo Wii Disc Decryption, FST File Replacement &amp; Trucha Bug Signing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-9-nintendo-ds-2d-sprite-assembly-animation-sequence-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe 9: Nintendo DS 2D Sprite Assembly &amp; Animation Sequence Pipeline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-10-nintendo-ds-streaming-audio-sound-wave-archive-localization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe 10: Nintendo DS Streaming Audio &amp; Sound Wave Archive Localization
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-11-playstation-1-memory-card-inspection-animated-save-icon-extraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe 11: PlayStation 1 Memory Card Inspection &amp; Animated Save Icon Extraction
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1034,6 +1100,72 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#recipe-6-gba-rom-expansion-pointer-relinking-sram-flashcart-patching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe 6: GBA ROM Expansion, Pointer Relinking &amp; SRAM Flashcart Patching
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-7-ps1-disc-asset-replacement-executable-patching-edc-recalculation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe 7: PS1 Disc Asset Replacement, Executable Patching &amp; EDC Recalculation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-8-nintendo-wii-disc-decryption-fst-file-replacement-trucha-bug-signing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe 8: Nintendo Wii Disc Decryption, FST File Replacement &amp; Trucha Bug Signing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-9-nintendo-ds-2d-sprite-assembly-animation-sequence-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe 9: Nintendo DS 2D Sprite Assembly &amp; Animation Sequence Pipeline
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-10-nintendo-ds-streaming-audio-sound-wave-archive-localization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe 10: Nintendo DS Streaming Audio &amp; Sound Wave Archive Localization
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipe-11-playstation-1-memory-card-inspection-animated-save-icon-extraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipe 11: PlayStation 1 Memory Card Inspection &amp; Animated Save Icon Extraction
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1228,6 +1360,163 @@
 <a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="c1"># 2. Apply surgical patches</span>
 <a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="n">report</span> <span class="o">=</span> <span class="n">AntiPiracyBypasser</span><span class="o">.</span><span class="n">patch_all</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">matches</span><span class="p">)</span>
 <a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="nb">print</span><span class="p">(</span><span class="n">report</span><span class="o">.</span><span class="n">summary</span><span class="p">())</span>
+</code></pre></div>
+<hr />
+<h2 id="recipe-6-gba-rom-expansion-pointer-relinking-sram-flashcart-patching">Recipe 6: GBA ROM Expansion, Pointer Relinking &amp; SRAM Flashcart Patching<a class="headerlink" href="#recipe-6-gba-rom-expansion-pointer-relinking-sram-flashcart-patching" title="Permanent link">&para;</a></h2>
+<p>Translate text in a Game Boy Advance ROM by expanding cartridge capacity, relinking dialogue pointers to new memory space, converting Flash saves to SRAM for flashcarts, and repairing the complement checksum.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">miorom.platforms.gba</span><span class="w"> </span><span class="kn">import</span> <span class="n">GBARom</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="c1"># 1. Load pristine GBA ROM</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="n">rom</span> <span class="o">=</span> <span class="n">GBARom</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">&quot;game.gba&quot;</span><span class="p">)</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Loaded: </span><span class="si">{</span><span class="n">rom</span><span class="o">.</span><span class="n">title</span><span class="si">}</span><span class="s2"> [</span><span class="si">{</span><span class="n">rom</span><span class="o">.</span><span class="n">game_code</span><span class="si">}</span><span class="s2">] - Region: </span><span class="si">{</span><span class="n">rom</span><span class="o">.</span><span class="n">region</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="c1"># 2. Expand capacity from 8 MB to 16 MB with 0xFF padding</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">rom</span><span class="o">.</span><span class="n">data</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">16</span> <span class="o">*</span> <span class="mi">1024</span> <span class="o">*</span> <span class="mi">1024</span><span class="p">:</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>    <span class="n">rom</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="mi">16</span><span class="p">)</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="c1"># 3. Relink dialogue table pointers</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="n">old_script_offset</span> <span class="o">=</span> <span class="mh">0x00150000</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="n">new_script_offset</span> <span class="o">=</span> <span class="mh">0x00900000</span>  <span class="c1"># in expanded free space</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="c1"># Write translated dialogue to new offset</span>
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="n">translated_script</span> <span class="o">=</span> <span class="sa">b</span><span class="s2">&quot;WELCOME TO THE NEW ADVENTURE!</span><span class="se">\x00</span><span class="s2">&quot;</span>
+<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="n">rom</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">new_script_offset</span> <span class="p">:</span> <span class="n">new_script_offset</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">translated_script</span><span class="p">)]</span> <span class="o">=</span> <span class="n">translated_script</span>
+<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>
+<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="c1"># Automatically locate and relink all 32-bit pointers</span>
+<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="n">relinked_count</span> <span class="o">=</span> <span class="n">rom</span><span class="o">.</span><span class="n">relink_pointers</span><span class="p">(</span><span class="n">old_script_offset</span><span class="p">,</span> <span class="n">new_script_offset</span><span class="p">)</span>
+<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Relinked </span><span class="si">{</span><span class="n">relinked_count</span><span class="si">}</span><span class="s2"> pointers to 0x</span><span class="si">{</span><span class="n">new_script_offset</span><span class="si">:</span><span class="s2">X</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+<a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a>
+<a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="c1"># 4. Patch save to SRAM for flashcart/emulator compatibility if needed</span>
+<a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="k">if</span> <span class="s2">&quot;FLASH&quot;</span> <span class="ow">in</span> <span class="n">rom</span><span class="o">.</span><span class="n">detect_save_type</span><span class="p">():</span>
+<a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a>    <span class="n">rom</span><span class="o">.</span><span class="n">patch_save_to_sram</span><span class="p">()</span>
+<a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Converted Flash backup calls to SRAM.&quot;</span><span class="p">)</span>
+<a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a>
+<a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a><span class="c1"># 5. Fix complement checksum and save</span>
+<a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a><span class="n">rom</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">&quot;game_translated.gba&quot;</span><span class="p">,</span> <span class="n">fix_checksum</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Saved translated ROM with valid complement checksum.&quot;</span><span class="p">)</span>
+</code></pre></div>
+<hr />
+<h2 id="recipe-7-ps1-disc-asset-replacement-executable-patching-edc-recalculation">Recipe 7: PS1 Disc Asset Replacement, Executable Patching &amp; EDC Recalculation<a class="headerlink" href="#recipe-7-ps1-disc-asset-replacement-executable-patching-edc-recalculation" title="Permanent link">&para;</a></h2>
+<p>Replace in-game assets and patch the MIPS boot executable inside a PlayStation 1 Mode 2 Form 1 BIN disc image with bit-exact 32-bit EDC checksum recalculation.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">miorom.platforms.psx</span><span class="w"> </span><span class="kn">import</span> <span class="n">PSXRom</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># 1. Open Mode 2 Form 1 CD-ROM BIN image (2352 bytes/sector)</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">psx</span> <span class="o">=</span> <span class="n">PSXRom</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">&quot;game.bin&quot;</span><span class="p">)</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Boot Path: </span><span class="si">{</span><span class="n">psx</span><span class="o">.</span><span class="n">boot_path</span><span class="si">}</span><span class="s2">, Region: </span><span class="si">{</span><span class="n">psx</span><span class="o">.</span><span class="n">region</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="c1"># 2. Replace localized dialogue script inside virtual filesystem</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;translated_script.dat&quot;</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a>    <span class="n">new_script</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="n">psx</span><span class="o">.</span><span class="n">replace_file</span><span class="p">(</span><span class="s2">&quot;DATA/SCRIPT.DAT&quot;</span><span class="p">,</span> <span class="n">new_script</span><span class="p">)</span>
+<a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>
+<a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="c1"># 3. Patch MIPS boot executable (e.g. font width lookup table)</span>
+<a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="n">main_exe</span> <span class="o">=</span> <span class="n">psx</span><span class="o">.</span><span class="n">get_main_exe</span><span class="p">()</span>
+<a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="k">if</span> <span class="n">main_exe</span><span class="p">:</span>
+<a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>    <span class="c1"># Modify MIPS binary or text section in memory</span>
+<a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>    <span class="n">main_exe</span><span class="o">.</span><span class="n">text_data</span><span class="p">[</span><span class="mh">0x200</span><span class="p">:</span><span class="mh">0x204</span><span class="p">]</span> <span class="o">=</span> <span class="sa">b</span><span class="s2">&quot;</span><span class="se">\x00\x00\x00\x00</span><span class="s2">&quot;</span>  <span class="c1"># NOP check</span>
+<a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a>    <span class="n">psx</span><span class="o">.</span><span class="n">replace_main_exe</span><span class="p">(</span><span class="n">main_exe</span><span class="p">)</span>
+<a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a>
+<a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="c1"># 4. Rebuild disc with bit-exact EDC calculation</span>
+<a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="n">psx</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">&quot;game_mod.bin&quot;</span><span class="p">)</span>
+<a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a>
+<a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a><span class="c1"># 5. Generate companion CUE sheet for emulators</span>
+<a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a><span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;game_mod.cue&quot;</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+<a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a>    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">psx</span><span class="o">.</span><span class="n">generate_cue</span><span class="p">(</span><span class="s2">&quot;game_mod.bin&quot;</span><span class="p">))</span>
+<a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Saved game_mod.bin and game_mod.cue successfully.&quot;</span><span class="p">)</span>
+</code></pre></div>
+<hr />
+<h2 id="recipe-8-nintendo-wii-disc-decryption-fst-file-replacement-trucha-bug-signing">Recipe 8: Nintendo Wii Disc Decryption, FST File Replacement &amp; Trucha Bug Signing<a class="headerlink" href="#recipe-8-nintendo-wii-disc-decryption-fst-file-replacement-trucha-bug-signing" title="Permanent link">&para;</a></h2>
+<p>Decrypt retail Nintendo Wii optical disc images on-the-fly, replace localized script files inside the encrypted partition FST filesystem, and repack with Trucha Bug fake-signing.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">miorom.platforms.wii</span><span class="w"> </span><span class="kn">import</span> <span class="n">WiiDisc</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="c1"># 1. Open raw retail ISO or WBFS disc image</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">disc</span> <span class="o">=</span> <span class="n">WiiDisc</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">&quot;game.iso&quot;</span><span class="p">)</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Title: </span><span class="si">{</span><span class="n">disc</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">game_title</span><span class="si">}</span><span class="s2"> [</span><span class="si">{</span><span class="n">disc</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">game_id</span><span class="si">}</span><span class="s2">]&quot;</span><span class="p">)</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="c1"># 2. Extract and modify in-game message binary</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="n">partition</span> <span class="o">=</span> <span class="n">disc</span><span class="o">.</span><span class="n">get_data_partition</span><span class="p">()</span>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="n">old_script</span> <span class="o">=</span> <span class="n">partition</span><span class="o">.</span><span class="n">read_file</span><span class="p">(</span><span class="s2">&quot;DATA/files/message/dialogue.bin&quot;</span><span class="p">)</span>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a>
+<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;dialogue_en.bin&quot;</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+<a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a>    <span class="n">translated_script</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+<a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a>
+<a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="c1"># 3. Replace file inside encrypted partition FST (auto-reindexes cluster allocations)</span>
+<a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="n">partition</span><span class="o">.</span><span class="n">replace_file</span><span class="p">(</span><span class="s2">&quot;DATA/files/message/dialogue.bin&quot;</span><span class="p">,</span> <span class="n">translated_script</span><span class="p">)</span>
+<a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a>
+<a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="c1"># 4. Save modified disc with Trucha bug fake-signing</span>
+<a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="n">disc</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">&quot;game_translated.iso&quot;</span><span class="p">,</span> <span class="n">fake_sign</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Saved game_translated.iso with valid Trucha signature.&quot;</span><span class="p">)</span>
+</code></pre></div>
+<hr />
+<h2 id="recipe-9-nintendo-ds-2d-sprite-assembly-animation-sequence-pipeline">Recipe 9: Nintendo DS 2D Sprite Assembly &amp; Animation Sequence Pipeline<a class="headerlink" href="#recipe-9-nintendo-ds-2d-sprite-assembly-animation-sequence-pipeline" title="Permanent link">&para;</a></h2>
+<p>Load Nitro character graphics, palettes, cell definitions, and keyframe animations, modify animation frame delays, and render composite sprite frames to PNG.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">miorom.platforms.nds</span><span class="w"> </span><span class="kn">import</span> <span class="n">NCERFile</span><span class="p">,</span> <span class="n">NCGRFile</span><span class="p">,</span> <span class="n">NCLRFile</span><span class="p">,</span> <span class="n">NANRFile</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="c1"># 1. Load Nitro 2D graphics suite components</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">ncgr</span> <span class="o">=</span> <span class="n">NCGRFile</span><span class="o">.</span><span class="n">from_bytes</span><span class="p">(</span><span class="nb">open</span><span class="p">(</span><span class="s2">&quot;sprite.ncgr&quot;</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="n">nclr</span> <span class="o">=</span> <span class="n">NCLRFile</span><span class="o">.</span><span class="n">from_bytes</span><span class="p">(</span><span class="nb">open</span><span class="p">(</span><span class="s2">&quot;sprite.nclr&quot;</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="n">ncer</span> <span class="o">=</span> <span class="n">NCERFile</span><span class="o">.</span><span class="n">from_bytes</span><span class="p">(</span><span class="nb">open</span><span class="p">(</span><span class="s2">&quot;sprite.ncer&quot;</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="n">nanr</span> <span class="o">=</span> <span class="n">NANRFile</span><span class="o">.</span><span class="n">from_bytes</span><span class="p">(</span><span class="nb">open</span><span class="p">(</span><span class="s2">&quot;anim.nanr&quot;</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="c1"># 2. Render first frame of walk animation</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="n">first_seq</span> <span class="o">=</span> <span class="n">nanr</span><span class="o">.</span><span class="n">sequences</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="n">first_cell_idx</span> <span class="o">=</span> <span class="n">first_seq</span><span class="o">.</span><span class="n">frames</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">cell_index</span>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="n">sprite_image</span> <span class="o">=</span> <span class="n">ncer</span><span class="o">.</span><span class="n">render_cell</span><span class="p">(</span><span class="n">bank_index</span><span class="o">=</span><span class="n">first_cell_idx</span><span class="p">,</span> <span class="n">ncgr</span><span class="o">=</span><span class="n">ncgr</span><span class="p">,</span> <span class="n">nclr</span><span class="o">=</span><span class="n">nclr</span><span class="p">)</span>
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="n">sprite_image</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">&quot;walk_frame0.png&quot;</span><span class="p">)</span>
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>
+<a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="c1"># 3. Adjust animation speed for translated dialogue timing</span>
+<a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="k">for</span> <span class="n">frame</span> <span class="ow">in</span> <span class="n">first_seq</span><span class="o">.</span><span class="n">frames</span><span class="p">:</span>
+<a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a>    <span class="n">frame</span><span class="o">.</span><span class="n">delay</span> <span class="o">=</span> <span class="mi">6</span>  <span class="c1"># 6/60th second per frame</span>
+<a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a>
+<a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a><span class="nb">open</span><span class="p">(</span><span class="s2">&quot;anim_mod.nanr&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">nanr</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">())</span>
+<a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Exported rendered frame and updated animation timing.&quot;</span><span class="p">)</span>
+</code></pre></div>
+<hr />
+<h2 id="recipe-10-nintendo-ds-streaming-audio-sound-wave-archive-localization">Recipe 10: Nintendo DS Streaming Audio &amp; Sound Wave Archive Localization<a class="headerlink" href="#recipe-10-nintendo-ds-streaming-audio-sound-wave-archive-localization" title="Permanent link">&para;</a></h2>
+<p>Extract voice clips from <code>.strm</code> containers, convert them to standard WAV for translation or subtitling, and repack modified WAV audio back into <code>.strm</code> and <code>.swar</code> archives.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">miorom.platforms.nds.strm</span><span class="w"> </span><span class="kn">import</span> <span class="n">STRMFile</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">miorom.platforms.nds.swar</span><span class="w"> </span><span class="kn">import</span> <span class="n">SWARFile</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># 1. Decode cutscene STRM audio directly to WAV</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="n">strm</span> <span class="o">=</span> <span class="n">STRMFile</span><span class="p">(</span><span class="nb">open</span><span class="p">(</span><span class="s2">&quot;cutscene_voice.strm&quot;</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Sample Rate: </span><span class="si">{</span><span class="n">strm</span><span class="o">.</span><span class="n">sample_rate</span><span class="si">}</span><span class="s2"> Hz, Channels: </span><span class="si">{</span><span class="n">strm</span><span class="o">.</span><span class="n">channels</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="nb">open</span><span class="p">(</span><span class="s2">&quot;cutscene_voice.wav&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">strm</span><span class="o">.</span><span class="n">to_wav</span><span class="p">())</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="c1"># 2. Encode localized WAV audio into standard IMA-ADPCM STRM</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;cutscene_voice_id.wav&quot;</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>    <span class="n">localized_wav</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="n">new_strm</span> <span class="o">=</span> <span class="n">STRMFile</span><span class="o">.</span><span class="n">from_wav</span><span class="p">(</span><span class="n">localized_wav</span><span class="p">,</span> <span class="n">wave_type</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="nb">open</span><span class="p">(</span><span class="s2">&quot;cutscene_voice_id.strm&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">new_strm</span><span class="o">.</span><span class="n">to_bytes</span><span class="p">())</span>
+<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a>
+<a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a><span class="c1"># 3. Extract and re-inject sound wave effects from SWAR</span>
+<a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="n">swar</span> <span class="o">=</span> <span class="n">SWARFile</span><span class="p">(</span><span class="nb">open</span><span class="p">(</span><span class="s2">&quot;sfx.swar&quot;</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+<a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a><span class="n">swar</span><span class="o">.</span><span class="n">extract_all</span><span class="p">(</span><span class="s2">&quot;extracted_sfx/&quot;</span><span class="p">)</span>
+<a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a><span class="c1"># ... replace any sfx in extracted_sfx/ ...</span>
+<a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a><span class="n">swar</span><span class="o">.</span><span class="n">pack_from_directory</span><span class="p">(</span><span class="s2">&quot;extracted_sfx/&quot;</span><span class="p">,</span> <span class="s2">&quot;sfx_localized.swar&quot;</span><span class="p">)</span>
+<a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Successfully localized streaming and sound wave archives.&quot;</span><span class="p">)</span>
+</code></pre></div>
+<hr />
+<h2 id="recipe-11-playstation-1-memory-card-inspection-animated-save-icon-extraction">Recipe 11: PlayStation 1 Memory Card Inspection &amp; Animated Save Icon Extraction<a class="headerlink" href="#recipe-11-playstation-1-memory-card-inspection-animated-save-icon-extraction" title="Permanent link">&para;</a></h2>
+<p>Inspect PS1 128KB memory card images (<code>.mcr</code>, <code>.mcd</code>, <code>.sav</code>), extract Shift-JIS game titles, and export 16x16 4bpp animated icon frames to PNG.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">miorom.platforms.psx.memory_card</span><span class="w"> </span><span class="kn">import</span> <span class="n">PSXMemoryCard</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="c1"># 1. Load 128 KB memory card</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="n">card</span> <span class="o">=</span> <span class="n">PSXMemoryCard</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">&quot;memcard.mcr&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Available free blocks: </span><span class="si">{</span><span class="n">card</span><span class="o">.</span><span class="n">free_blocks</span><span class="si">}</span><span class="s2">/15&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="c1"># 2. Iterate through all saves on card</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="k">for</span> <span class="n">save</span> <span class="ow">in</span> <span class="n">card</span><span class="o">.</span><span class="n">saves</span><span class="p">:</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">save</span><span class="o">.</span><span class="n">product_code</span><span class="si">}</span><span class="s2">] </span><span class="si">{</span><span class="n">save</span><span class="o">.</span><span class="n">title</span><span class="si">}</span><span class="s2"> - Size: </span><span class="si">{</span><span class="n">save</span><span class="o">.</span><span class="n">block_count</span><span class="si">}</span><span class="s2"> block(s)&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>    <span class="c1"># 3. Export animated icon frames</span>
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a>    <span class="k">for</span> <span class="n">frame_idx</span><span class="p">,</span> <span class="n">icon_img</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">save</span><span class="o">.</span><span class="n">icons</span><span class="p">):</span>
+<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>        <span class="n">icon_img</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">save</span><span class="o">.</span><span class="n">product_code</span><span class="si">}</span><span class="s2">_frame</span><span class="si">{</span><span class="n">frame_idx</span><span class="si">}</span><span class="s2">.png&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>
+<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="c1"># 4. Update save game title</span>
+<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="k">if</span> <span class="n">card</span><span class="o">.</span><span class="n">saves</span><span class="p">:</span>
+<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a>    <span class="n">card</span><span class="o">.</span><span class="n">saves</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">title</span> <span class="o">=</span> <span class="s2">&quot;Final Fantasy VII (Terjemahan ID)&quot;</span>
+<a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a>    <span class="n">card</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="s2">&quot;memcard_updated.mcr&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a><span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Memory card inspection and title update completed.&quot;</span><span class="p">)</span>
 </code></pre></div>
 
 

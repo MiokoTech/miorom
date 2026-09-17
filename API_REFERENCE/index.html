@@ -1293,7 +1293,7 @@
 
 
 <h1 id="miorom-api-reference-architecture-guide">MioROM API Reference &amp; Architecture Guide<a class="headerlink" href="#miorom-api-reference-architecture-guide" title="Permanent link">&para;</a></h1>
-<p>MioROM v1.0.2 is an all-in-one modular Python framework for ROM hacking, fan translation engineering, and game reverse engineering.</p>
+<p>MioROM v1.0.4 is an all-in-one modular Python framework for ROM hacking, fan translation engineering, and game reverse engineering.</p>
 <h3 id="companion-guides">Companion Guides<a class="headerlink" href="#companion-guides" title="Permanent link">&para;</a></h3>
 <ul>
 <li><a href="../BINARY_PRIMITIVES/">Binary &amp; Assembly Primitives Guide</a> - Low-level patching, micro-assembly, and struct serialization.</li>
@@ -2175,34 +2175,231 @@
 <td style="text-align: left;">Universal checksum validator and auto-repairer for SRAM (32KB), EEPROM, and FlashRAM save files.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><code>GBARom</code>, <code>GBRom</code></td>
-<td style="text-align: left;">Game Boy Advance and Game Boy ROM checksum verification and repair.</td>
+<td style="text-align: left;"><code>GBARom</code></td>
+<td style="text-align: left;">Game Boy Advance cartridge ROM engine: header parsing, hardware complement checksum, Nintendo logo repair, RTC detection, SRAM patching, 1-64MB expansion/trimming, 32-bit pointer relinking, and BIOS SWI scanning.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><code>GBHeader</code>, <code>GBRomBuilder</code></td>
-<td style="text-align: left;">Game Boy/GBC cartridge header parser and multi-bank ROM builder with power-of-two capacity expansion.</td>
+<td style="text-align: left;"><code>GBARomHandler</code></td>
+<td style="text-align: left;">ROM handler for Game Boy Advance (<code>.gba</code>) cartridges with unpack/repack and metadata manifest support.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>fix_gba_checksum</code>, <code>resolve_gba_region</code></td>
+<td style="text-align: left;">Helper functions for GBA header complement checksum repair and territory code resolution.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>create_synthetic_gba_rom</code></td>
+<td style="text-align: left;">Synthetic Game Boy Advance ROM fixture generator for isolated unit testing.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>GBRom</code>, <code>GBHeader</code>, <code>GBRomBuilder</code></td>
+<td style="text-align: left;">Game Boy / GBC cartridge header parser, multi-bank ROM builder with power-of-two capacity expansion, and checksum repair.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>calculate_header_checksum</code>, <code>calculate_global_checksum</code></td>
 <td style="text-align: left;">Pure-Python bitwise checksum recalculators for Game Boy ROM images.</td>
 </tr>
+<tr>
+<td style="text-align: left;"><code>MDRom</code></td>
+<td style="text-align: left;">Sega Mega Drive / Genesis ROM deinterleaver and checksum fixer.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>SNESRom</code></td>
+<td style="text-align: left;">Super Nintendo LoROM/HiROM header parser and checksum recalculator.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>PSXRom</code>, <code>PSXFormat</code></td>
+<td style="text-align: left;">PlayStation 1 optical disc engine supporting 2048-byte Mode 1 ISO and 2352-byte Mode 2 Form 1 BIN with bit-exact 32-bit EDC recalculation, <code>SYSTEM.CNF</code> editing, VFS operations, and CUE generation.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>PSXRomHandler</code></td>
+<td style="text-align: left;">ROM handler for PlayStation 1 (<code>.iso</code>, <code>.bin</code>, <code>.cue</code>) disc images.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>PSXExe</code>, <code>TIMImage</code></td>
+<td style="text-align: left;">PlayStation 1 executable and TIM texture parser.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>PSPRom</code>, <code>PSPFormat</code>, <code>PSPRomHandler</code></td>
+<td style="text-align: left;">Unified PlayStation Portable disc and package ROM engine supporting ISO, CSO, and PBP with in-memory format conversion and VFS.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>PRXModule</code>, <code>PSPNIDResolver</code></td>
+<td style="text-align: left;">Sony PSP relocatable MIPS executable inspector, stub hooker, and SDK NID function resolver.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>AT3Audio</code>, <code>AT3Codec</code></td>
+<td style="text-align: left;">Sony PSP ATRAC3 and ATRAC3plus audio stream parser, BGM loop point editor, and WAV exporter.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ISO9660</code></td>
+<td style="text-align: left;">Standard CD-ROM ISO9660 filesystem parser and directory extractor.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>Iso9660Builder</code></td>
+<td style="text-align: left;">Pure-Python ISO 9660 disc image synthesizer and directory tree builder.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>CSOImage</code></td>
+<td style="text-align: left;">Compressed ISO (CSO/CISO) sector-based random-access reader and block compressor.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>PBPFile</code></td>
+<td style="text-align: left;">Sony PlayStation Portable EBOOT.PBP container unpacker and repacker for all 8 canonical sections.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>SFOFile</code></td>
+<td style="text-align: left;">Sony PARAM.SFO (System File Object) metadata parser and serializer (UTF-8, ASCII, uint32).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>Palette</code>, <code>Color</code></td>
+<td style="text-align: left;">Universal palette manager with BGR555, Genesis 9-bit RGB333, Adobe ACT, and JASC-PAL conversions.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>GBASwiResolver</code></td>
+<td style="text-align: left;">Official Game Boy Advance BIOS SWI lookup database, instruction annotator, and binary scanner.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>GBAMultiboot</code></td>
+<td style="text-align: left;">GBA Multiboot (.mb) 256KB EWRAM program synthesizer, validator, and header parser.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>SaturnDiscHeader</code></td>
+<td style="text-align: left;">Sega Saturn 512-byte Sector 0 security bootstrap header parser, serializer, and region unlocker.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>DreamcastIpBin</code></td>
+<td style="text-align: left;">Sega Dreamcast 32KB IP.BIN bootstrap sector parser, CRC16 calculator, and region unlocker.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>GDISheet</code>, <code>GDITrack</code></td>
+<td style="text-align: left;">Sega Dreamcast GD-ROM descriptor sheet parser and high-density track locator.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>CueBinDisc</code></td>
+<td style="text-align: left;">Mixed-mode CD-ROM (BIN/CUE) disc image processor with EDC/ECC recalculation.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>WiiDisc</code>, <code>WBFSDisc</code></td>
+<td style="text-align: left;">Comprehensive Nintendo Wii optical disc (.iso / .wii) and WBFS container engine; supports DVD-5 / DVD-9, lazy AES-128-CBC cluster decryption (&lt;50MB RAM), H0-H3 hash verification, FST file injection, and Trucha bug fake-signing.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>WiiRomHandler</code></td>
+<td style="text-align: left;">Automated <code>RomManager</code> handler for Nintendo Wii disc images (.iso, .wii, .wbfs) with partition unpacking and repacking.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>BTIImage</code></td>
+<td style="text-align: left;">Nintendo Binary Texture Image (<code>.bti</code>) parser, builder, and GX texture converter (CMPR, RGB565, RGB5A3, RGBA8, I4/I8, IA4/IA8) with mipmaps and LOD control.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>RARCArchive</code>, <code>RARCEntry</code></td>
+<td style="text-align: left;">Nintendo GameCube and Wii RARC resource archive (<code>.arc</code>, <code>.rarc</code>) parser, directory tree extractor, and builder with 16-bit filename hashing.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>BRRESFile</code>, <code>TEX0Image</code>, <code>PLT0Palette</code></td>
+<td style="text-align: left;">Nintendo Wii Binary Revolution Resource container (<code>.brres</code>) parser and injector with Patricia trie directory index groups (<code>BresIndexGroup</code>) and raw texture/palette management.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>RelFile</code>, <code>DolBinary</code></td>
+<td style="text-align: left;">Nintendo Wii / GC Relocatable Module (<code>.rel</code>) parser, linker, and runtime patcher resolving PowerPC relocation chains (<code>R_PPC_ADDR32</code>, <code>R_PPC_ADDR16_LO</code>, <code>R_PPC_ADDR16_HA</code>, <code>R_PPC_REL24</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>GameCubeRomHandler</code></td>
+<td style="text-align: left;">Automated <code>RomManager</code> handler for Nintendo GameCube optical disc images (.iso, .gcm).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>RVZImage</code>, <code>RVZBuilder</code></td>
+<td style="text-align: left;">Dolphin RVZ compressed optical disc image container parser and decompressor with chunk hash validation.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>WiiBanner</code>, <code>GCBanner</code></td>
+<td style="text-align: left;">GameCube and Wii channel banner (<code>opening.bnr</code>) title, description, and graphic icon editor across Japanese and Western languages.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>BRLANFile</code>, <code>BRLYTFile</code></td>
+<td style="text-align: left;">Nintendo Wii Binary Revolution Layout screen (<code>.brlyt</code>) and animation (<code>.brlan</code>) editor for UI localization.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>BRSARArchive</code>, <code>BRSTMFile</code></td>
+<td style="text-align: left;">Nintendo Wii sound archive (<code>.brsar</code>) extractor and multi-channel DSP-ADPCM streaming audio engine (<code>.brstm</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>THPVideo</code></td>
+<td style="text-align: left;">Nintendo GameCube and Wii cinematic movie demuxer extracting MJPEG frames and multi-channel DSP-ADPCM audio.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>RiivolutionEngine</code></td>
+<td style="text-align: left;">Runtime XML patch generator and validator for SD/USB Nintendo Wii disc modding.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>WADFile</code>, <code>WADTicket</code>, <code>WADTmd</code></td>
+<td style="text-align: left;">Nintendo Wii WAD installation package parser, unpacker, AES-128 cryptor, and TMD/ticket validator with Trucha bug fake-signing.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>MSBFFile</code></td>
+<td style="text-align: left;">Nintendo Message Flowchart Binary (<code>.msbf</code> / <code>FLW2</code>) branch and dialogue decision graph editor.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>MSBTFile</code></td>
+<td style="text-align: left;">Official Nintendo Message Studio Binary Text (<code>.msbt</code>) parser and builder with label hashing, ATR1 message attributes, and control code preservation.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>BMGFile</code></td>
+<td style="text-align: left;">Nintendo Binary Message pool (<code>.bmg</code>) parser and serializer for GameCube and Wii titles.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>NCERFile</code>, <code>NCERCell</code></td>
+<td style="text-align: left;">Nintendo DS Nitro Character Resource (<code>.ncer</code>) cell bank assembler and 2D sprite composite renderer.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>NANRFile</code>, <code>NANRSequence</code></td>
+<td style="text-align: left;">Nintendo DS Nitro Animation Resource (<code>.nanr</code>) sprite keyframe sequencer and timeline editor.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>STRMFile</code></td>
+<td style="text-align: left;">Nintendo DS Nitro Stream (<code>.strm</code>) streaming audio parser, encoder, and decoder (PCM8, PCM16, IMA-ADPCM) to standard WAV.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>SWARFile</code>, <code>SWAVEntry</code></td>
+<td style="text-align: left;">Nintendo DS Sound Wave Archive (<code>.swar</code>) extractor and rebuilder with loop point and sample rate preservation.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>NitroAssetCatalog</code>, <code>NitroSceneGraph</code></td>
+<td style="text-align: left;">High-level NDS 2D scene graph linking NCGR, NCLR, NSCR, NCER, and NANR files into animated scene previews.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>NSBMDFile</code>, <code>NSBTXFile</code></td>
+<td style="text-align: left;">Official Nintendo DS 3D model container (<code>.nsbmd</code>) and texture archive (<code>.nsbtx</code>) parser and in-place texture replacer.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>NDSBanner</code></td>
+<td style="text-align: left;">Nintendo DS cartridge banner parser and editor with multilingual titles and animated icon frames.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>BLZ</code></td>
+<td style="text-align: left;">Pure-Python backward LZSS decompressor and compressor for Nintendo DS ARM9 payloads.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>NDSRomHandler</code></td>
+<td style="text-align: left;">Automated <code>RomManager</code> handler for Nintendo DS (<code>.nds</code>) cartridge ROMs.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>PSXMemoryCard</code>, <code>PSXSaveFile</code></td>
+<td style="text-align: left;">Sony PlayStation 1 Memory Card manager (128 KB <code>.mcr</code>, <code>.mcd</code>, <code>.sav</code>) and single save blocks (<code>.mcs</code>) with 16-frame directory management, XOR checksums, and animated 16x16 4bpp save icon export.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>StrDemuxer</code></td>
+<td style="text-align: left;">PlayStation 1 raw CD sector stream (<code>.str</code>) demuxer for MDEC video bitstreams and CD-XA audio.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>GIMImage</code></td>
+<td style="text-align: left;">Sony PlayStation Portable GIM (<code>.gim</code>) texture parser, serializer, and PNG converter.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>psp_swizzle</code>, <code>psp_unswizzle</code></td>
+<td style="text-align: left;">Sony PSP Graphic Engine (GE) hardware VRAM swizzler/unswizzler organizing pixel scanlines into 16-byte blocks.</td>
+</tr>
 </tbody>
 </table>
-<p>| <code>MDRom</code> | Sega Mega Drive / Genesis ROM deinterleaver and checksum fixer. |
-| <code>SNESRom</code> | Super Nintendo LoROM/HiROM header parser and checksum recalculator. |
-| <code>PSXExe</code>, <code>TIMImage</code> | PlayStation 1 executable and TIM texture parser. |
-| <code>ISO9660</code> | Standard CD-ROM ISO9660 filesystem parser and directory extractor. |
-| <code>Iso9660Builder</code> | Pure-Python ISO 9660 disc image synthesizer and directory tree builder. |
-| <code>CSOImage</code> | Compressed ISO (CSO/CISO) sector-based random-access reader and block compressor. |
-| <code>PBPFile</code> | Sony PlayStation Portable EBOOT.PBP container unpacker and repacker for all 8 canonical sections. |
-| <code>SFOFile</code> | Sony PARAM.SFO (System File Object) metadata parser and serializer (UTF-8, ASCII, uint32). |
-| <code>Palette</code>, <code>Color</code> | Universal palette manager with BGR555, Genesis 9-bit RGB333, Adobe ACT, and JASC-PAL conversions. |
-| <code>GBASwiResolver</code> | Official Game Boy Advance BIOS SWI lookup database, instruction annotator, and binary scanner. |
-| <code>GBAMultiboot</code> | GBA Multiboot (.mb) 256KB EWRAM program synthesizer, validator, and header parser. |
-| <code>SaturnDiscHeader</code> | Sega Saturn 512-byte Sector 0 security bootstrap header parser, serializer, and region unlocker. |
-| <code>DreamcastIpBin</code> | Sega Dreamcast 32KB IP.BIN bootstrap sector parser, CRC16 calculator, and region unlocker. |
-| <code>GDISheet</code>, <code>GDITrack</code> | Sega Dreamcast GD-ROM descriptor sheet parser and high-density track locator. |
-| <code>CueBinDisc</code> | Mixed-mode CD-ROM (BIN/CUE) disc image processor with EDC/ECC recalculation. |</p>
 <hr />
 <h3 id="8-patching-binary-modification-miorompatch">8. Patching &amp; Binary Modification (<code>miorom.patch</code>)<a class="headerlink" href="#8-patching-binary-modification-miorompatch" title="Permanent link">&para;</a></h3>
 <table>
@@ -2318,6 +2515,10 @@
 <td style="text-align: left;">Standard IMA-ADPCM decoder and 16-bit PCM RIFF/WAVE file builder.</td>
 </tr>
 <tr>
+<td style="text-align: left;"><code>WavCodec</code>, <code>WavSound</code></td>
+<td style="text-align: left;">Pure-Python zero-dependency RIFF WAVE audio container parser and 16-bit signed PCM encoder.</td>
+</tr>
+<tr>
 <td style="text-align: left;"><code>CdXaDecoder</code></td>
 <td style="text-align: left;">PlayStation CD-XA ADPCM audio sector demuxer and WAV builder.</td>
 </tr>
@@ -2362,8 +2563,12 @@
 <td style="text-align: left;">Nintendo BIOS LZ77 type 0x10 and 0x11 decompressors and compressors.</td>
 </tr>
 <tr>
+<td style="text-align: left;"><code>BLZ</code></td>
+<td style="text-align: left;">Pure-Python backward LZSS (BLZ) decompressor and in-place compressor for Nintendo DS ARM9 binaries and overlays.</td>
+</tr>
+<tr>
 <td style="text-align: left;"><code>RLE</code></td>
-<td style="text-align: left;">Nintendo BIOS Run-Length Encoding (0x30) decompressor and compressor.</td>
+<td style="text-align: left;">Nintendo BIOS Run-Length Encoding (0x30) decompressor and compressor; supports 3 to 130 byte compressed runs and extended 32-bit headers.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>Huffman</code></td>
@@ -2487,6 +2692,10 @@ implementations.</p>
 <tr>
 <td style="text-align: left;"><code>MetaTileSystem</code></td>
 <td style="text-align: left;">Hierarchical 16x16 / 32x32 metatile compositor translating coarse level blocks into 8x8 hardware tile layouts.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>PngCodec</code></td>
+<td style="text-align: left;">Pure-Python zero-dependency PNG image encoder and decoder with support for RGBA32, RGB24, and Grayscale modes.</td>
 </tr>
 </tbody>
 </table>

@@ -1155,7 +1155,7 @@
 
 <h1 id="miorom">MioROM<a class="headerlink" href="#miorom" title="Permanent link">&para;</a></h1>
 <div class="retro-hero">
-  <div class="title">&gt; MIOROM // RE_FRAMEWORK_v1.0.2</div>
+  <div class="title">&gt; MIOROM // RE_FRAMEWORK_v1.0.4</div>
   <div class="subtitle">Modular Low-Level Binary &amp; Assembly Primitives for Console ROM Hacking</div>
   <div>
     <span class="chip-badge nds">NDS ARM9/ARM7/THUMB</span>
@@ -1169,7 +1169,7 @@
     <span class="chip-badge nds">GB SM83</span>
   </div>
   <div class="stats">
-    <span>TESTS: <strong>1140+ PASSED</strong></span>
+    <span>TESTS: <strong>1520+ PASSED</strong></span>
     <span>RUNTIME DEPS: <strong>ZERO (STDLIB ONLY)</strong></span>
     <span>DISASSEMBLER: <strong>8 ARCHITECTURES</strong></span>
     <span>LICENSE: <strong>MIT</strong></span>
@@ -1191,8 +1191,8 @@
 <tbody>
 <tr>
 <td><span class="chip-badge nds">Nintendo DS</span></td>
-<td><code>.nds</code>, <code>.srl</code>, <code>.narc</code>, <code>.nftr</code>, <code>.ncgr</code>, <code>.nclr</code>, <code>.nscr</code></td>
-<td><code>NDSRom</code>, <code>NARCArchive</code>, <code>NFTRFont</code>, <code>NCLRFile</code>, <code>NCGRFile</code>, <code>NSCRFile</code>, <code>ThumbSnippet</code>, FAT/FNT mapper</td>
+<td><code>.nds</code>, <code>.srl</code>, <code>.narc</code>, <code>.nftr</code>, <code>.ncgr</code>, <code>.nclr</code>, <code>.nscr</code>, <code>.ncer</code>, <code>.nanr</code>, <code>.nsbmd</code></td>
+<td><code>NDSRom</code>, <code>NARCArchive</code>, <code>NFTRFont</code>, <code>NCLRFile</code>, <code>NCGRFile</code>, <code>NSCRFile</code>, <code>NCERFile</code>, <code>NANRFile</code>, <code>NSBMDFile</code>, <code>STRMFile</code>, <code>SWARFile</code>, <code>BLZ</code>, <code>NDSBanner</code></td>
 </tr>
 <tr>
 <td><span class="chip-badge n64">Nintendo 64</span></td>
@@ -1201,18 +1201,23 @@
 </tr>
 <tr>
 <td><span class="chip-badge gba">Game Boy Advance</span></td>
-<td><code>.gba</code>, <code>.agb</code>, <code>.bin</code></td>
-<td><code>GBARom</code>, <code>LZ10</code>, <code>LZ11</code>, <code>ArmSnippet</code>, <code>ThumbSnippet</code>, <code>APLib</code>, complement check validation</td>
+<td><code>.gba</code>, <code>.agb</code>, <code>.bin</code>, <code>.mb</code></td>
+<td><code>GBARom</code>, <code>GBARomHandler</code>, <code>GBAMultiboot</code>, <code>GBASwiResolver</code>, <code>LZ10</code>, pointer relinker, RTC, Sappy audio</td>
 </tr>
 <tr>
 <td><span class="chip-badge wii">Wii / GameCube</span></td>
-<td><code>.iso</code>, <code>.gcm</code>, <code>.u8</code>, <code>.arc</code>, <code>.tpl</code>, <code>.dol</code></td>
-<td><code>GameCubeDisc</code>, <code>U8Archive</code>, <code>TPLFile</code>, <code>DolBinary</code>, <code>PpcSnippet</code>, <code>DSPADPCMCodec</code>, <code>Yay0</code>, <code>Yaz0</code>, 32-byte alignment</td>
+<td><code>.iso</code>, <code>.gcm</code>, <code>.wii</code>, <code>.wbfs</code>, <code>.u8</code>, <code>.arc</code>, <code>.tpl</code>, <code>.bti</code>, <code>.brres</code>, <code>.dol</code>, <code>.rel</code>, <code>.wad</code></td>
+<td><code>WiiDisc</code>, <code>WBFSDisc</code>, <code>GameCubeDisc</code>, <code>U8Archive</code>, <code>RARCArchive</code>, <code>TPLFile</code>, <code>BTIImage</code>, <code>BRRESFile</code>, <code>DolFile</code>, <code>RelFile</code>, <code>BRFNTFont</code>, <code>BRLANFile</code>, <code>BRLYTFile</code>, <code>BRSARArchive</code>, <code>BRSTMStream</code>, <code>THPVideo</code>, <code>WADPackage</code>, <code>MSBTFile</code>, <code>BMGFile</code></td>
 </tr>
 <tr>
 <td><span class="chip-badge ps1">PlayStation 1</span></td>
-<td><code>.bin/.cue</code>, <code>.iso</code>, <code>.exe</code>, <code>.tim</code>, <code>.vag</code></td>
-<td><code>ISO9660</code>, <code>CueBinDisc</code>, <code>TIMImage</code>, <code>PSXExe</code>, <code>VAGFile</code>, <code>VAGCodec</code> (SPU-ADPCM), <code>CdXaDecoder</code></td>
+<td><code>.bin/.cue</code>, <code>.iso</code>, <code>.exe</code>, <code>.tim</code>, <code>.vag</code>, <code>.mcr</code>, <code>.mcs</code></td>
+<td><code>PSXRom</code>, <code>PSXRomHandler</code>, <code>PSXMemoryCard</code>, <code>PSXExe</code>, <code>ISO9660</code>, <code>CueBinDisc</code>, <code>TIMImage</code>, <code>VAGFile</code>, <code>StrDemuxer</code>, <code>CdXaDecoder</code>, 32-bit EDC</td>
+</tr>
+<tr>
+<td><span class="chip-badge ps1">Sony PSP</span></td>
+<td><code>.iso</code>, <code>.cso</code>, <code>.pbp</code>, <code>.prx</code>, <code>.at3</code>, <code>.gim</code></td>
+<td><code>PSPRom</code>, <code>PSPRomHandler</code>, <code>PRXModule</code>, <code>AT3Audio</code>, <code>SFOFile</code>, <code>GIMImage</code>, <code>psp_swizzle</code>, MIPS NID resolver, VFS</td>
 </tr>
 <tr>
 <td><span class="chip-badge snes">Super Nintendo</span></td>
@@ -1391,7 +1396,7 @@
 <li>
 <p>:material-history: <strong><a href="CHANGELOG/">Release Changelog</a></strong>
     ---
-    Detailed version history, migration notes, and v1.0.2 release summary.</p>
+    Detailed version history, migration notes, and v1.0.4 release summary.</p>
 </li>
 </ul>
 </div>
