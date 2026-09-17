@@ -1,4 +1,5 @@
-from typing import List, Tuple, Optional
+from typing import List, Optional
+
 from miorom.errors import ParseError
 
 

@@ -9,12 +9,12 @@ Pure Python, using MioROM declarative binary primitives.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
 
 from miorom.core.binary import BinaryReader, BinaryWriter
-from miorom.core.schema import BinaryStruct, RawBytes, U16, U32
+from miorom.core.schema import U16, U32, BinaryStruct, RawBytes
 from miorom.errors import ParseError
 from miorom.result import MioRomResult
 from miorom.security import sanitize_extract_path
@@ -72,9 +72,15 @@ class AFSArchive:
     ALT_MAGIC = b"AFS "
     SECTOR_SIZE = 2048  # 0x800 CD/DVD sector alignment
 
-    def __init__(self, entries: Optional[List[AFSEntry]] = None, has_toc: bool = True):
+    def __init__(
+        self,
+        entries: Optional[List[AFSEntry]] = None,
+        has_toc: bool = True,
+        encoding: str = "cp932",
+    ):
         self.entries: List[AFSEntry] = entries or []
         self.has_toc = has_toc
+        self.encoding = encoding
 
     def __len__(self) -> int:
         return len(self.entries)
@@ -114,7 +120,7 @@ class AFSArchive:
         self.entries.append(entry)
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "AFSArchive":
+    def from_bytes(cls, data: bytes, encoding: str = "cp932") -> AFSArchive:
         """Parses an AFS container from raw bytes."""
         if len(data) < AFSHeaderStruct.sizeof():
             raise ParseError("Data too small for AFS header.")
@@ -157,7 +163,10 @@ class AFSArchive:
             for i in range(min(entry_count, toc_entries)):
                 rec_bytes = toc_reader.read_bytes(48)
                 name_raw = rec_bytes[:32].rstrip(b"\x00")
-                name = name_raw.decode("ascii", errors="replace")
+                try:
+                    name = name_raw.decode(encoding)
+                except UnicodeDecodeError:
+                    name = name_raw.decode("ascii", errors="replace")
                 if not name:
                     name = f"file_{i:04d}.bin"
                 filenames[i] = name
@@ -198,16 +207,22 @@ class AFSArchive:
                 )
             )
 
-        return cls(entries=entries, has_toc=has_toc)
+        return cls(entries=entries, has_toc=has_toc, encoding=encoding)
 
-    def to_bytes(self, sector_align: bool = True) -> bytes:
+    def to_bytes(
+        self,
+        sector_align: bool = True,
+        encoding: Optional[str] = None,
+    ) -> bytes:
         """
         Serializes the archive back to CRI AFS binary format.
 
         Args:
             sector_align: When True, aligns each file and the trailing TOC
                           to SECTOR_SIZE (2048 / 0x800 bytes).
+            encoding: Character encoding for TOC filenames. Defaults to archive's encoding (e.g., cp932).
         """
+        enc = encoding or getattr(self, "encoding", "cp932") or "cp932"
         entry_count = len(self.entries)
         writer = BinaryWriter(endian="<")
 
@@ -261,7 +276,10 @@ class AFSArchive:
                 writer.pad(toc_offset - writer.tell())
 
             for e in self.entries:
-                name_bytes = e.name.encode("ascii", errors="replace")[:31]
+                try:
+                    name_bytes = e.name.encode(enc, errors="replace")[:31]
+                except Exception:
+                    name_bytes = e.name.encode("ascii", errors="replace")[:31]
                 rec = bytearray(32)
                 rec[: len(name_bytes)] = name_bytes
 

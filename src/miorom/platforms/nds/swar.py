@@ -13,11 +13,11 @@ from __future__ import annotations
 import json
 import math
 import os
-import struct
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from miorom.audio.adpcm import ADPCMCodec
+from miorom.core import schema
 from miorom.errors import ParseError
 
 
@@ -46,7 +46,7 @@ class SWAVEntry:
             # IMA-ADPCM 4-bit
             if total_payload_len < 4:
                 return []
-            init_sample, init_index = struct.unpack_from("<hb", self.payload, 0)
+            init_sample, init_index = schema.unpack_from("<hb", self.payload, 0)
             init_index = max(0, min(88, init_index))
             adpcm_data = self.payload[4:]
             samples = ADPCMCodec.decode_ima(
@@ -59,12 +59,12 @@ class SWAVEntry:
         elif self.wave_type == 1:
             # PCM16 signed Little Endian
             sample_count = total_payload_len // 2
-            return list(struct.unpack(f"<{sample_count}h", self.payload[: sample_count * 2]))
+            return list(schema.unpack(f"<{sample_count}h", self.payload[: sample_count * 2]))
 
         elif self.wave_type == 0:
             # PCM8 signed
             sample_count = total_payload_len
-            raw_samps = struct.unpack(f"<{sample_count}b", self.payload[:sample_count])
+            raw_samps = schema.unpack(f"<{sample_count}b", self.payload[:sample_count])
             return [s << 8 for s in raw_samps]
 
         else:
@@ -93,7 +93,7 @@ class SWAVEntry:
         loop_flag: int = 0,
         loop_start_samples: int = 0,
         index: int = 0,
-    ) -> "SWAVEntry":
+    ) -> SWAVEntry:
         """Encodes standard 16-bit PCM WAV audio into an SWAV entry."""
         wav_info = ADPCMCodec.read_wav(wav_bytes)
         sample_rate = wav_info["sample_rate"]
@@ -115,19 +115,19 @@ class SWAVEntry:
             comp_bytes, _, _ = ADPCMCodec.encode_ima(
                 samples, initial_predictor=init_sample, initial_index=init_index
             )
-            preamble = struct.pack("<hbB", init_sample, init_index, 0)
+            preamble = schema.pack("<hbB", init_sample, init_index, 0)
             raw_payload = preamble + comp_bytes
         elif wave_type == 1:
             # PCM16
             raw_payload = bytearray()
             for s in samples:
-                raw_payload.extend(struct.pack("<h", s))
+                raw_payload.extend(schema.pack("<h", s))
             raw_payload = bytes(raw_payload)
         elif wave_type == 0:
             # PCM8
             raw_payload = bytearray()
             for s in samples:
-                raw_payload.extend(struct.pack("<b", max(-128, min(127, s >> 8))))
+                raw_payload.extend(schema.pack("<b", max(-128, min(127, s >> 8))))
             raw_payload = bytes(raw_payload)
         else:
             raise ValueError(f"Unsupported wave_type: {wave_type}")
@@ -170,7 +170,7 @@ class SWAVEntry:
 
     def to_bytes(self) -> bytes:
         """Serializes the SWAV entry header and audio payload."""
-        header = struct.pack(
+        header = schema.pack(
             "<BBHHHI",
             self.wave_type,
             self.loop_flag,
@@ -198,27 +198,27 @@ class SWARArchive:
             raise ParseError(f"Invalid SWAR magic: {data[:4]!r}")
 
         self.data = bytearray(data)
-        endian, version, self.file_size, self.header_size, num_blocks = struct.unpack_from("<HHIHH", self.data, 4)
+        endian, version, self.file_size, self.header_size, num_blocks = schema.unpack_from("<HHIHH", self.data, 4)
 
         if endian != 0xFEFF:
             raise ParseError(f"Unsupported SWAR endianness: 0x{endian:04X} (expected 0xFEFF).")
 
         # Parse DATA block
         self.data_block_offset = self.header_size
-        data_magic, self.data_block_size = struct.unpack_from("<4sI", self.data, self.data_block_offset)
+        data_magic, self.data_block_size = schema.unpack_from("<4sI", self.data, self.data_block_offset)
         if data_magic != b"DATA":
             raise ParseError(f"Invalid DATA block magic: {data_magic!r}")
 
         # Table of SWAV offsets
         # Offset +40 in DATA block is num_swav
-        self.num_swav = struct.unpack_from("<I", self.data, self.data_block_offset + 40)[0]
+        self.num_swav = schema.unpack_from("<I", self.data, self.data_block_offset + 40)[0]
         offset_table_pos = self.data_block_offset + 44
 
         self.samples: List[Optional[SWAVEntry]] = []
         raw_offsets = []
 
         for i in range(self.num_swav):
-            off = struct.unpack_from("<I", self.data, offset_table_pos + i * 4)[0]
+            off = schema.unpack_from("<I", self.data, offset_table_pos + i * 4)[0]
             raw_offsets.append(off)
 
         # Parse each SWAV entry
@@ -228,7 +228,7 @@ class SWARArchive:
                 continue
 
             # Read 12-byte header
-            wave_type, loop_flag, sample_rate, timer_period, loop_s, loop_len = struct.unpack_from(
+            wave_type, loop_flag, sample_rate, timer_period, loop_s, loop_len = schema.unpack_from(
                 "<BBHHHI", self.data, off
             )
 
@@ -259,7 +259,7 @@ class SWARArchive:
             self.samples.append(entry)
 
     @classmethod
-    def from_file(cls, path: str) -> "SWARArchive":
+    def from_file(cls, path: str) -> SWARArchive:
         """Loads and parses an SWAR archive from disk."""
         with open(path, "rb") as f:
             return cls(f.read())
@@ -319,7 +319,7 @@ class SWARArchive:
         manifest_path = os.path.join(input_dir, "swar_manifest.json")
         meta_dict: Dict[int, Dict[str, Any]] = {}
         if os.path.isfile(manifest_path):
-            with open(manifest_path, "r", encoding="utf-8") as f:
+            with open(manifest_path, encoding="utf-8") as f:
                 raw_meta = json.load(f)
                 for item in raw_meta.get("samples", []):
                     if not item.get("empty", False):
@@ -380,7 +380,7 @@ class SWARArchive:
 
         for i, entry in enumerate(self.samples):
             if entry is None:
-                offset_table.extend(struct.pack("<I", 0))
+                offset_table.extend(schema.pack("<I", 0))
             else:
                 # Align each SWAV to 4 bytes
                 align = (4 - (cur_file_pos % 4)) % 4
@@ -388,7 +388,7 @@ class SWARArchive:
                     swav_payloads.extend(b"\x00" * align)
                     cur_file_pos += align
 
-                offset_table.extend(struct.pack("<I", cur_file_pos))
+                offset_table.extend(schema.pack("<I", cur_file_pos))
                 entry_bytes = entry.to_bytes()
                 swav_payloads.extend(entry_bytes)
                 cur_file_pos += len(entry_bytes)
@@ -396,9 +396,9 @@ class SWARArchive:
         # Assemble DATA block
         data_block = bytearray(b"DATA")
         data_block_size = 8 + 32 + 4 + table_size + pad_data + len(swav_payloads)
-        data_block.extend(struct.pack("<I", data_block_size))
+        data_block.extend(schema.pack("<I", data_block_size))
         data_block.extend(b"\x00" * 32)  # 32 bytes reserved
-        data_block.extend(struct.pack("<I", num_swav))
+        data_block.extend(schema.pack("<I", num_swav))
         data_block.extend(offset_table)
         if pad_data > 0:
             data_block.extend(b"\x00" * pad_data)
@@ -407,6 +407,6 @@ class SWARArchive:
         # Assemble SWAR 16-byte Header
         total_file_size = 16 + len(data_block)
         header = bytearray(self.MAGIC)
-        header.extend(struct.pack("<HHIHH", 0xFEFF, 0x0100, total_file_size, 16, 1))
+        header.extend(schema.pack("<HHIHH", 0xFEFF, 0x0100, total_file_size, 16, 1))
 
         return bytes(header + data_block)

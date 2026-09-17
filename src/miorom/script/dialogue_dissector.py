@@ -10,15 +10,15 @@ expanded translations with automated free-space relocation.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
-from miorom.errors import ParseError, RelocationError
 from miorom.result import MioRomResult
-from miorom.scanner.table_detector import HeuristicTableDetector, TableCandidate
+from miorom.scanner.table_detector import HeuristicTableDetector
 from miorom.script.boundary_detector import detect_delimiters
 from miorom.text.charmap import CharMap
-from miorom.text.po_handler import PoEntry, PoHandler
+from miorom.text.po_handler import PoHandler
 from miorom.text.pointer_relinker import PointerRelinker
 from miorom.text.tokenizer import ControlCodeSchema, ControlCodeTokenizer
 
@@ -50,6 +50,8 @@ class DialogueBlock(MioRomResult):
     base_address: int
     terminator: bytes
     entries: List[DialogueEntry] = field(default_factory=list)
+    pointer_type: str = "absolute"
+    bank: int = 0
 
     def to_po(self) -> str:
         """
@@ -77,6 +79,8 @@ class DialogueBlock(MioRomResult):
             "pointer_size": self.pointer_size,
             "endian": self.endian,
             "base_address": f"0x{self.base_address:08X}",
+            "pointer_type": self.pointer_type,
+            "bank": self.bank,
             "terminator_hex": self.terminator.hex().upper(),
             "entries": [
                 {
@@ -187,6 +191,8 @@ class DialogueDissector:
         block_id: str = "block_0",
         control_codes: Optional[Dict[bytes, str]] = None,
         schema: Optional[ControlCodeSchema] = None,
+        pointer_type: str = "absolute",
+        bank: int = 0,
     ) -> DialogueBlock:
         """
         Extracts a dialogue block from a specific known pointer table location.
@@ -206,7 +212,7 @@ class DialogueDissector:
             if p_off + pointer_size > data_len:
                 break
             ptr_val = relinker.read_pointer(data, p_off)
-            t_off = ptr_val - base_address
+            t_off = relinker._to_rom_offset(ptr_val, pointer_type=pointer_type, bank=bank)
             if 0 <= t_off < data_len:
                 raw_targets.append(t_off)
             else:
@@ -223,6 +229,8 @@ class DialogueDissector:
                 base_address=base_address,
                 terminator=terminator or b"\x00",
                 entries=[],
+                pointer_type=pointer_type,
+                bank=bank,
             )
 
         # 2. Determine terminator delimiter if not specified
@@ -295,6 +303,8 @@ class DialogueDissector:
             base_address=base_address,
             terminator=primary_term,
             entries=entries,
+            pointer_type=pointer_type,
+            bank=bank,
         )
 
     @classmethod
@@ -404,7 +414,9 @@ class DialogueDissector:
                 data[allocated_off : allocated_off + new_len] = new_raw
 
                 # Update pointer table
-                new_ptr_val = allocated_off + block.base_address
+                ptr_type = getattr(block, "pointer_type", "absolute")
+                bank_val = getattr(block, "bank", 0)
+                new_ptr_val = relinker._to_pointer_value(allocated_off, ptr_type, bank_val)
                 relinker.write_pointer(data, entry.pointer_offset, new_ptr_val)
 
                 pointer_updates.append((entry.pointer_offset, entry.target_offset, allocated_off))

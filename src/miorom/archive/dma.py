@@ -11,11 +11,10 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import BinaryIO, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Dict, List, Optional
 
-from miorom.archive.container import ArchiveContainer, ArchiveEntry
 from miorom.compression.yaz0 import Yaz0
-from miorom.core.schema import BinaryStruct, U32
+from miorom.core.schema import U32, BinaryStruct
 from miorom.result import MioRomResult
 from miorom.security import sanitize_extract_path
 
@@ -59,7 +58,7 @@ class DmaTableArchive:
         endian: str = ">",
         entry_names: Optional[Dict[int, str]] = None,
         max_entries: Optional[int] = None,
-    ) -> "DmaTableArchive":
+    ) -> DmaTableArchive:
         """
         Parses a DMA table directly from ROM binary data.
         """

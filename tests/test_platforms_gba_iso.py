@@ -1,5 +1,5 @@
-import pytest
 import struct
+
 from miorom.platforms.gba.rom import GBARom
 from miorom.platforms.iso.iso9660 import ISO9660
 

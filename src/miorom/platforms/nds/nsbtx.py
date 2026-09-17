@@ -11,13 +11,11 @@ Pure Python implementation using MioROM declarative binary primitives.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple
 
-from miorom.core.binary import BinaryReader, BinaryWriter
-from miorom.core.schema import BinaryStruct, RawBytes, U16, U32
+from miorom.core.binary import BinaryWriter
+from miorom.core.schema import U16, U32, BinaryStruct, RawBytes
 from miorom.errors import ParseError
-from miorom.result import MioRomResult
 
 try:
     from PIL import Image
@@ -197,26 +195,20 @@ class NSBTXFile:
         self.palettes: List[NSBTXPalette] = palettes or []
 
     @classmethod
-    def from_file(cls, filepath: str) -> "NSBTXFile":
+    def from_file(cls, filepath: str) -> NSBTXFile:
         with open(filepath, "rb") as f:
             data = f.read()
         return cls.from_bytes(data)
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "NSBTXFile":
-        if len(data) < BTX0HeaderStruct.sizeof():
-            raise ParseError("Data too short for BTX0 header.")
+    def from_tex0_bytes(cls, tex0_data: bytes) -> NSBTXFile:
+        """Parses a standalone Nitro TEX0 section buffer."""
+        if len(tex0_data) < TEX0HeaderStruct.sizeof():
+            raise ParseError("Data too short for TEX0 header.")
 
-        btx_hdr = BTX0HeaderStruct.from_bytes(data, offset=0)
-        if btx_hdr.magic != cls.MAGIC:
-            raise ParseError(f"Invalid BTX0 magic: {btx_hdr.magic!r} (expected b'BTX0').")
-
-        tex0_offset = btx_hdr.tex0_offset
-        if tex0_offset >= len(data) or data[tex0_offset : tex0_offset + 4] != b"TEX0":
-            raise ParseError(f"Invalid or missing TEX0 section at offset 0x{tex0_offset:X}.")
-
-        tex0_data = data[tex0_offset:]
         tex0_hdr = TEX0HeaderStruct.from_bytes(tex0_data, offset=0)
+        if tex0_hdr.magic != b"TEX0":
+            raise ParseError(f"Invalid TEX0 magic: {tex0_hdr.magic!r} (expected b'TEX0').")
 
         # 1. Parse Palettes
         palettes: List[NSBTXPalette] = []
@@ -296,6 +288,21 @@ class NSBTXFile:
                 )
 
         return cls(textures=textures, palettes=palettes)
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> NSBTXFile:
+        if len(data) < BTX0HeaderStruct.sizeof():
+            raise ParseError("Data too short for BTX0 header.")
+
+        btx_hdr = BTX0HeaderStruct.from_bytes(data, offset=0)
+        if btx_hdr.magic != cls.MAGIC:
+            raise ParseError(f"Invalid BTX0 magic: {btx_hdr.magic!r} (expected b'BTX0').")
+
+        tex0_offset = btx_hdr.tex0_offset
+        if tex0_offset >= len(data) or data[tex0_offset : tex0_offset + 4] != b"TEX0":
+            raise ParseError(f"Invalid or missing TEX0 section at offset 0x{tex0_offset:X}.")
+
+        return cls.from_tex0_bytes(data[tex0_offset:])
 
     def get_texture_names(self) -> List[str]:
         return [t.name for t in self.textures]
@@ -406,43 +413,47 @@ class NSBTXFile:
 
     def to_image(
         self, texture_name: str, palette_name: Optional[str] = None
-    ) -> "Image.Image":
-        """Renders the specified texture to a PIL Image."""
-        if not HAS_PIL:
-            raise ImportError("Pillow is required for NSBTXFile.to_image().")
-
+    ) -> Any:
+        """Renders the specified texture to an RGBA image (PIL Image or PNGImage fallback)."""
         tex = self.get_texture(texture_name)
         if tex is None:
             raise KeyError(f"Texture '{texture_name}' not found.")
 
         rgba = self.decode_rgba(texture_name, palette_name)
-        return Image.frombytes("RGBA", (tex.width, tex.height), rgba)
-
-    def to_bytes(self) -> bytes:
-        """
-        Serializes the NSBTX container back to standard Nintendo DS BTX0/TEX0 binary format.
-        """
-        writer = BinaryWriter(endian="<")
-
-        # BTX0 header placeholder
-        btx_hdr = BTX0HeaderStruct(
-            magic=self.MAGIC,
-            byte_order=0xFEFF,
-            version=0x0100,
-            file_size=0,         # placeholder
-            header_size=16,
-            block_count=1,
-            tex0_offset=20,      # TEX0 starts at 0x14
+        if HAS_PIL:
+            return Image.frombytes("RGBA", (tex.width, tex.height), rgba)
+        from miorom.graphics.png_codec import PNGColorType, PNGImage
+        return PNGImage(
+            width=tex.width,
+            height=tex.height,
+            color_type=PNGColorType.RGBA,
+            bit_depth=8,
+            pixels=rgba,
         )
-        writer.write_struct(btx_hdr)
-        tex0_start = writer.tell()
 
-        # 2. Build Palette Data & Dict
+    def to_png(
+        self, output_path: str, texture_name: str, palette_name: Optional[str] = None
+    ) -> str:
+        """Saves the specified texture to a PNG file. Zero-dependency (works without Pillow)."""
+        from miorom.graphics.png_codec import PNGCodec
+        tex = self.get_texture(texture_name)
+        if tex is None:
+            raise KeyError(f"Texture '{texture_name}' not found.")
+        rgba = self.decode_rgba(texture_name, palette_name)
+        png_bytes = PNGCodec.encode_rgba(tex.width, tex.height, rgba)
+        with open(output_path, "wb") as f:
+            f.write(png_bytes)
+        return output_path
+
+    def to_tex0_bytes(self) -> bytes:
+        """
+        Serializes the embedded textures and palettes into a standalone Nitro TEX0 section buffer.
+        """
+        # 1. Build Palette Data & Dict
         pal_data_writer = BinaryWriter(endian="<")
         pal_dict_entries: List[NitroDictEntry] = []
 
         for pal in self.palettes:
-            pal_offset = pal_data_writer.tell()
             pal_data_writer.align(8)
             pal_offset = pal_data_writer.tell()
 
@@ -459,7 +470,7 @@ class NSBTXFile:
         pal_raw_data = pal_data_writer.to_bytes()
         pal_dict_bytes = build_nitro_dict(pal_dict_entries, 4)
 
-        # 3. Build Texture Data & Dict
+        # 2. Build Texture Data & Dict
         tex_data_writer = BinaryWriter(endian="<")
         tex_dict_entries: List[NitroDictEntry] = []
 
@@ -500,7 +511,7 @@ class NSBTXFile:
         tex_raw_data = tex_data_writer.to_bytes()
         tex_dict_bytes = build_nitro_dict(tex_dict_entries, 8)
 
-        # 4. Assemble TEX0 Block
+        # 3. Assemble TEX0 Block
         tex0_writer = BinaryWriter(endian="<")
         # Placeholder for TEX0HeaderStruct (64 bytes)
         tex0_writer.pad(64, 0)
@@ -550,22 +561,27 @@ class NSBTXFile:
             )
             tex0_writer.write_struct(t_hdr)
 
-        writer.write_bytes(tex0_writer.to_bytes())
-        total_file_size = writer.tell()
+        return tex0_writer.to_bytes()
 
-        # Patch BTX0 header file_size
-        with writer.at(0):
-            patched_btx = BTX0HeaderStruct(
-                magic=self.MAGIC,
-                byte_order=0xFEFF,
-                version=0x0100,
-                file_size=total_file_size,
-                header_size=16,
-                block_count=1,
-                tex0_offset=20,
-            )
-            writer.write_struct(patched_btx)
+    def to_bytes(self) -> bytes:
+        """
+        Serializes the NSBTX container back to standard Nintendo DS BTX0/TEX0 binary format.
+        """
+        writer = BinaryWriter(endian="<")
+        tex0_bytes = self.to_tex0_bytes()
+        total_file_size = 20 + len(tex0_bytes)
 
+        btx_hdr = BTX0HeaderStruct(
+            magic=self.MAGIC,
+            byte_order=0xFEFF,
+            version=0x0100,
+            file_size=total_file_size,
+            header_size=16,
+            block_count=1,
+            tex0_offset=20,
+        )
+        writer.write_struct(btx_hdr)
+        writer.write_bytes(tex0_bytes)
         return writer.to_bytes()
 
     def to_file(self, filepath: str) -> None:

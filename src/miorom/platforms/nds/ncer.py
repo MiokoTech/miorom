@@ -7,15 +7,16 @@ Standard 2D sprite cell and animation bank container for Nintendo DS games.
 
 from __future__ import annotations
 
-import struct
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
+from miorom.core import schema
 from miorom.core.binary import BinaryReader, BinaryWriter
-from miorom.core.schema import BinaryStruct, RawBytes, U16, U32
+from miorom.core.schema import U16, U32, BinaryStruct, RawBytes
 from miorom.errors import ParseError
 from miorom.graphics.palette import Color, Palette
 from miorom.platforms.nds.ncgr import NCGRFile
+from miorom.platforms.nds.nclr import NCLRFile
 
 try:
     from PIL import Image
@@ -125,7 +126,7 @@ class NCERFile:
         return len(self.banks)
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "NCERFile":
+    def from_bytes(cls, data: bytes) -> NCERFile:
         if len(data) < 0x20:
             raise ParseError("Data too small for NCER header.")
 
@@ -252,15 +253,12 @@ class NCERFile:
         self,
         bank_index: int,
         ncgr: NCGRFile,
-        palette_or_nclr: Union[Palette, List[Color], "NCLRFile"],
+        palette_or_nclr: Union[Palette, List[Color], NCLRFile],
         transparency: bool = True,
-    ) -> Optional["Image.Image"]:
+    ) -> Optional[Image.Image]:
         """
         Assembles and renders a specific cell bank frame into a PIL RGBA Image.
         """
-        if not HAS_PIL:
-            raise ImportError("Pillow is required for NCER rendering. Install with 'pip install Pillow'.")
-
         if bank_index < 0 or bank_index >= len(self.banks):
             return None
 
@@ -276,8 +274,7 @@ class NCERFile:
         else:
             pal = Palette(colors=palette_or_nclr)
 
-        img = Image.new("RGBA", (bank.width, bank.height), (0, 0, 0, 0))
-        pixels = img.load()
+        raw_rgba = bytearray(bank.width * bank.height * 4)
 
         shift = self.block_size & 0xFF
         bpp_shift = 8 * ncgr.bpp
@@ -320,25 +317,54 @@ class NCERFile:
                                 target_x = cx + sub_x + x
                                 target_y = cy + sub_y + y
                                 if 0 <= target_x < bank.width and 0 <= target_y < bank.height:
-                                    pixels[target_x, target_y] = (col.r, col.g, col.b, 255)
+                                    offset = (target_y * bank.width + target_x) * 4
+                                    raw_rgba[offset : offset + 4] = bytes([col.r, col.g, col.b, 255])
 
-        return img
+        if HAS_PIL:
+            return Image.frombytes("RGBA", (bank.width, bank.height), bytes(raw_rgba))
+        from miorom.graphics.png_codec import PNGColorType, PNGImage
+        return PNGImage(
+            width=bank.width,
+            height=bank.height,
+            color_type=PNGColorType.RGBA,
+            bit_depth=8,
+            pixels=bytes(raw_rgba),
+        )
+
+    def render_bank_to_png(
+        self,
+        output_path: str,
+        bank_index: int,
+        ncgr: NCGRFile,
+        palette_or_nclr: Union[Palette, List[Color], NCLRFile],
+        transparency: bool = True,
+    ) -> Optional[str]:
+        """Renders a bank and saves as PNG. Zero-dependency (works without Pillow)."""
+        from miorom.graphics.png_codec import PNGCodec
+        img = self.render_bank(bank_index, ncgr, palette_or_nclr, transparency=transparency)
+        if img is None:
+            return None
+        if hasattr(img, "save"):
+            img.save(output_path, format="PNG")
+        else:
+            png_bytes = PNGCodec.encode_rgba(img.width, img.height, img.to_rgba_bytes())
+            with open(output_path, "wb") as f:
+                f.write(png_bytes)
+        return output_path
 
     def render_all_banks_stacked(
         self,
         ncgr: NCGRFile,
-        palette_or_nclr: Union[Palette, List[Color], "NCLRFile"],
+        palette_or_nclr: Union[Palette, List[Color], NCLRFile],
         transparency: bool = True,
         padding: int = 4,
-    ) -> Optional["Image.Image"]:
+    ) -> Any:
         """
         Renders all cell bank frames stacked vertically into a single sprite animation atlas image.
         Deduplicates identical animation frames and ignores empty banks.
+        Returns PIL Image if installed, or PNGImage fallback.
         """
-        if not HAS_PIL:
-            raise ImportError("Pillow is required for NCER rendering.")
-
-        rendered_banks: List["Image.Image"] = []
+        rendered_banks: List[Any] = []
         seen_hashes = set()
         for i in range(len(self.banks)):
             bank = self.banks[i]
@@ -346,7 +372,7 @@ class NCERFile:
                 continue
             b_img = self.render_bank(i, ncgr, palette_or_nclr, transparency=transparency)
             if b_img:
-                b_hash = b_img.tobytes()
+                b_hash = b_img.tobytes() if hasattr(b_img, "tobytes") else b_img.to_rgba_bytes()
                 if b_hash in seen_hashes:
                     continue
                 seen_hashes.add(b_hash)
@@ -358,13 +384,54 @@ class NCERFile:
         total_width = max(b.width for b in rendered_banks)
         total_height = sum(b.height for b in rendered_banks) + padding * (len(rendered_banks) - 1)
 
-        combined = Image.new("RGBA", (total_width, total_height), (0, 0, 0, 0))
+        if HAS_PIL:
+            combined = Image.new("RGBA", (total_width, total_height), (0, 0, 0, 0))
+            curr_y = 0
+            for b in rendered_banks:
+                combined.paste(b, (0, curr_y), b)
+                curr_y += b.height + padding
+            return combined
+
+        from miorom.graphics.png_codec import PNGColorType, PNGImage
+        combined_rgba = bytearray(total_width * total_height * 4)
         curr_y = 0
         for b in rendered_banks:
-            combined.paste(b, (0, curr_y), b)
-            curr_y += b.height + padding
+            b_rgba = b.to_rgba_bytes() if hasattr(b, "to_rgba_bytes") else b.tobytes()
+            bw, bh = b.width, b.height
+            for row in range(bh):
+                dst_offset = ((curr_y + row) * total_width) * 4
+                src_offset = (row * bw) * 4
+                combined_rgba[dst_offset : dst_offset + bw * 4] = b_rgba[src_offset : src_offset + bw * 4]
+            curr_y += bh + padding
 
-        return combined
+        return PNGImage(
+            width=total_width,
+            height=total_height,
+            color_type=PNGColorType.RGBA,
+            bit_depth=8,
+            pixels=bytes(combined_rgba),
+        )
+
+    def render_all_banks_to_png(
+        self,
+        output_path: str,
+        ncgr: NCGRFile,
+        palette_or_nclr: Union[Palette, List[Color], NCLRFile],
+        transparency: bool = True,
+        padding: int = 4,
+    ) -> Optional[str]:
+        """Renders stacked animation atlas and saves to PNG. Zero-dependency."""
+        from miorom.graphics.png_codec import PNGCodec
+        img = self.render_all_banks_stacked(ncgr, palette_or_nclr, transparency=transparency, padding=padding)
+        if img is None:
+            return None
+        if hasattr(img, "save"):
+            img.save(output_path, format="PNG")
+        else:
+            png_bytes = PNGCodec.encode_rgba(img.width, img.height, img.to_rgba_bytes())
+            with open(output_path, "wb") as f:
+                f.write(png_bytes)
+        return output_path
 
     def to_bytes(self) -> bytes:
         """
@@ -382,10 +449,10 @@ class NCERFile:
             cell_num = len(bank.cells)
             cell_info = bank.cell_info
 
-            bank_entries_bytes.extend(struct.pack("<HHI", cell_num, cell_info, cell_offset))
+            bank_entries_bytes.extend(schema.pack("<HHI", cell_num, cell_info, cell_offset))
             if cell_type == 1:
                 bank_entries_bytes.extend(
-                    struct.pack("<hhhh", bank.x_max, bank.y_max, bank.x_min, bank.y_min)
+                    schema.pack("<hhhh", bank.x_max, bank.y_max, bank.x_min, bank.y_min)
                 )
 
             for cell in bank.cells:
@@ -412,11 +479,11 @@ class NCERFile:
                     pal = (cell.palette_index & 0xF) << 12
                     o2 = tile | pri | pal
 
-                cells_bytes.extend(struct.pack("<HHH", o0, o1, o2))
+                cells_bytes.extend(schema.pack("<HHH", o0, o1, o2))
 
         cebk_payload = bytearray()
         cebk_payload.extend(
-            struct.pack(
+            schema.pack(
                 "<HHIIII",
                 bank_count,
                 cell_type,

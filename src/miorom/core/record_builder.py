@@ -3,11 +3,12 @@ miorom.core.record_builder
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 Fluent Binary Record Builder & Struct Serializer Primitive.
 Constructs binary records with exact byte layouts, fixed-length strings,
-and alignment padding without brittle struct.pack format strings.
+and alignment padding without brittle schema.pack format strings.
 """
 
-import struct
-from typing import Optional, Union
+from typing import Union
+
+from miorom.core import schema
 
 
 class RecordBuilder:
@@ -29,31 +30,31 @@ class RecordBuilder:
         return self
 
     def i8(self, val: int) -> "RecordBuilder":
-        self._buffer.extend(struct.pack("b", val))
+        self._buffer.extend(schema.pack("b", val))
         return self
 
     def u16(self, val: int) -> "RecordBuilder":
-        self._buffer.extend(struct.pack(f"{self.endian}H", val & 0xFFFF))
+        self._buffer.extend(schema.pack(f"{self.endian}H", val & 0xFFFF))
         return self
 
     def i16(self, val: int) -> "RecordBuilder":
-        self._buffer.extend(struct.pack(f"{self.endian}h", val))
+        self._buffer.extend(schema.pack(f"{self.endian}h", val))
         return self
 
     def u32(self, val: int) -> "RecordBuilder":
-        self._buffer.extend(struct.pack(f"{self.endian}I", val & 0xFFFFFFFF))
+        self._buffer.extend(schema.pack(f"{self.endian}I", val & 0xFFFFFFFF))
         return self
 
     def i32(self, val: int) -> "RecordBuilder":
-        self._buffer.extend(struct.pack(f"{self.endian}i", val))
+        self._buffer.extend(schema.pack(f"{self.endian}i", val))
         return self
 
     def u64(self, val: int) -> "RecordBuilder":
-        self._buffer.extend(struct.pack(f"{self.endian}Q", val & 0xFFFFFFFFFFFFFFFF))
+        self._buffer.extend(schema.pack(f"{self.endian}Q", val & 0xFFFFFFFFFFFFFFFF))
         return self
 
     def f32(self, val: float) -> "RecordBuilder":
-        self._buffer.extend(struct.pack(f"{self.endian}f", val))
+        self._buffer.extend(schema.pack(f"{self.endian}f", val))
         return self
 
     def fixed_str(

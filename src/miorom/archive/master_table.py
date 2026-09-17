@@ -6,9 +6,10 @@ Tracks record entry counts, preserves pristine snapshots, provides entry bounds 
 and performs cascading downstream offset updates upon record resizing.
 """
 
+from typing import Any, List, Optional, Tuple, Union
+
+from miorom.core import schema
 from miorom.errors import ParseError
-import struct
-from typing import List, Tuple, Optional, Union, Dict, Any
 
 
 class MasterTableArchive:
@@ -29,7 +30,7 @@ class MasterTableArchive:
         self.table_entries = table_entries
         self.record_format = record_format
         self.table_offset = table_offset
-        self.record_size = struct.calcsize(record_format) if stride is None else stride
+        self.record_size = schema.calcsize(record_format) if stride is None else stride
         self.total_table_size = self.table_entries * self.record_size
 
         if len(self.data) < self.table_offset + self.total_table_size:
@@ -46,14 +47,14 @@ class MasterTableArchive:
         table = []
         for i in range(self.table_entries):
             off = self.table_offset + (i * self.record_size)
-            fields = list(struct.unpack_from(self.record_format, buf, off))
+            fields = list(schema.unpack_from(self.record_format, buf, off))
             table.append(fields)
         return table
 
     def serialize_table(self) -> bytes:
         out = bytearray()
         for fields in self.table:
-            out += struct.pack(self.record_format, *fields)
+            out += schema.pack(self.record_format, *fields)
         return bytes(out)
 
     @classmethod

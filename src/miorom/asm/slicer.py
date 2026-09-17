@@ -1,9 +1,9 @@
-from miorom.result import MioRomResult
-import struct
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
 
 from miorom.asm.disasm import DisasmInstruction, UniversalDisassembler
+from miorom.core import schema
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -63,7 +63,6 @@ class DataFlowSlicer:
         for idx, ins in enumerate(instructions):
             # Check for indirect jump
             is_indirect = False
-            target_reg = None
 
             # PowerPC bctr / bcctr
             if arch.lower() in ("ppc", "powerpc", "wii", "gc"):
@@ -74,15 +73,12 @@ class DataFlowSlicer:
                 if ins.mnemonic in ("bx", "mov") and ins.operands:
                     if ins.mnemonic == "bx" and ins.operands[0] != "lr":
                         is_indirect = True
-                        target_reg = ins.operands[0]
                     elif ins.mnemonic == "mov" and ins.operands[0] == "pc":
                         is_indirect = True
-                        target_reg = ins.operands[1]
             # MIPS jr $rs (except jr $ra)
             elif "mips" in arch.lower() or arch.lower() in ("psx", "n64", "psp"):
                 if ins.mnemonic == "jr" and ins.operands and ins.operands[0] not in ("$ra", "$31"):
                     is_indirect = True
-                    target_reg = ins.operands[0]
 
             if not is_indirect:
                 continue
@@ -201,7 +197,7 @@ class DataFlowSlicer:
             for i in range(entry_count):
                 off = table_off + i * stride
                 if off + stride <= len(data):
-                    target = struct.unpack(f"{end}I", data[off : off + stride])[0]
+                    target = schema.unpack(f"{end}I", data[off : off + stride])[0]
                     case_targets.append(target)
 
         return JumpTable(

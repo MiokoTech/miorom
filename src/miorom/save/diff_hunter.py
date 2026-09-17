@@ -6,10 +6,11 @@ Compares sequential emulator save-states / memory dumps to isolate dynamic game 
 variables, and traces multi-level pointer chains through RAM back to static base anchors.
 """
 
-from miorom.result import MioRomResult
-import struct
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Tuple
+
+from miorom.core import schema
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -102,7 +103,7 @@ class SaveStateDiffHunter:
         matches: List[DiffMatch] = []
 
         for offset in range(0, min_len - stride + 1, stride):
-            vals = [struct.unpack_from(fmt, s.data, offset)[0] for s in snapshots]
+            vals = [schema.unpack_from(fmt, s.data, offset)[0] for s in snapshots]
 
             is_match = False
             if condition == "changed":
@@ -149,7 +150,7 @@ class SaveStateDiffHunter:
             # returns list of (pointer_ram_addr, offset_delta)
             results = []
             for off in range(0, n - 4, 4):
-                val = struct.unpack_from(f"{endian}I", data, off)[0]
+                val = schema.unpack_from(f"{endian}I", data, off)[0]
                 # Check if val points near target
                 delta = target - val
                 if 0 <= delta <= max_offset:

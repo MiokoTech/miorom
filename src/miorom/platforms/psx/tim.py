@@ -1,6 +1,7 @@
+from typing import Any, List, Optional, Union
+
+from miorom.core.schema import U16, U32, BinaryStruct
 from miorom.errors import ParseError
-from miorom.core.schema import BinaryStruct, U16, U32
-from typing import List, Optional, Tuple, Union
 from miorom.graphics.palette import Color, Palette
 
 try:
@@ -171,7 +172,7 @@ class TIMImage:
     @classmethod
     def from_image(
         cls,
-        image_or_path: Union[str, "Image.Image"],
+        image_or_path: Union[str, Any],
         bpp: int = 4,
         target_palette: Optional[Palette] = None,
         img_dx: int = 0,
@@ -180,18 +181,38 @@ class TIMImage:
         clut_dy: int = 0,
     ) -> "TIMImage":
         """
-        Creates a TIMImage from a PIL Image or image file path.
-        Supports bpp=4, 8, and 16.
+        Creates a TIMImage from a PIL Image, PNGImage, or image file path.
+        Supports bpp=4, 8, and 16. Works zero-dependency (without Pillow).
         """
-        if not HAS_PIL:
-            raise ImportError("Pillow is required for TIMImage.from_image().")
-
         if isinstance(image_or_path, str):
-            img = Image.open(image_or_path)
+            if HAS_PIL:
+                img = Image.open(image_or_path).convert("RGBA")
+            else:
+                from miorom.graphics.png_codec import PNGCodec
+                raw = open(image_or_path, "rb").read()
+                _w, _h, rgba = PNGCodec.png_to_rgba(raw)
+                class _FakeImg:
+                    size = (_w, _h)
+                    def convert(self, mode): return self
+                    def getpixel(self, xy): return tuple(rgba[(xy[1]*_w+xy[0])*4:(xy[1]*_w+xy[0])*4+4])
+                img = _FakeImg()
+        elif HAS_PIL and isinstance(image_or_path, Image.Image):
+            img = image_or_path.convert("RGBA")
         else:
-            img = image_or_path
+            from miorom.graphics.png_codec import PNGImage
+            if isinstance(image_or_path, PNGImage):
+                _w, _h = image_or_path.width, image_or_path.height
+                rgba = image_or_path.to_rgba_bytes()
+                class _FakeImg2:
+                    size = (_w, _h)
+                    def convert(self, mode): return self
+                    def getpixel(self, xy): return tuple(rgba[(xy[1]*_w+xy[0])*4:(xy[1]*_w+xy[0])*4+4])
+                img = _FakeImg2()
+            elif hasattr(image_or_path, "convert"):
+                img = image_or_path.convert("RGBA")
+            else:
+                raise TypeError(f"Expected file path, PIL Image, or PNGImage, got {type(image_or_path)}")
 
-        img = img.convert("RGBA")
         width, height = img.size
 
         if bpp not in (4, 8, 16):
@@ -306,15 +327,12 @@ class TIMImage:
 
         return tim
 
-    def to_image(self, palette_index: int = 0) -> "Image.Image":
+    def to_image(self, palette_index: int = 0) -> Any:
         """
-        Renders the TIM image to a PIL RGBA Image.
+        Renders the TIM image to an RGBA image.
+        Returns a PIL Image when Pillow is installed, or a PNGImage (zero-dependency fallback).
         """
-        if not HAS_PIL:
-            raise ImportError("Pillow is required for TIMImage.to_image().")
-
-        img = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        pixels = img.load()
+        raw_rgba = bytearray(self.width * self.height * 4)
 
         if self.bpp == 4:
             pal = (
@@ -330,11 +348,13 @@ class TIMImage:
                     if b_off < len(self.pixel_data):
                         b = self.pixel_data[b_off]
                         idx = (b & 0x0F) if (x % 2 == 0) else ((b >> 4) & 0x0F)
+                        offset = (y * self.width + x) * 4
                         if pal and idx < len(pal):
                             c = pal[idx]
-                            pixels[x, y] = (c.r, c.g, c.b, c.a)
+                            raw_rgba[offset : offset + 4] = bytes([c.r, c.g, c.b, c.a])
                         else:
-                            pixels[x, y] = (idx * 17, idx * 17, idx * 17, 255)
+                            val = idx * 17
+                            raw_rgba[offset : offset + 4] = bytes([val, val, val, 255])
 
         elif self.bpp == 8:
             pal = (
@@ -349,11 +369,12 @@ class TIMImage:
                     b_off = row_start + x
                     if b_off < len(self.pixel_data):
                         idx = self.pixel_data[b_off]
+                        offset = (y * self.width + x) * 4
                         if pal and idx < len(pal):
                             c = pal[idx]
-                            pixels[x, y] = (c.r, c.g, c.b, c.a)
+                            raw_rgba[offset : offset + 4] = bytes([c.r, c.g, c.b, c.a])
                         else:
-                            pixels[x, y] = (idx, idx, idx, 255)
+                            raw_rgba[offset : offset + 4] = bytes([idx, idx, idx, 255])
 
         elif self.bpp == 16:
             stride = self.img_w_words * 2
@@ -363,10 +384,34 @@ class TIMImage:
                     b_off = row_start + x * 2
                     if b_off + 2 <= len(self.pixel_data):
                         val = TIMColorStruct.from_bytes(self.pixel_data, offset=b_off).value
+                        offset = (y * self.width + x) * 4
                         if val == 0:
-                            pixels[x, y] = (0, 0, 0, 0)
+                            raw_rgba[offset : offset + 4] = b"\x00\x00\x00\x00"
                         else:
                             c = Color.from_bgr555(val & 0x7FFF)
-                            pixels[x, y] = (c.r, c.g, c.b, 255)
+                            raw_rgba[offset : offset + 4] = bytes([c.r, c.g, c.b, 255])
 
-        return img
+        if HAS_PIL:
+            return Image.frombytes("RGBA", (self.width, self.height), bytes(raw_rgba))
+        from miorom.graphics.png_codec import PNGColorType, PNGImage
+        return PNGImage(
+            width=self.width,
+            height=self.height,
+            color_type=PNGColorType.RGBA,
+            bit_depth=8,
+            pixels=bytes(raw_rgba),
+        )
+
+    def to_png(self, output_path: str, palette_index: int = 0) -> str:
+        """
+        Renders the TIM image to a PNG file. Zero-dependency (works without Pillow).
+        """
+        from miorom.graphics.png_codec import PNGCodec
+        img = self.to_image(palette_index=palette_index)
+        if hasattr(img, "save"):
+            img.save(output_path, format="PNG")
+        else:
+            png_bytes = PNGCodec.encode_rgba(img.width, img.height, img.to_rgba_bytes())
+            with open(output_path, "wb") as f:
+                f.write(png_bytes)
+        return output_path

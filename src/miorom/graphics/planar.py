@@ -1,4 +1,6 @@
-from typing import List, Sequence, Tuple
+from collections.abc import Sequence
+from typing import List
+
 from miorom.errors import ParseError
 
 
@@ -131,7 +133,7 @@ class PlanarTileCodec:
                 pixels[i * 2] = b & 0x0F
                 pixels[i * 2 + 1] = (b >> 4) & 0x0F
 
-        elif fmt in ("snes_8bpp", "mode7"):
+        elif fmt == "snes_8bpp":
             for y in range(8):
                 p0 = data[y * 2]
                 p1 = data[y * 2 + 1]
@@ -154,7 +156,7 @@ class PlanarTileCodec:
                         | (((p7 >> bit) & 1) << 7)
                     )
 
-        elif fmt in ("gba_8bpp", "linear_8bpp"):
+        elif fmt in ("gba_8bpp", "linear_8bpp", "mode7"):
             pixels = list(data[:64])
 
         return pixels
@@ -248,7 +250,7 @@ class PlanarTileCodec:
                 p1 = pixels[i * 2 + 1] & 0x0F
                 out.append((p1 << 4) | p0)
 
-        elif fmt in ("snes_8bpp", "mode7"):
+        elif fmt == "snes_8bpp":
             p01 = bytearray()
             p23 = bytearray()
             p45 = bytearray()
@@ -270,7 +272,7 @@ class PlanarTileCodec:
             out.extend(p45)
             out.extend(p67)
 
-        elif fmt in ("gba_8bpp", "linear_8bpp"):
+        elif fmt in ("gba_8bpp", "linear_8bpp", "mode7"):
             out.extend([p & 0xFF for p in pixels])
 
         return bytes(out)

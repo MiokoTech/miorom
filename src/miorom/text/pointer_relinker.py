@@ -155,18 +155,34 @@ class PointerRelinker:
         size_needed: int,
         fill_byte: int = 0xFF,
         search_start: int = 0,
+        exclude_ranges: Optional[List[Tuple[int, int]]] = None,
     ) -> Optional[int]:
         """
         Scan rom for a contiguous run of fill_byte >= size_needed bytes.
 
         Returns the starting offset of the first qualifying run, or None if
-        no such run exists from search_start onward.
+        no such run exists from search_start onward. If exclude_ranges is
+        provided, any range overlapping an excluded region is avoided.
         """
         if size_needed <= 0:
             return search_start
         run_start = -1
         run_len = 0
-        for i in range(search_start, len(rom)):
+        i = search_start
+        rom_len = len(rom)
+        while i < rom_len:
+            if exclude_ranges:
+                in_ex = False
+                for ex_start, ex_end in exclude_ranges:
+                    if ex_start <= i < ex_end:
+                        i = ex_end
+                        run_start = -1
+                        run_len = 0
+                        in_ex = True
+                        break
+                if in_ex:
+                    continue
+
             if rom[i] == fill_byte:
                 if run_len == 0:
                     run_start = i
@@ -176,6 +192,7 @@ class PointerRelinker:
             else:
                 run_len = 0
                 run_start = -1
+            i += 1
         return None
 
     def _measure_slot(
@@ -183,16 +200,18 @@ class PointerRelinker:
         rom: Union[bytes, bytearray],
         target_offset: int,
         fill_byte: int,
+        max_bound: Optional[int] = None,
     ) -> int:
         """
         Estimate the original slot size by scanning forward from target_offset
-        until a fill_byte is found or another non-data byte terminates the slot.
+        until a fill_byte or non-data delimiter terminates the slot, bounded by max_bound.
 
-        In practice we scan until we hit a contiguous fill_byte run of >= 1 byte,
-        treating that first fill byte as the slot boundary.
+        In practice we scan until we hit a fill_byte, 0x00 (when fill_byte != 0),
+        or max_bound (e.g. next pointer target or ROM end).
         """
+        limit = len(rom) if max_bound is None else min(len(rom), max_bound)
         pos = target_offset
-        while pos < len(rom) and rom[pos] != fill_byte:
+        while pos < limit and rom[pos] != fill_byte and (fill_byte == 0 or rom[pos] != 0):
             pos += 1
         return pos - target_offset
 
@@ -221,9 +240,22 @@ class PointerRelinker:
         pointer_updates: List[Tuple[int, int, int]] = []
         free_space_used: List[Tuple[int, int]] = []
 
+        all_targets = sorted({rec.target_offset for rec in pointers})
+        protected_pointer_ranges = [
+            (rec.pointer_offset, rec.pointer_offset + self.pointer_size)
+            for rec in pointers
+        ]
+        allocated_regions: List[Tuple[int, int]] = []
+
         for record, new_str in zip(pointers, new_strings):
             old_target = record.target_offset
-            slot_size = self._measure_slot(buf, old_target, fill_byte)
+            future_bounds = (
+                [t for t in all_targets if t > old_target]
+                + [p_start for p_start, _ in protected_pointer_ranges if p_start > old_target]
+                + [a_start for a_start, _ in allocated_regions if a_start > old_target]
+            )
+            max_bound = min(future_bounds) if future_bounds else len(buf)
+            slot_size = self._measure_slot(buf, old_target, fill_byte, max_bound=max_bound)
             new_len = len(new_str)
 
             if new_len <= slot_size:
@@ -235,7 +267,10 @@ class PointerRelinker:
                 new_target = old_target
                 entries_relinked += 1
             else:
-                dest = self.find_free_space(buf, new_len, fill_byte)
+                exclude_ranges = protected_pointer_ranges + allocated_regions + [
+                    (rec.target_offset, rec.target_offset + 1) for rec in pointers
+                ]
+                dest = self.find_free_space(buf, new_len, fill_byte, exclude_ranges=exclude_ranges)
                 if dest is None:
                     raise RuntimeError(
                         f"No free space of {new_len} bytes found for pointer at "
@@ -244,6 +279,7 @@ class PointerRelinker:
                 buf[dest:dest + new_len] = new_str
                 new_target = dest
                 free_space_used.append((dest, new_len))
+                allocated_regions.append((dest, dest + new_len))
                 entries_relocated += 1
 
             new_ptr_val = self._to_pointer_value(new_target, record.pointer_type, record.bank)
@@ -258,3 +294,4 @@ class PointerRelinker:
             pointer_updates=pointer_updates,
             free_space_used=free_space_used,
         )
+

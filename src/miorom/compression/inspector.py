@@ -6,10 +6,11 @@ Inspects and patches uncompressed size headers (Nintendo LZ10/LZ11/RLE, Yaz0)
 and evaluates payload size deltas to predict RAM buffer safety.
 """
 
-from miorom.result import MioRomResult
 from dataclasses import dataclass
-import struct
-from typing import Dict, Optional, Tuple
+from typing import Optional
+
+from miorom.core import schema
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -39,14 +40,14 @@ class CompressionHeaderInspector:
 
         # Yaz0 check
         if data[:4] == b"Yaz0" and len(data) >= 8:
-            return struct.unpack_from(">I", data, 4)[0]
+            return schema.unpack_from(">I", data, 4)[0]
 
         # Nintendo LZ10 (0x10), LZ11 (0x11), RLE (0x30)
         if magic in (0x10, 0x11, 0x30):
             size_24 = data[1] | (data[2] << 8) | (data[3] << 16)
             if size_24 == 0 and magic == 0x11 and len(data) >= 8:
                 # LZ11 extended 32-bit length
-                return struct.unpack_from("<I", data, 4)[0]
+                return schema.unpack_from("<I", data, 4)[0]
             return size_24
 
         return None
@@ -66,7 +67,7 @@ class CompressionHeaderInspector:
 
         # Yaz0
         if data[:4] == b"Yaz0" and len(data) >= 8:
-            struct.pack_into(">I", data, 4, new_size)
+            schema.pack_into(">I", data, 4, new_size)
             return True
 
         magic = data[0]
@@ -80,7 +81,7 @@ class CompressionHeaderInspector:
             elif magic == 0x11 and len(data) >= 8:
                 # Extended LZ11: zero out 24-bit field and write 32-bit at offset 4
                 data[1] = data[2] = data[3] = 0
-                struct.pack_into("<I", data, 4, new_size)
+                schema.pack_into("<I", data, 4, new_size)
                 return True
 
         return False

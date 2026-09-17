@@ -7,12 +7,11 @@ across byte boundaries for save files, RPG stats, event flags, and hardware bitm
 """
 
 import math
-from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-from miorom.core.bits import sign_extend
 from miorom.core.bitstream import BitReader, BitWriter
-from miorom.result import MioRomResult
 
 
 @dataclass

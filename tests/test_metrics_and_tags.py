@@ -63,6 +63,16 @@ def test_tag_syntax_validator():
     assert not rep_bad.is_valid
     assert len(rep_bad.syntax_errors) > 0
 
+    # Reversed brackets (equal open/close counts but invalid ordering)
+    rep_reversed = TagSyntaxValidator.validate("Halo ]NAME[, ambil hadiah!")
+    assert not rep_reversed.is_valid
+    assert any("Unmatched closing bracket" in e for e in rep_reversed.syntax_errors)
+
+    # Nested brackets
+    rep_nested = TagSyntaxValidator.validate("Halo [[NAME]], ambil hadiah!")
+    assert not rep_nested.is_valid
+    assert any("Nested opening bracket" in e for e in rep_nested.syntax_errors)
+
     # Pair validation: missing required variable
     orig = "Halo [NAME], terimalah [ITEM:99]."
     trans_missing = "Halo ksatria, terimalah hadiah ini."  # Missing both NAME and ITEM:99

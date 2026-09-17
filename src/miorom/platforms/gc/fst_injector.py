@@ -6,11 +6,11 @@ Enables reading, extracting, and repacking files directly inside disc images
 without relying on external tools (like wit / gcit / Wiimms).
 """
 
-from miorom.result import MioRomResult
-import os
-import struct
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
+
+from miorom.core import schema
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -40,12 +40,12 @@ class FstInjector:
             return nodes
 
         # Root entry
-        num_entries = struct.unpack_from(">I", self.fst_data, 8)[0]
+        num_entries = schema.unpack_from(">I", self.fst_data, 8)[0]
         string_table_start = num_entries * self.ENTRY_SIZE
 
         for i in range(num_entries):
             e_off = i * self.ENTRY_SIZE
-            type_and_name = struct.unpack_from(">I", self.fst_data, e_off)[0]
+            type_and_name = schema.unpack_from(">I", self.fst_data, e_off)[0]
             is_dir = (type_and_name >> 24) != 0
             name_off = type_and_name & 0x00FFFFFF
 
@@ -57,8 +57,8 @@ class FstInjector:
                 if end != -1:
                     name = self.fst_data[p:end].decode("ascii", errors="replace")
 
-            offset = struct.unpack_from(">I", self.fst_data, e_off + 4)[0]
-            size = struct.unpack_from(">I", self.fst_data, e_off + 8)[0]
+            offset = schema.unpack_from(">I", self.fst_data, e_off + 4)[0]
+            size = schema.unpack_from(">I", self.fst_data, e_off + 8)[0]
 
             nodes.append(FstNode(index=i, is_dir=is_dir, name=name, offset=offset, size=size))
 
@@ -80,7 +80,7 @@ class FstInjector:
         node.size = new_size
 
         e_off = index * self.ENTRY_SIZE
-        struct.pack_into(">II", self.fst_data, e_off + 4, new_offset, new_size)
+        schema.pack_into(">II", self.fst_data, e_off + 4, new_offset, new_size)
 
     def to_bytes(self) -> bytes:
         return bytes(self.fst_data)

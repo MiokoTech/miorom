@@ -1,8 +1,9 @@
-from miorom.result import MioRomResult
 import csv
 import os
-from typing import List, Dict, Optional, Any, Union
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Union
+
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -85,12 +86,12 @@ class CsvHandler:
         rows: List[TranslationRow] = []
         dict_result: Dict[int, str] = {}
 
-        with open(filepath, "r", encoding=encoding, newline="") as f:
+        with open(filepath, encoding=encoding, newline="") as f:
             reader = csv.DictReader(f, delimiter=delimiter)
             for idx, item in enumerate(reader):
                 # Flexible header lookup (case-insensitive)
                 lower_map = {k.lower().strip(): v for k, v in item.items() if k}
-                
+
                 # Offset parsing
                 off_val = lower_map.get("offset", "0")
                 if isinstance(off_val, str) and off_val.startswith("0x"):

@@ -4,10 +4,10 @@ miorom.asm.hook_manager
 ARM/Thumb inline hook builder and code cave manager for ROM patching.
 """
 
-import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
+from miorom.core import schema
 from miorom.result import MioRomResult
 
 
@@ -110,14 +110,14 @@ class ArmHookBuilder:
         """Encode a 4-byte ARM BL instruction."""
         offset = (to_addr - from_addr - 8) >> 2
         word = 0xEB000000 | (offset & 0xFFFFFF)
-        return struct.pack("<I", word)
+        return schema.pack("<I", word)
 
     @staticmethod
     def build_arm_b(from_addr: int, to_addr: int) -> bytes:
         """Encode a 4-byte ARM B instruction."""
         offset = (to_addr - from_addr - 8) >> 2
         word = 0xEA000000 | (offset & 0xFFFFFF)
-        return struct.pack("<I", word)
+        return schema.pack("<I", word)
 
     @staticmethod
     def build_thumb_bl(from_addr: int, to_addr: int) -> bytes:
@@ -125,7 +125,7 @@ class ArmHookBuilder:
         offset = to_addr - (from_addr + 4)
         hw1 = 0xF000 | ((offset >> 12) & 0x7FF)
         hw2 = 0xF800 | ((offset >> 1) & 0x7FF)
-        return struct.pack("<HH", hw1, hw2)
+        return schema.pack("<HH", hw1, hw2)
 
     @staticmethod
     def build_thumb_b(from_addr: int, to_addr: int) -> bytes:
@@ -133,7 +133,7 @@ class ArmHookBuilder:
         offset = to_addr - (from_addr + 4)
         imm11 = (offset >> 1) & 0x7FF
         hw = 0xE000 | imm11
-        return struct.pack("<H", hw)
+        return schema.pack("<H", hw)
 
     @staticmethod
     def build_arm_trampoline_return(displaced: bytes, return_addr: int) -> bytes:
@@ -142,7 +142,7 @@ class ArmHookBuilder:
         epilogue_pc = return_addr - displaced_len - 4
         branch_offset = (return_addr - (epilogue_pc + displaced_len + 8)) >> 2
         b_word = 0xEA000000 | (branch_offset & 0xFFFFFF)
-        return displaced + struct.pack("<I", b_word)
+        return displaced + schema.pack("<I", b_word)
 
 
 class HookManager:

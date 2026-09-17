@@ -11,13 +11,12 @@ from __future__ import annotations
 
 import json
 import re
-import struct
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Union
 
-from miorom.result import MioRomResult
+from miorom.core import schema
 from miorom.errors import ParseError
-
+from miorom.result import MioRomResult
 
 TYPE_SPECS = {
     # 1 byte
@@ -86,7 +85,7 @@ TYPE_SPECS = {
 
 @dataclass
 class CField(MioRomResult):
-    """Metadata describing a single member field inside a C struct."""
+    """Metadata describing a single member field inside a C schema."""
     name: str
     type_name: str
     offset: int
@@ -95,7 +94,7 @@ class CField(MioRomResult):
     is_array: bool = False
     array_length: int = 1
     is_string: bool = False
-    nested_overlay: Optional["CStructOverlay"] = None
+    nested_overlay: Optional[CStructOverlay] = None
 
     def __repr__(self) -> str:
         arr_str = f"[{self.array_length}]" if self.is_array else ""
@@ -104,11 +103,11 @@ class CField(MioRomResult):
 
 class CStructInstance:
     """
-    Dynamic record instance mapped over a binary struct.
+    Dynamic record instance mapped over a binary schema.
     Provides attribute access (instance.hp) and dict access (instance['hp']).
     """
 
-    def __init__(self, overlay: "CStructOverlay", values: Optional[Dict[str, Any]] = None):
+    def __init__(self, overlay: CStructOverlay, values: Optional[Dict[str, Any]] = None):
         super().__setattr__("_overlay", overlay)
         super().__setattr__("_values", dict(values) if values else {})
 
@@ -195,8 +194,8 @@ class CStructOverlay(MioRomResult):
         c_source: str,
         endian: str = "<",
         pack_alignment: int = 1,
-        known_structs: Optional[Dict[str, "CStructOverlay"]] = None,
-    ) -> "CStructOverlay":
+        known_structs: Optional[Dict[str, CStructOverlay]] = None,
+    ) -> CStructOverlay:
         """
         Parses ANSI C / C99 struct source string.
         Examples:
@@ -334,11 +333,11 @@ class CStructOverlay(MioRomResult):
                 fmt = f"{self.endian}{fld.format_char}"
                 arr = []
                 for idx in range(fld.array_length):
-                    arr.append(struct.unpack_from(fmt, buffer, field_off + idx * elem_sz)[0])
+                    arr.append(schema.unpack_from(fmt, buffer, field_off + idx * elem_sz)[0])
                 values[fld.name] = arr
             else:
                 fmt = f"{self.endian}{fld.format_char}"
-                values[fld.name] = struct.unpack_from(fmt, buffer, field_off)[0]
+                values[fld.name] = schema.unpack_from(fmt, buffer, field_off)[0]
 
         return CStructInstance(self, values)
 
@@ -402,10 +401,10 @@ class CStructOverlay(MioRomResult):
                 elem_sz = fld.size // fld.array_length
                 fmt = f"{self.endian}{fld.format_char}"
                 for idx, elem in enumerate(v[: fld.array_length]):
-                    struct.pack_into(fmt, out, field_off + idx * elem_sz, elem)
+                    schema.pack_into(fmt, out, field_off + idx * elem_sz, elem)
 
             else:
                 fmt = f"{self.endian}{fld.format_char}"
-                struct.pack_into(fmt, out, field_off, v)
+                schema.pack_into(fmt, out, field_off, v)
 
         return bytes(out)

@@ -1,164 +1,163 @@
+from miorom.core.bank_expander import AllocatedItem, FarPointerRelocator, RomExpander
 from miorom.core.binary import BinaryReader, BinaryWriter
-from miorom.core.bitstream import BitReader, BitWriter
+from miorom.core.bitfield import BitField, BitFieldCodec, BitFieldSchema
 from miorom.core.bits import (
-    rol,
-    ror,
     bit_reverse,
     bit_reverse8,
     bit_reverse16,
     bit_reverse32,
-    swap_nibbles,
-    pack_nibbles,
-    unpack_nibbles,
-    sign_extend,
-    popcount,
-    clz,
-    ctz,
     bswap16,
     bswap32,
     bswap64,
+    clz,
+    ctz,
+    pack_nibbles,
+    popcount,
+    rol,
+    ror,
+    sign_extend,
+    swap_nibbles,
+    unpack_nibbles,
 )
+from miorom.core.bitstream import BitReader, BitWriter
+from miorom.core.buffer import RelocatableBuffer
+from miorom.core.bus_mapper import GameBoyBusMapper, NESBusMapper, SNESBusMapper
+from miorom.core.checksum import RetroChecksum
+from miorom.core.cipher import (
+    add_cipher,
+    crack_single_byte_xor,
+    invert_bytes,
+    rolling_xor,
+    xor_bytes,
+)
+from miorom.core.cstruct import CField, CStructInstance, CStructOverlay
+from miorom.core.delta import (
+    absolute_to_relative,
+    cumulative_offsets,
+    delta_decode,
+    delta_encode,
+    offsets_to_lengths,
+    relative_to_absolute,
+)
+from miorom.core.entropy import (
+    byte_frequency,
+    calculate_entropy,
+    chi_squared_test,
+    find_entropy_regions,
+    sliding_entropy_scan,
+)
+from miorom.core.far_pointer import (
+    BankedPointer,
+    InterleavedPointerTable,
+    SplitPointerTable,
+    read_interleaved_pointer_table,
+    read_split_pointer_table,
+    relocate_banked_table,
+    resolve_banked_to_offset,
+    resolve_offset_to_banked,
+    write_interleaved_pointer_table,
+    write_split_pointer_table,
+)
+from miorom.core.heap_builder import HeapBuildResult, StringHeapBuilder
+from miorom.core.hex_diff import HexDiffHighlighter
 from miorom.core.huffman_tree import (
+    CanonicalHuffmanTable,
     HuffmanNode,
     build_huffman_tree,
     extract_code_lengths,
     generate_canonical_codes,
-    CanonicalHuffmanTable,
 )
-from miorom.core.bus_mapper import SNESBusMapper, NESBusMapper, GameBoyBusMapper
-from miorom.core.checksum import RetroChecksum
-from miorom.core.slicer import (
-    align_up,
-    align_down,
-    pad_bytes,
-    chunk_bytes,
-    find_free_blocks,
-    BinarySlicer,
-)
-from miorom.core.ring_buffer import RingBuffer, LzssMatchFinder
-from miorom.core.entropy import (
-    calculate_entropy,
-    byte_frequency,
-    sliding_entropy_scan,
-    chi_squared_test,
-    find_entropy_regions,
-)
-from miorom.core.cipher import (
-    xor_bytes,
-    rolling_xor,
-    invert_bytes,
-    add_cipher,
-    crack_single_byte_xor,
-)
+from miorom.core.integrity import IntegrityReport, RomIntegrityManager
 from miorom.core.interleave import (
     combine_split_words,
-    split_words,
     deinterleave_channels,
     interleave_channels,
+    split_words,
 )
-from miorom.core.delta import (
-    cumulative_offsets,
-    offsets_to_lengths,
-    delta_decode,
-    delta_encode,
-    relative_to_absolute,
-    absolute_to_relative,
+from miorom.core.mapper import ByteOffsetMapper
+from miorom.core.memory import MemoryMap, MemoryRegion
+from miorom.core.multilevel_pointer import MultiLevelPointerTable, TableLevel
+from miorom.core.overlay_mapper import (
+    DMACopyRecord,
+    MemoryOverlayMapper,
+    OverlayRegion,
 )
+from miorom.core.pointer import PointerEntry, PointerTable, SegmentedAddressResolver, SegmentTable
 from miorom.core.pointer_analyzer import (
     PointerSequenceMetrics,
     PointerTableCandidate,
-    unpack_pointer,
-    pack_pointer,
-    unpack_pointers,
-    pack_pointers,
-    verify_stride_monotonicity,
-    calculate_monotonicity_ratio,
     analyze_pointer_sequence,
-    remap_pointers,
+    calculate_monotonicity_ratio,
     find_pointer_tables,
+    pack_pointer,
+    pack_pointers,
+    remap_pointers,
+    unpack_pointer,
+    unpack_pointers,
+    verify_stride_monotonicity,
 )
-from miorom.core.far_pointer import (
-    BankedPointer,
-    SplitPointerTable,
-    InterleavedPointerTable,
-    resolve_banked_to_offset,
-    resolve_offset_to_banked,
-    read_split_pointer_table,
-    write_split_pointer_table,
-    read_interleaved_pointer_table,
-    write_interleaved_pointer_table,
-    relocate_banked_table,
-)
-from miorom.core.pointer import PointerTable, PointerEntry, SegmentTable, SegmentedAddressResolver
+from miorom.core.record_builder import RecordBuilder
+from miorom.core.ring_buffer import LzssMatchFinder, RingBuffer
 from miorom.core.scanner import (
-    FoundString,
-    TextBlock,
     CandidatePointerTable,
-    StringScanner,
+    FoundString,
     PointerScanner,
+    StringScanner,
+    TextBlock,
 )
-from miorom.core.mapper import ByteOffsetMapper
-from miorom.core.buffer import RelocatableBuffer
-from miorom.core.memory import MemoryMap, MemoryRegion
-from miorom.core.signatures import SignaturePattern, SignatureScanner
-from miorom.core.bank_expander import RomExpander, FarPointerRelocator, AllocatedItem
 from miorom.core.schema import (
-    BinaryStruct,
-    SchemaField,
-    U8,
     I8,
-    U16,
     I16,
-    U32,
     I32,
+    U8,
+    U16,
+    U32,
     U64,
-    Float32,
-    FixedString,
-    RawBytes,
+    Alignment,
     Array,
-    EnumField,
+    BinaryStruct,
     Bitfield,
     BitfieldView,
+    ChecksumField,
+    Computed,
+    EnumField,
+    FixedString,
+    Float32,
     If,
     Padding,
-    Alignment,
-    Computed,
     PascalString,
+    RawBytes,
+    SchemaField,
     SentinelArray,
-    ChecksumField,
 )
-
-from miorom.core.multilevel_pointer import MultiLevelPointerTable, TableLevel
-from miorom.core.integrity import IntegrityReport, RomIntegrityManager
+from miorom.core.signatures import SignaturePattern, SignatureScanner
+from miorom.core.slicer import (
+    BinarySlicer,
+    align_down,
+    align_up,
+    chunk_bytes,
+    find_free_blocks,
+    pad_bytes,
+)
+from miorom.core.string_carver import CarvedString, StringPoolCarver
 from miorom.core.struct_profiler import (
-    StructProfiler,
-    StructProfile,
     FieldProfile,
     FieldType,
     StrideCandidate,
+    StructProfile,
+    StructProfiler,
 )
-from miorom.core.overlay_mapper import (
-    MemoryOverlayMapper,
-    OverlayRegion,
-    DMACopyRecord,
-)
-from miorom.core.heap_builder import StringHeapBuilder, HeapBuildResult
+from miorom.core.symbol_map import SymbolEntry, SymbolMap
+from miorom.core.vfs import NestedArchiveVFS
 from miorom.core.vlq import (
     VariableLengthIntCodec,
-    encode_vlq,
-    decode_vlq,
-    encode_uleb128,
-    decode_uleb128,
-    encode_sleb128,
     decode_sleb128,
+    decode_uleb128,
+    decode_vlq,
+    encode_sleb128,
+    encode_uleb128,
+    encode_vlq,
 )
-from miorom.core.string_carver import StringPoolCarver, CarvedString
-from miorom.core.record_builder import RecordBuilder
-from miorom.core.symbol_map import SymbolMap, SymbolEntry
-from miorom.core.hex_diff import HexDiffHighlighter
-from miorom.core.cstruct import CStructOverlay, CStructInstance, CField
-from miorom.core.bitfield import BitField, BitFieldSchema, BitFieldCodec
-from miorom.core.vfs import NestedArchiveVFS
 
 __all__ = [
     "BinaryReader",

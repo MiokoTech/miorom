@@ -1,6 +1,7 @@
+
+from miorom.core.schema import U32, BinaryStruct, FixedString, RawBytes
 from miorom.errors import ParseError
-from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U32
-from typing import Optional
+
 
 class PSXExeHeaderStruct(BinaryStruct):
     _endian = "<"
@@ -43,6 +44,46 @@ class PSXExe:
     def from_file(cls, path: str) -> "PSXExe":
         with open(path, "rb") as f:
             return cls(f.read())
+
+    @property
+    def pc(self) -> int:
+        return self.initial_pc
+
+    @pc.setter
+    def pc(self, val: int) -> None:
+        self.initial_pc = val
+
+    @property
+    def gp(self) -> int:
+        return self.initial_gp
+
+    @gp.setter
+    def gp(self, val: int) -> None:
+        self.initial_gp = val
+
+    @property
+    def t_addr(self) -> int:
+        return self.text_ram_address
+
+    @t_addr.setter
+    def t_addr(self, val: int) -> None:
+        self.text_ram_address = val
+
+    @property
+    def t_size(self) -> int:
+        return len(self.text_data)
+
+    @t_size.setter
+    def t_size(self, val: int) -> None:
+        self.text_size = val
+
+    @property
+    def sp_base(self) -> int:
+        return self.initial_sp
+
+    @sp_base.setter
+    def sp_base(self, val: int) -> None:
+        self.initial_sp = val
 
     def to_bytes(self) -> bytes:
         self._header.magic = self.MAGIC

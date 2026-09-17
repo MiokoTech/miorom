@@ -8,7 +8,8 @@ and overflow diagnostics for game localization.
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Pattern, Tuple, Union
+from re import Pattern
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from miorom.result import MioRomResult
 

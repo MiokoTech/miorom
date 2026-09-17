@@ -7,13 +7,12 @@ Extracts case bounds, target addresses, default fallbacks, and tags code/data bo
 to prevent disassemblers from corrupting jump table data.
 """
 
-import struct
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
+from typing import Any, Dict, List, Optional, Union
 
-from miorom.asm.disasm import UniversalDisassembler, DisasmInstruction
-from miorom.asm.disambiguator import CodeDataDisambiguator, ByteClassification
-from miorom.asm.slicer import JumpTable, DataFlowSlicer
+from miorom.asm.disambiguator import ByteClassification, CodeDataDisambiguator
+from miorom.asm.slicer import DataFlowSlicer, JumpTable
+from miorom.core import schema
 
 
 class JumpTableDetector:
@@ -40,7 +39,7 @@ class JumpTableDetector:
 
         num_words = len(data) // 4
         for i in range(num_words):
-            word = struct.unpack_from(f"{endian}I", data, i * 4)[0]
+            word = schema.unpack_from(f"{endian}I", data, i * 4)[0]
             addr = base_address + i * 4
 
             is_add_pc_lsl2 = (word & 0xFFFFFFF0) == 0xE08FF100
@@ -57,7 +56,7 @@ class JumpTableDetector:
 
                 lookback_start = max(0, i - 12)
                 for k in range(i - 1, lookback_start - 1, -1):
-                    w_prev = struct.unpack_from(f"{endian}I", data, k * 4)[0]
+                    w_prev = schema.unpack_from(f"{endian}I", data, k * 4)[0]
                     # CMP Rm, #imm8: 0xE35X00YY
                     if (w_prev & 0xFFF0F000) == 0xE3500000:
                         imm8 = w_prev & 0xFF
@@ -80,7 +79,7 @@ class JumpTableDetector:
                     for c in range(case_count):
                         entry_off = table_off + c * stride
                         if entry_off + stride <= len(data):
-                            raw_target = struct.unpack_from(f"{endian}I", data, entry_off)[0]
+                            raw_target = schema.unpack_from(f"{endian}I", data, entry_off)[0]
                             # Check if entry is a B <target> instruction (0xEAxxxxxx)
                             if ((raw_target >> 24) & 0xFF) == 0xEA:
                                 imm24 = raw_target & 0x00FFFFFF

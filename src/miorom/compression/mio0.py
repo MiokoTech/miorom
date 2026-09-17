@@ -18,10 +18,10 @@ MIO0 is an LZ77-variant compression format that multiplexes three separate data 
 
 from __future__ import annotations
 
-import struct
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
-from miorom.core.schema import BinaryStruct, RawBytes, U32
+from miorom.core import schema
+from miorom.core.schema import U32, BinaryStruct, RawBytes
 from miorom.errors import CompressionError
 
 
@@ -92,7 +92,7 @@ def _find_longest_match(
             break
         searches += 1
         dist = pos - found
-        
+
         # Extend match (allowing cyclic overlap where match_len > dist)
         match_len = 3
         while match_len < max_check and data[pos + match_len] == data[found + (match_len % dist)]:
@@ -193,7 +193,7 @@ class MIO0Codec:
         Compresses raw binary data using Nintendo 64 MIO0 format.
         """
         if not data:
-            return cls.MAGIC + struct.pack(">III", 0, 16, 16)
+            return cls.MAGIC + schema.pack(">III", 0, 16, 16)
 
         src_len = len(data)
         bit_flags: List[int] = []
@@ -219,7 +219,7 @@ class MIO0Codec:
             if best_len >= 3:
                 bit_flags.append(0)
                 token = (((best_len - 3) & 0x0F) << 12) | ((best_dist - 1) & 0x0FFF)
-                comp_buf.extend(struct.pack(">H", token))
+                comp_buf.extend(schema.pack(">H", token))
                 pos += best_len
             else:
                 bit_flags.append(1)
@@ -247,7 +247,7 @@ class MIO0Codec:
         pad_len = comp_offset - (header_len + len(bit_buf))
         uncomp_offset = comp_offset + len(comp_buf)
 
-        header = cls.MAGIC + struct.pack(">III", src_len, comp_offset, uncomp_offset)
+        header = cls.MAGIC + schema.pack(">III", src_len, comp_offset, uncomp_offset)
         return header + bytes(bit_buf) + (b"\x00" * pad_len) + bytes(comp_buf) + bytes(uncomp_buf)
 
 

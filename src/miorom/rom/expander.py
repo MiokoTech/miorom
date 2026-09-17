@@ -1,5 +1,4 @@
 """
-from miorom.errors import RelocationError
 miorom.rom.expander
 ~~~~~~~~~~~~~~~~~~~
 Physical ROM Layout Expander & Far Memory Relocator.
@@ -9,13 +8,14 @@ enabling massive space expansions for translated script pools, high-res textures
 and injected C/assembly code payloads.
 """
 
-from miorom.result import MioRomResult
 import math
-from miorom.core.binary import BinaryWriter
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import List, Tuple
 
+from miorom.core.binary import BinaryWriter
+from miorom.errors import RelocationError
 from miorom.platforms.n64 import fix_n64_checksum
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -196,7 +196,7 @@ class RomLayoutExpander:
         rom_data[source_offset : source_offset + source_size] = bytes([pad_byte]) * source_size
 
         new_ram_ptr = target_offset + ram_base
-        fmt = f"{endian}I"
+        _fmt = f"{endian}I"
         updated_ptrs = 0
 
         for ptr_loc in pointer_locations:

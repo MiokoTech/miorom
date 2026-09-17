@@ -9,15 +9,12 @@ region-free unlocking, and GD-ROM GDI multi-track sheet descriptors.
 
 from __future__ import annotations
 
-import io
-import os
-import struct
 from dataclasses import dataclass
-from typing import List, Optional, Union
+from typing import List, Optional
 
+from miorom.core import schema
 from miorom.errors import ParseError
 from miorom.result import MioRomResult
-
 
 SATURN_MAGIC = b"SEGA SEGASATURN "
 DREAMCAST_MAGIC = b"SEGA SEGAKATANA "
@@ -58,7 +55,7 @@ class SaturnDiscHeader(MioRomResult):
         self._raw_tail = raw_header[0x100:512] if raw_header and len(raw_header) >= 512 else (b"\x00" * 256)
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "SaturnDiscHeader":
+    def from_bytes(cls, data: bytes) -> SaturnDiscHeader:
         """Parses Saturn 512-byte disc header."""
         if len(data) < 256:
             raise ParseError("Data too small for Sega Saturn disc header (minimum 256 bytes).")
@@ -86,7 +83,7 @@ class SaturnDiscHeader(MioRomResult):
         )
 
     @classmethod
-    def from_file(cls, path: str) -> "SaturnDiscHeader":
+    def from_file(cls, path: str) -> SaturnDiscHeader:
         with open(path, "rb") as f:
             return cls.from_bytes(f.read(512))
 
@@ -162,7 +159,7 @@ class DreamcastIpBin(MioRomResult):
         self._raw_tail = raw_payload[0x100:0x8000] if raw_payload and len(raw_payload) >= 0x8000 else (b"\x00" * 0x7F00)
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "DreamcastIpBin":
+    def from_bytes(cls, data: bytes) -> DreamcastIpBin:
         """Parses Dreamcast IP.BIN bootstrap sector."""
         if len(data) < 256:
             raise ParseError("Data too small for Dreamcast IP.BIN header (minimum 256 bytes).")
@@ -174,7 +171,7 @@ class DreamcastIpBin(MioRomResult):
         def get_ascii(start: int, length: int) -> str:
             return data[start : start + length].decode("latin-1", errors="replace").strip("\x00 ").strip()
 
-        crc = struct.unpack_from("<H", data, 0x20)[0]
+        crc = schema.unpack_from("<H", data, 0x20)[0]
 
         return cls(
             hardware_id=data[0:16].decode("latin-1", errors="replace"),
@@ -193,7 +190,7 @@ class DreamcastIpBin(MioRomResult):
         )
 
     @classmethod
-    def from_file(cls, path: str) -> "DreamcastIpBin":
+    def from_file(cls, path: str) -> DreamcastIpBin:
         with open(path, "rb") as f:
             return cls.from_bytes(f.read(0x8000))
 
@@ -231,7 +228,7 @@ class DreamcastIpBin(MioRomResult):
 
         buf[0:16] = DREAMCAST_MAGIC
         put_str(0x10, 16, self.maker_id)
-        struct.pack_into("<H", buf, 0x20, self.crc)
+        schema.pack_into("<H", buf, 0x20, self.crc)
         put_str(0x22, 6, self.device_info)
         put_str(0x28, 8, self.area_symbols)
         put_str(0x30, 8, self.peripherals)
@@ -266,14 +263,14 @@ class GDISheet(MioRomResult):
         self.tracks: List[GDITrack] = list(tracks) if tracks else []
 
     @classmethod
-    def from_text(cls, text: str) -> "GDISheet":
+    def from_text(cls, text: str) -> GDISheet:
         """Parses GDI descriptor text."""
         lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip()]
         if not lines:
             raise ParseError("Empty GDI sheet.")
 
         try:
-            total_tracks = int(lines[0])
+            _total_tracks = int(lines[0])
         except ValueError:
             raise ParseError(f"Invalid GDI track count header: {lines[0]!r}")
 
@@ -301,8 +298,8 @@ class GDISheet(MioRomResult):
         return cls(tracks)
 
     @classmethod
-    def from_file(cls, path: str) -> "GDISheet":
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
+    def from_file(cls, path: str) -> GDISheet:
+        with open(path, encoding="utf-8", errors="replace") as f:
             return cls.from_text(f.read())
 
     @property

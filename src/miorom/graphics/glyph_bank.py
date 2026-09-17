@@ -8,9 +8,8 @@ while preserving 100% of original aesthetics (bevels, borders, anti-aliased shad
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import io
-import os
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 try:
@@ -33,10 +32,25 @@ class Glyph:
         if not self.advance_x:
             self.advance_x = self.width
 
-    def to_image(self) -> "Image.Image":
-        if not HAS_PIL:
-            raise ImportError("Pillow is required to convert Glyph to Image.")
-        return Image.frombytes("RGBA", (self.width, self.height), self.rgba)
+    def to_image(self) -> Any:
+        if HAS_PIL:
+            return Image.frombytes("RGBA", (self.width, self.height), self.rgba)
+        from miorom.graphics.png_codec import PNGColorType, PNGImage
+        return PNGImage(
+            width=self.width,
+            height=self.height,
+            color_type=PNGColorType.RGBA,
+            bit_depth=8,
+            pixels=self.rgba,
+        )
+
+    def to_png(self, output_path: str) -> str:
+        """Saves glyph to a PNG file. Zero-dependency (works without Pillow)."""
+        from miorom.graphics.png_codec import PNGCodec
+        png_bytes = PNGCodec.encode_rgba(self.width, self.height, self.rgba)
+        with open(output_path, "wb") as f:
+            f.write(png_bytes)
+        return output_path
 
 
 def find_luminance_valleys(
@@ -84,8 +98,51 @@ def find_luminance_valleys(
     return blocks
 
 
-class GlyphBank:
+class _RGBAImageProxy:
+    """Zero-dependency RGBA image proxy supporting crop, load, tobytes, and size."""
 
+    def __init__(self, width: int, height: int, rgba: bytes):
+        self.size = (width, height)
+        self.width = width
+        self.height = height
+        self.rgba = bytes(rgba)
+
+    def convert(self, mode: str) -> _RGBAImageProxy:
+        return self
+
+    def tobytes(self) -> bytes:
+        return self.rgba
+
+    def crop(self, box: Tuple[int, int, int, int]) -> _RGBAImageProxy:
+        x0, y0, x1, y1 = box
+        cw = max(0, x1 - x0)
+        ch = max(0, y1 - y0)
+        out = bytearray(cw * ch * 4)
+        for cy in range(ch):
+            sy = y0 + cy
+            if 0 <= sy < self.height:
+                for cx in range(cw):
+                    sx = x0 + cx
+                    if 0 <= sx < self.width:
+                        src_idx = (sy * self.width + sx) * 4
+                        dst_idx = (cy * cw + cx) * 4
+                        out[dst_idx : dst_idx + 4] = self.rgba[src_idx : src_idx + 4]
+        return _RGBAImageProxy(cw, ch, bytes(out))
+
+    def load(self):
+        w = self.width
+        rgba = self.rgba
+
+        class _PixelMap:
+            def __getitem__(self, xy):
+                x, y = xy
+                idx = (y * w + x) * 4
+                return (rgba[idx], rgba[idx + 1], rgba[idx + 2], rgba[idx + 3])
+
+        return _PixelMap()
+
+
+class GlyphBank:
     """
     Manages a collection of extracted bitmap glyphs and recomposes translated phrases.
     """
@@ -96,12 +153,12 @@ class GlyphBank:
     def add_glyph(
         self,
         char: str,
-        image_or_rgba: Union["Image.Image", bytes],
+        image_or_rgba: Union[Image.Image, bytes, Any],
         width: Optional[int] = None,
         height: Optional[int] = None,
         advance_x: Optional[int] = None,
     ) -> Glyph:
-        """Adds a glyph directly to the bank."""
+        """Adds a glyph directly to the bank. Accepts PIL Image, PNGImage, proxy, or raw bytes."""
         if HAS_PIL and isinstance(image_or_rgba, Image.Image):
             pil_img = image_or_rgba.convert("RGBA")
             w, h = pil_img.size
@@ -112,7 +169,15 @@ class GlyphBank:
             w, h = width, height
             rgba = bytes(image_or_rgba)
         else:
-            raise TypeError("Expected PIL Image or bytes.")
+            from miorom.graphics.png_codec import PNGImage
+            if isinstance(image_or_rgba, PNGImage):
+                w, h = image_or_rgba.width, image_or_rgba.height
+                rgba = image_or_rgba.to_rgba_bytes()
+            elif hasattr(image_or_rgba, "tobytes") and hasattr(image_or_rgba, "size"):
+                w, h = image_or_rgba.size
+                rgba = image_or_rgba.tobytes()
+            else:
+                raise TypeError("Expected PIL Image, PNGImage, or bytes.")
 
         glyph = Glyph(
             char=char,
@@ -125,22 +190,33 @@ class GlyphBank:
         return glyph
 
     @classmethod
-    def _to_rgba_image(cls, target: Union[str, bytes, "Image.Image"]) -> "Image.Image":
-        if not HAS_PIL:
-            raise ImportError("Pillow is required for GlyphBank image harvesting.")
-        if isinstance(target, Image.Image):
-            return target.convert("RGBA")
+    def _to_rgba_image(cls, target: Union[str, bytes, Any]) -> Any:
+        if HAS_PIL:
+            if isinstance(target, Image.Image):
+                return target.convert("RGBA")
+            if isinstance(target, str):
+                return Image.open(target).convert("RGBA")
+            if isinstance(target, (bytes, bytearray)):
+                return Image.open(io.BytesIO(target)).convert("RGBA")
+        from miorom.graphics.png_codec import PNGCodec, PNGImage
+        if isinstance(target, PNGImage):
+            return _RGBAImageProxy(target.width, target.height, target.to_rgba_bytes())
         if isinstance(target, str):
-            return Image.open(target).convert("RGBA")
+            w, h, rgba = PNGCodec.png_to_rgba(open(target, "rb").read())
+            return _RGBAImageProxy(w, h, rgba)
         if isinstance(target, (bytes, bytearray)):
-            return Image.open(io.BytesIO(target)).convert("RGBA")
+            w, h, rgba = PNGCodec.png_to_rgba(bytes(target))
+            return _RGBAImageProxy(w, h, rgba)
+        if hasattr(target, "tobytes") and hasattr(target, "size"):
+            w, h = target.size
+            return _RGBAImageProxy(w, h, target.tobytes())
         raise TypeError(f"Unsupported image target: {type(target)}")
 
     def harvest_boxes(
         self,
-        image: Union[str, bytes, "Image.Image"],
+        image: Union[str, bytes, Image.Image],
         mapping: Dict[str, Tuple[int, int, int, int]],
-    ) -> "GlyphBank":
+    ) -> GlyphBank:
         """
         Harvests glyphs from explicit bounding boxes: {char: (x, y, width, height)}.
         """
@@ -152,13 +228,13 @@ class GlyphBank:
 
     def harvest_widths(
         self,
-        image: Union[str, bytes, "Image.Image"],
+        image: Union[str, bytes, Image.Image],
         chars: str,
         widths: List[int],
         height: int,
         start_x: int = 0,
         start_y: int = 0,
-    ) -> "GlyphBank":
+    ) -> GlyphBank:
         """
         Harvests a horizontal sequence of glyphs with varying character widths.
         """
@@ -175,14 +251,14 @@ class GlyphBank:
 
     def harvest_grid(
         self,
-        image: Union[str, bytes, "Image.Image"],
+        image: Union[str, bytes, Image.Image],
         chars: str,
         cell_w: int,
         cell_h: int,
         start_x: int = 0,
         start_y: int = 0,
         trim: bool = False,
-    ) -> "GlyphBank":
+    ) -> GlyphBank:
         """
         Harvests glyphs arranged in a regular row-column grid.
         """
@@ -215,7 +291,7 @@ class GlyphBank:
 
     def auto_dissect(
         self,
-        image: Union[str, bytes, "Image.Image"],
+        image: Union[str, bytes, Image.Image],
         chars: str,
         min_gap: int = 1,
 
@@ -223,7 +299,7 @@ class GlyphBank:
         use_valleys: bool = False,
         core_threshold: int = 140,
         border_padding: int = 1,
-    ) -> "GlyphBank":
+    ) -> GlyphBank:
         """
         Automatically identifies horizontal glyph blocks separated by empty columns
         and assigns them sequentially to non-space characters in `chars`.
@@ -273,7 +349,7 @@ class GlyphBank:
             )
 
         for char, (gx0, gx1) in zip(non_space_chars, ranges):
-            gw = gx1 - gx0
+            _gw = gx1 - gx0
             cropped = img.crop((gx0, 0, gx1, h))
             self.add_glyph(char, cropped)
 
@@ -372,28 +448,27 @@ class GlyphBank:
         align: str = "left",
         start_x: Optional[int] = None,
         start_y: Optional[int] = None,
-    ) -> "Image.Image":
+    ) -> Any:
         """
-        Composites the text string into a PIL RGBA Image.
+        Composites the text string into an RGBA image (PIL Image or PNGImage fallback).
         Optionally centers, pads, or positions within target_width and target_height.
         """
-        if not HAS_PIL:
-            raise ImportError("Pillow is required for GlyphBank.recompose().")
-
         rgba_bytes, w, h = self.recompose_rgba(
             text=text,
             tracking=tracking,
             border_overlap=border_overlap,
             space_width=space_width,
         )
-        rendered = Image.frombytes("RGBA", (w, h), rgba_bytes)
 
         if target_width is None and target_height is None:
-            return rendered
+            if HAS_PIL:
+                return Image.frombytes("RGBA", (w, h), rgba_bytes)
+            from miorom.graphics.png_codec import PNGColorType, PNGImage
+            return PNGImage(width=w, height=h, color_type=PNGColorType.RGBA, bit_depth=8, pixels=rgba_bytes)
 
         tw = target_width or w
         th = target_height or h
-        canvas = Image.new("RGBA", (tw, th), (0, 0, 0, 0))
+        canvas_rgba = bytearray(tw * th * 4)
 
         # Horizontal alignment offset
         if start_x is not None:
@@ -410,6 +485,52 @@ class GlyphBank:
         else:
             off_y = max(0, (th - h) // 2)
 
-        canvas.paste(rendered, (off_x, off_y), rendered)
-        return canvas
+        for cy in range(h):
+            dy = off_y + cy
+            if 0 <= dy < th:
+                for cx in range(w):
+                    dx = off_x + cx
+                    if 0 <= dx < tw:
+                        src_idx = (cy * w + cx) * 4
+                        dst_idx = (dy * tw + dx) * 4
+                        canvas_rgba[dst_idx : dst_idx + 4] = rgba_bytes[src_idx : src_idx + 4]
+
+        if HAS_PIL:
+            return Image.frombytes("RGBA", (tw, th), bytes(canvas_rgba))
+        from miorom.graphics.png_codec import PNGColorType, PNGImage
+        return PNGImage(width=tw, height=th, color_type=PNGColorType.RGBA, bit_depth=8, pixels=bytes(canvas_rgba))
+
+    def recompose_png(
+        self,
+        text: str,
+        output_path: str,
+        tracking: int = 0,
+        border_overlap: int = 0,
+        space_width: int = 4,
+        target_width: Optional[int] = None,
+        target_height: Optional[int] = None,
+        align: str = "left",
+        start_x: Optional[int] = None,
+        start_y: Optional[int] = None,
+    ) -> str:
+        """Composites text and saves directly to a PNG file. Zero-dependency (works without Pillow)."""
+        from miorom.graphics.png_codec import PNGCodec
+        img = self.recompose(
+            text=text,
+            tracking=tracking,
+            border_overlap=border_overlap,
+            space_width=space_width,
+            target_width=target_width,
+            target_height=target_height,
+            align=align,
+            start_x=start_x,
+            start_y=start_y,
+        )
+        if hasattr(img, "save"):
+            img.save(output_path, format="PNG")
+        else:
+            png_bytes = PNGCodec.encode_rgba(img.width, img.height, img.to_rgba_bytes())
+            with open(output_path, "wb") as f:
+                f.write(png_bytes)
+        return output_path
 

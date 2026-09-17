@@ -9,11 +9,10 @@ for memory transfers, LZ77/Huffman decompression, math, sound, and multi-boot.
 
 from __future__ import annotations
 
-import struct
 from typing import Any, Dict, List, Optional, Tuple
 
+from miorom.core import schema
 from miorom.result import MioRomResult
-
 
 GBA_SWI_TABLE: Dict[int, Tuple[str, str]] = {
     0x00: ("SoftReset", "Clears RAM and restarts execution at cartridge header"),
@@ -130,7 +129,7 @@ class GBASwiResolver(MioRomResult):
             # 32-bit aligned scan
             limit = len(data) - (len(data) % 4)
             for i in range(0, limit, 4):
-                opcode = struct.unpack_from("<I", data, i)[0]
+                opcode = schema.unpack_from("<I", data, i)[0]
                 if (opcode & 0x0F000000) == 0x0F000000:
                     swi_num = (opcode >> 16) & 0xFF
                     if swi_num == 0:

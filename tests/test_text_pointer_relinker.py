@@ -308,7 +308,7 @@ class TestRelinkReport:
         assert d['bytes_saved'] == 5
 
     def test_mixed_inplace_and_relocation(self):
-        rom = bytearray(0x800)
+        rom = make_rom(0x800)
         rom[0x100:0x105] = b'HELLO'
         rom[0x200:0x204] = b'ABCD'
         rl = PointerRelinker(pointer_size=4, endian='little')
@@ -322,3 +322,61 @@ class TestRelinkReport:
         assert report.entries_relinked == 1
         assert report.entries_relocated == 1
         assert len(report.pointer_updates) == 2
+
+    def test_adjacent_strings_not_corrupted_on_shortening(self):
+        """Tight consecutive strings without fill bytes must not be corrupted when shortening."""
+        rom = make_rom(0x1000)
+        rom[0x100:0x105] = b'HELLO'
+        rom[0x105:0x10A] = b'WORLD'
+        rl = PointerRelinker(pointer_size=4, endian='little')
+        records = [
+            PointerRecord(0x00, 0x100, 'absolute'),
+            PointerRecord(0x04, 0x105, 'absolute'),
+        ]
+        new_rom, report = rl.relink(rom, records, [b'HI', b'WORLD'])
+        assert new_rom[0x100:0x102] == b'HI'
+        assert new_rom[0x102:0x105] == b'\xFF\xFF\xFF'
+        assert new_rom[0x105:0x10A] == b'WORLD'
+        assert report.entries_relinked == 2
+        assert report.entries_relocated == 0
+
+    def test_zero_filled_rom_adjacent_strings(self):
+        """Zero-filled ROM must not wipe following strings when slot is measured."""
+        rom = bytearray(0x1000)
+        rom[0x100:0x105] = b'HELLO'
+        rom[0x200:0x20E] = b'IMPORTANT_DATA'
+        rl = PointerRelinker(pointer_size=4, endian='little')
+        records = [
+            PointerRecord(0x00, 0x100, 'absolute'),
+            PointerRecord(0x04, 0x200, 'absolute'),
+        ]
+        new_rom, report = rl.relink(rom, records, [b'HI', b'IMPORTANT_DATA'])
+        assert new_rom[0x100:0x102] == b'HI'
+        assert new_rom[0x200:0x20E] == b'IMPORTANT_DATA'
+        assert report.entries_relinked == 2
+
+    def test_find_free_space_avoids_pointer_table_and_allocations(self):
+        """Free-space allocation must not overwrite pointer tables or prior allocations."""
+        rom = make_rom(0x200)
+        rl = PointerRelinker(pointer_size=4, endian='little')
+        # Pointer table at 0x00..0x08
+        rl.write_pointer(rom, 0x00, 0x100)
+        rl.write_pointer(rom, 0x04, 0x105)
+        rom[0x100:0x102] = b'AB'
+        rom[0x105:0x107] = b'CD'
+        records = [
+            PointerRecord(0x00, 0x100, 'absolute'),
+            PointerRecord(0x04, 0x105, 'absolute'),
+        ]
+        new_rom, report = rl.relink(
+            rom, records, [b'FIRST_LONG_STRING', b'SECOND_LONG_STRING']
+        )
+        assert report.entries_relocated == 2
+        ptr0 = rl.read_pointer(new_rom, 0x00)
+        ptr1 = rl.read_pointer(new_rom, 0x04)
+        # Pointers must not be inside pointer table (0x00..0x08)
+        assert ptr0 >= 0x08
+        assert ptr1 >= 0x08
+        # Regions must not overlap
+        assert (ptr0 + len(b'FIRST_LONG_STRING') <= ptr1) or (ptr1 + len(b'SECOND_LONG_STRING') <= ptr0)
+

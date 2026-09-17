@@ -7,14 +7,16 @@ instantly categorize files into Text, Graphics, Audio, Machine Code, Compressed 
 and Padding, recommending the exact reverse engineering tools to apply.
 """
 
-from miorom.result import MioRomResult
 import math
 import os
-import struct
 from collections import Counter
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, Iterator, List, Optional, Tuple, Union
+from typing import List, Union
+
+from miorom.core import schema
+from miorom.result import MioRomResult
 
 
 class AssetType(str, Enum):
@@ -126,7 +128,7 @@ class RomTriageEngine:
 
         # Signature match
         magic4 = data[:4]
-        magic8 = data[:8] if size >= 8 else b""
+        _magic8 = data[:8] if size >= 8 else b""
 
         # Known archives
         if magic4 == b"NARC":
@@ -193,7 +195,7 @@ class RomTriageEngine:
 
         # Pointer table check
         if size >= 16 and size % 4 == 0:
-            words = [struct.unpack_from("<I", sample, k)[0] for k in range(0, min(len(sample), 64), 4)]
+            words = [schema.unpack_from("<I", sample, k)[0] for k in range(0, min(len(sample), 64), 4)]
             # Monotonic address check
             increasing = sum(1 for idx in range(len(words) - 1) if 0 < words[idx] < words[idx + 1] < size * 10)
             if increasing >= len(words) // 2:

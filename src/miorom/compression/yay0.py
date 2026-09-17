@@ -13,10 +13,10 @@ Yay0 is an LZSS variant that organizes data into three separate streams:
 
 from __future__ import annotations
 
-import struct
-from typing import List, Optional
+from typing import List
 
-from miorom.core.schema import BinaryStruct, RawBytes, U32
+from miorom.core import schema
+from miorom.core.schema import U32, BinaryStruct, RawBytes
 from miorom.errors import CompressionError
 
 
@@ -62,7 +62,7 @@ class Yay0:
             if valid_bits == 0:
                 if mask_pos + 4 > link_pos or mask_pos + 4 > len(data):
                     break
-                mask_word = struct.unpack(">I", data[mask_pos : mask_pos + 4])[0]
+                mask_word = schema.unpack(">I", data[mask_pos : mask_pos + 4])[0]
                 mask_pos += 4
                 valid_bits = 32
 
@@ -78,7 +78,7 @@ class Yay0:
             else:
                 if link_pos + 2 > len(data):
                     break
-                link = struct.unpack(">H", data[link_pos : link_pos + 2])[0]
+                link = schema.unpack(">H", data[link_pos : link_pos + 2])[0]
                 link_pos += 2
 
                 dist = (link & 0x0FFF) + 1
@@ -118,7 +118,7 @@ class Yay0:
         """
         if not data:
             # 16-byte header for empty data
-            return cls.MAGIC + struct.pack(">III", 0, 16, 16)
+            return cls.MAGIC + schema.pack(">III", 0, 16, 16)
 
         mask_bits: List[bool] = []
         link_entries: List[int] = []
@@ -186,14 +186,14 @@ class Yay0:
         # Build buffers and calculate offsets
         mask_bytes = bytearray()
         for w in mask_words:
-            mask_bytes.extend(struct.pack(">I", w))
+            mask_bytes.extend(schema.pack(">I", w))
 
         link_bytes = bytearray()
         for lk in link_entries:
-            link_bytes.extend(struct.pack(">H", lk))
+            link_bytes.extend(schema.pack(">H", lk))
 
         link_offset = 16 + len(mask_bytes)
         data_offset = link_offset + len(link_bytes)
 
-        header = cls.MAGIC + struct.pack(">III", src_len, link_offset, data_offset)
+        header = cls.MAGIC + schema.pack(">III", src_len, link_offset, data_offset)
         return header + bytes(mask_bytes) + bytes(link_bytes) + bytes(byte_chunk)

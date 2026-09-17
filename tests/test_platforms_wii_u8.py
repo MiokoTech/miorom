@@ -43,3 +43,14 @@ def test_u8_pack_unpack_roundtrip():
         assert any(p.endswith("file1.bin") for p in extracted)
         assert any(p.endswith("file2.tpl") for p in extracted)
         assert not any(p.endswith("preview.png") for p in extracted)
+
+
+def test_u8_archive_get_mapping():
+    """Verify U8Archive dict mapping methods including .get()."""
+    arc = U8Archive()
+    arc["files/main.dol"] = b"DOL_PAYLOAD"
+    assert arc.get("files/main.dol") == b"DOL_PAYLOAD"
+    assert arc.get("/files/main.dol") == b"DOL_PAYLOAD"
+    assert arc.get("nonexistent.bin") is None
+    assert arc.get("nonexistent.bin", b"DEFAULT") == b"DEFAULT"
+

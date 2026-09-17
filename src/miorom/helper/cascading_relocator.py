@@ -1,7 +1,8 @@
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
+
+from miorom.core import schema
 from miorom.result import MioRomResult
-import struct
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -66,9 +67,9 @@ class CascadingRelocator:
             for i in range(count):
                 p_off = actual_tbl_off + i * 4
                 if p_off + 4 <= len(data):
-                    val = struct.unpack_from(f"{endian}I", data, p_off)[0]
+                    val = schema.unpack_from(f"{endian}I", data, p_off)[0]
                     if val >= boundary_ram:
-                        struct.pack_into(f"{endian}I", data, p_off, val + delta_bytes)
+                        schema.pack_into(f"{endian}I", data, p_off, val + delta_bytes)
                         direct_count += 1
 
         # Update architecture split pointers
@@ -79,13 +80,13 @@ class CascadingRelocator:
             actual_lo = lo_off + (delta_bytes if lo_off >= shift_boundary else 0)
 
             if actual_hi + 4 <= len(data) and actual_lo + 4 <= len(data):
-                hi_instr = struct.unpack_from(f"{endian}I", data, actual_hi)[0]
-                lo_instr = struct.unpack_from(f"{endian}I", data, actual_lo)[0]
+                hi_instr = schema.unpack_from(f"{endian}I", data, actual_hi)[0]
+                lo_instr = schema.unpack_from(f"{endian}I", data, actual_lo)[0]
 
                 # Extract existing target
                 if arch.lower() in ("ppc", "powerpc", "wii", "gc"):
                     ha = hi_instr & 0xFFFF
-                    lo = struct.unpack(">h", struct.pack(">H", lo_instr & 0xFFFF))[0]
+                    lo = schema.unpack(">h", schema.pack(">H", lo_instr & 0xFFFF))[0]
                     old_target = (ha << 16) + lo
 
                     if old_target >= boundary_ram:
@@ -94,13 +95,13 @@ class CascadingRelocator:
                         new_ha = ((new_target + 0x8000) >> 16) & 0xFFFF
                         new_lo = new_target & 0xFFFF
 
-                        struct.pack_into(f"{endian}I", data, actual_hi, (hi_instr & 0xFFFF0000) | new_ha)
-                        struct.pack_into(f"{endian}I", data, actual_lo, (lo_instr & 0xFFFF0000) | new_lo)
+                        schema.pack_into(f"{endian}I", data, actual_hi, (hi_instr & 0xFFFF0000) | new_ha)
+                        schema.pack_into(f"{endian}I", data, actual_lo, (lo_instr & 0xFFFF0000) | new_lo)
                         split_count += 1
 
                 elif "mips" in arch.lower():
                     hi = (hi_instr & 0xFFFF) << 16
-                    lo = struct.unpack(">h", struct.pack(">H", lo_instr & 0xFFFF))[0]
+                    lo = schema.unpack(">h", schema.pack(">H", lo_instr & 0xFFFF))[0]
                     old_target = hi + lo
 
                     if old_target >= boundary_ram:
@@ -108,8 +109,8 @@ class CascadingRelocator:
                         new_hi = ((new_target + 0x8000) >> 16) & 0xFFFF
                         new_lo = new_target & 0xFFFF
 
-                        struct.pack_into(f"{endian}I", data, actual_hi, (hi_instr & 0xFFFF0000) | new_hi)
-                        struct.pack_into(f"{endian}I", data, actual_lo, (lo_instr & 0xFFFF0000) | new_lo)
+                        schema.pack_into(f"{endian}I", data, actual_hi, (hi_instr & 0xFFFF0000) | new_hi)
+                        schema.pack_into(f"{endian}I", data, actual_lo, (lo_instr & 0xFFFF0000) | new_lo)
                         split_count += 1
 
         return CascadingShiftReport(

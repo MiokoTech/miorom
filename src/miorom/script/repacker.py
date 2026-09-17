@@ -8,12 +8,12 @@ two-pass re-assembly with automatic jump target recalculation and external
 pointer table rewriting.
 """
 
-from miorom.result import MioRomResult
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
-from miorom.script.engine import BytecodeEngine, DisassembledScript, Instruction
-from miorom.text.po_handler import PoHandler, PoEntry
+from miorom.result import MioRomResult
+from miorom.script.engine import BytecodeEngine, DisassembledScript
+from miorom.text.po_handler import PoHandler
 
 
 @dataclass
@@ -110,7 +110,11 @@ class SmartScriptRepacker:
                     size += len(a.pack(val, self.engine.endian))
                 orig_sz += size
             else:
-                orig_sz += 1
+                raw_bytes = getattr(ins, "raw_bytes", None) or ins.args.get("raw") or ins.args.get("raw_bytes")
+                if isinstance(raw_bytes, (bytes, bytearray)):
+                    orig_sz += len(raw_bytes)
+                else:
+                    orig_sz += 1
 
         strings_updated = 0
         extracted = script.extract_strings()
@@ -172,13 +176,21 @@ class SmartScriptRepacker:
                     size += len(arg.pack(val, self.engine.endian))
                 curr_offset += size
             else:
-                curr_offset += 1
+                raw_bytes = getattr(ins, "raw_bytes", None) or ins.args.get("raw") or ins.args.get("raw_bytes")
+                if isinstance(raw_bytes, (bytes, bytearray)):
+                    curr_offset += len(raw_bytes)
+                else:
+                    curr_offset += 1
 
         # Pass 2: Emit binary bytecode with resolved labels
         out = bytearray()
         for ins in script.instructions:
             if ins.opcode_id not in self.engine.opcodes_by_id:
-                out.append(ins.opcode_id)
+                raw_bytes = getattr(ins, "raw_bytes", None) or ins.args.get("raw") or ins.args.get("raw_bytes")
+                if isinstance(raw_bytes, (bytes, bytearray)):
+                    out.extend(raw_bytes)
+                else:
+                    out.append(ins.opcode_id)
                 continue
 
             defn = self.engine.opcodes_by_id[ins.opcode_id]

@@ -1,23 +1,23 @@
 from miorom.save.checksum import SaveChecksum, SaveChecksumEngine
-from miorom.save.slots import DualSlotSave
 from miorom.save.diff_hunter import (
-    SaveStateDiffHunter,
-    RAMSnapshot,
+    DiffHunterReport,
     DiffMatch,
     PointerTrail,
-    DiffHunterReport,
+    RAMSnapshot,
+    SaveStateDiffHunter,
 )
 from miorom.save.gba_save import (
-    GBASaveType,
-    GBASaveInfo,
     GBASaveDetector,
+    GBASaveInfo,
     GBASavePatcher,
+    GBASaveType,
 )
 from miorom.save.psx_mc import (
+    PSXBlockState,
     PSXMemoryCard,
     PSXSaveFile,
-    PSXBlockState,
 )
+from miorom.save.slots import DualSlotSave
 
 __all__ = [
     "SaveChecksum",

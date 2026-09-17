@@ -5,10 +5,11 @@ Multi-console tilemap and nametable compositor, attribute table decoder,
 and 2D tile matrix renderer for NES, SNES, Genesis, Game Boy, and GBA/NDS.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple, Union
-import struct
+from typing import Dict, List, Optional, Tuple
 
+from miorom.core import schema
 from miorom.errors import ParseError
 from miorom.graphics.tiles import Tile
 from miorom.result import MioRomResult
@@ -205,7 +206,7 @@ class Tilemap(MioRomResult):
         out = bytearray()
         for e in self.entries:
             val = e.to_u16(fmt=fmt)
-            out.extend(struct.pack(f"{endian}H", val))
+            out.extend(schema.pack(f"{endian}H", val))
         return bytes(out)
 
     @classmethod
@@ -231,7 +232,7 @@ class Tilemap(MioRomResult):
         entries: List[TilemapEntry] = []
         pos = offset
         for _ in range(count):
-            val = struct.unpack_from(f"{endian}H", data, pos)[0]
+            val = schema.unpack_from(f"{endian}H", data, pos)[0]
             entries.append(TilemapEntry.from_u16(val, fmt=fmt))
             pos += 2
         return cls(width=width, height=height, entries=entries)

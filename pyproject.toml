@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "miorom"
-version = "1.0.3"
+version = "1.1.0"
 description = "A Python library for ROM hacking and game reverse engineering"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -165,7 +165,7 @@ line-length = 100
 target-version = "py39"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP"]
+select = ["E", "F", "W", "I"]
 ignore = ["E501"]
 
 [tool.pytest.ini_options]

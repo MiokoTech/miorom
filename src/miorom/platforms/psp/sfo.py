@@ -7,12 +7,11 @@ PARAM.SFO is the standard key-value configuration and metadata container
 used across PlayStation Portable (PSP), PS Vita, PS3, and PS4 packages.
 """
 
-import struct
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+from miorom.core import schema
 from miorom.errors import ParseError
 from miorom.result import MioRomResult
-
 
 SFO_MAGIC = b"\x00PSF"
 FMT_UTF8_SPECIAL = 0x0004
@@ -38,7 +37,7 @@ class SFOFile(MioRomResult):
         if magic != SFO_MAGIC:
             raise ParseError(f"Invalid PARAM.SFO magic: {magic!r}, expected {SFO_MAGIC!r}")
 
-        version, key_tbl_start, data_tbl_start, count = struct.unpack_from("<IIII", data, 4)
+        version, key_tbl_start, data_tbl_start, count = schema.unpack_from("<IIII", data, 4)
 
         if len(data) < 20 + count * 16:
             raise ParseError("PARAM.SFO index table truncated.")
@@ -47,7 +46,7 @@ class SFOFile(MioRomResult):
 
         for i in range(count):
             entry_off = 20 + i * 16
-            key_off, data_fmt, data_len, data_max_len, data_off = struct.unpack_from(
+            key_off, data_fmt, data_len, data_max_len, data_off = schema.unpack_from(
                 "<HHIII", data, entry_off
             )
 
@@ -64,7 +63,7 @@ class SFOFile(MioRomResult):
 
             if data_fmt == FMT_UINT32:
                 if len(val_bytes) >= 4:
-                    val: Union[str, int] = struct.unpack_from("<I", val_bytes, 0)[0]
+                    val: Union[str, int] = schema.unpack_from("<I", val_bytes, 0)[0]
                 else:
                     val = 0
             elif data_fmt in (FMT_ASCII_STRING, FMT_UTF8_SPECIAL):
@@ -136,7 +135,7 @@ class SFOFile(MioRomResult):
 
             if isinstance(val, int):
                 fmt = FMT_UINT32
-                val_bytes = struct.pack("<I", val & 0xFFFFFFFF)
+                val_bytes = schema.pack("<I", val & 0xFFFFFFFF)
                 data_len = 4
                 data_max_len = 4
             else:
@@ -161,11 +160,11 @@ class SFOFile(MioRomResult):
         # Construct header (20 bytes)
         out = bytearray(20)
         out[0:4] = SFO_MAGIC
-        struct.pack_into("<IIII", out, 4, 0x00010100, key_tbl_start, data_tbl_start, count)
+        schema.pack_into("<IIII", out, 4, 0x00010100, key_tbl_start, data_tbl_start, count)
 
         # Append index entries
         for k_off, fmt, d_len, d_max, d_off in entry_meta:
-            out.extend(struct.pack("<HHIII", k_off, fmt, d_len, d_max, d_off))
+            out.extend(schema.pack("<HHIII", k_off, fmt, d_len, d_max, d_off))
 
         # Append key table
         out.extend(key_table)

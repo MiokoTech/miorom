@@ -7,14 +7,12 @@ and test translations in real-time without recompiling the ISO.
 """
 
 import os
-
-from miorom.errors import ParseError
-import socket
-import struct
 from abc import ABC, abstractmethod
 from typing import Optional
 
+from miorom.core import schema
 from miorom.debug.protocols import EmulatorClientProtocol
+from miorom.errors import ParseError
 
 
 class EmulatorClient(ABC, EmulatorClientProtocol):
@@ -30,10 +28,10 @@ class EmulatorClient(ABC, EmulatorClientProtocol):
 
     def read_u32(self, address: int, endian: str = ">") -> int:
         data = self.read_bytes(address, 4)
-        return struct.unpack(f"{endian}I", data)[0]
+        return schema.unpack(f"{endian}I", data)[0]
 
     def write_u32(self, address: int, value: int, endian: str = ">") -> None:
-        self.write_bytes(address, struct.pack(f"{endian}I", value))
+        self.write_bytes(address, schema.pack(f"{endian}I", value))
 
     def read_string(self, address: int, encoding: str = "utf-16-be", max_bytes: int = 512) -> str:
         data = self.read_bytes(address, max_bytes)

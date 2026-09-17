@@ -8,14 +8,16 @@ tile dimensions, and computes pixel-level diff reports between original and modi
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import io
-import os
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from miorom.errors import ParseError
+from miorom.platforms.wii.tpl import (
+    TPLFile,
+    calc_gx_texture_size,
+)
 from miorom.result import MioRomResult
-from miorom.platforms.wii.tpl import TPLFile, TPL_FORMAT_NAMES, TPL_PALETTE_FORMAT_NAMES, calc_gx_texture_size
 
 try:
     from PIL import Image
@@ -204,15 +206,28 @@ class TextureInspector:
 
         # 2. Check PNG
         elif data.startswith(b"\x89PNG\r\n\x1a\n"):
-            if not HAS_PIL:
-                raise ImportError("Pillow is required to inspect PNG textures.")
-            pil_img = Image.open(io.BytesIO(data))
-            w, h = pil_img.size
-            rgba = pil_img.convert("RGBA").tobytes()
+            if HAS_PIL:
+                pil_img = Image.open(io.BytesIO(data))
+                w, h = pil_img.size
+                rgba = pil_img.convert("RGBA").tobytes()
+                mode = pil_img.mode
+            else:
+                from miorom.graphics.png_codec import PNGCodec, PNGColorType
+                decoded = PNGCodec.decode(data)
+                w, h = decoded.width, decoded.height
+                rgba = decoded.to_rgba_bytes()
+                mode_map = {
+                    PNGColorType.GRAYSCALE: "L",
+                    PNGColorType.RGB: "RGB",
+                    PNGColorType.INDEXED: "P",
+                    PNGColorType.GRAYSCALE_ALPHA: "LA",
+                    PNGColorType.RGBA: "RGBA",
+                }
+                mode = mode_map.get(decoded.color_type, "RGBA")
             container = "PNG"
-            fmt_name = f"PNG ({pil_img.mode})"
+            fmt_name = f"PNG ({mode})"
             fmt_id = 0xFF
-            is_pal = (pil_img.mode == "P")
+            is_pal = (mode == "P")
             pal_fmt = "RGB" if is_pal else None
             pal_count = 256 if is_pal else 0
             tile_dims = (1, 1)

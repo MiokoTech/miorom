@@ -1,10 +1,18 @@
-from miorom.result import MioRomResult
+from __future__ import annotations
+
 import os
-from miorom.errors import ParseError, RelocationError
-from miorom.security import sanitize_extract_path
 from dataclasses import dataclass
-from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U8, U16, U32
-from typing import List, Optional, Tuple, Dict, Any, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Union
+
+if TYPE_CHECKING:
+    from miorom.platforms.nds.banner import NDSBanner
+    from miorom.platforms.nds.nsbmd import NSBMDFile
+
+from miorom.core.checksum import RetroChecksum
+from miorom.core.schema import U8, U16, U32, BinaryStruct, FixedString, RawBytes
+from miorom.errors import ParseError, RelocationError
+from miorom.result import MioRomResult
+from miorom.security import sanitize_extract_path
 
 BANNER_LANGUAGES = {
     0: "Japanese",
@@ -193,36 +201,127 @@ class NDSRom:
     def get_arm9_binary(self) -> bytes:
         return self.data[self.arm9_offset : self.arm9_offset + self.arm9_size]
 
+    def is_arm9_compressed(self) -> bool:
+        """Checks if the loaded ARM9 binary has a valid BLZ backwards LZ77 compression trailer."""
+        from miorom.compression.blz import BLZ
+
+        return BLZ.is_compressed(self.get_arm9_binary())
+
+    def decompress_arm9(self) -> bytes:
+        """
+        Decompresses the ARM9 binary if it is BLZ-compressed.
+        If the ARM9 binary is already uncompressed, returns its raw bytes.
+        """
+        arm9_bin = self.get_arm9_binary()
+        from miorom.compression.blz import BLZ
+
+        if BLZ.is_compressed(arm9_bin):
+            return BLZ.decompress(arm9_bin)
+        return arm9_bin
+
+    def compress_arm9(self, mode: str = "normal") -> bytes:
+        """
+        Compresses the ARM9 binary using BLZ with 16KB Secure Area preservation and CRC16 fixing.
+        """
+        arm9_bin = self.get_arm9_binary()
+        from miorom.compression.blz import BLZ
+
+        return BLZ.compress(arm9_bin, is_arm9=True, mode=mode)
+
+    def set_arm9_binary(
+        self,
+        new_arm9: Union[bytes, bytearray],
+        compress: Optional[bool] = None,
+        mode: str = "normal",
+    ) -> None:
+        """
+        Replaces the ARM9 binary in ROM, optionally compressing with BLZ.
+        Updates the ARM9 size in the ROM header and recomputes the header checksum.
+        """
+        from miorom.compression.blz import BLZ
+
+        payload = bytes(new_arm9)
+        should_compress = compress if compress is not None else self.is_arm9_compressed()
+        if should_compress and not BLZ.is_compressed(payload):
+            payload = BLZ.compress(payload, is_arm9=True, mode=mode)
+
+        old_size = self.arm9_size
+        new_size = len(payload)
+        diff = new_size - old_size
+
+        if diff == 0:
+            self.data[self.arm9_offset : self.arm9_offset + old_size] = payload
+        else:
+            self.data[self.arm9_offset : self.arm9_offset + old_size] = payload
+            if self.arm7_offset > self.arm9_offset:
+                self.arm7_offset += diff
+            if self.fnt_offset > self.arm9_offset:
+                self.fnt_offset += diff
+            if self.fat_offset > self.arm9_offset:
+                self.fat_offset += diff
+            if self.banner_offset > self.arm9_offset:
+                self.banner_offset += diff
+            if self.arm9_overlay_offset > self.arm9_offset:
+                self.arm9_overlay_offset += diff
+            if self.arm7_overlay_offset > self.arm9_offset:
+                self.arm7_overlay_offset += diff
+
+        self.arm9_size = new_size
+        self.data[0x2C:0x30] = U32().pack(new_size, endian="<")
+        if len(self.data) >= 0x160:
+            self.fix_header_checksum()
+
     def get_arm7_binary(self) -> bytes:
         return self.data[self.arm7_offset : self.arm7_offset + self.arm7_size]
 
-    def get_banner_title(self, language: int = 1) -> str:
+    def get_banner(self) -> Optional["NDSBanner"]:
+        """
+        Parses and returns the NDSBanner instance from the ROM banner offset.
+        Returns None if no banner is present in the ROM.
+        """
+        if self.banner_offset == 0 or self.banner_offset + 0x840 > len(self.data):
+            return None
+        from miorom.platforms.nds.banner import NDSBanner
+
+        return NDSBanner.from_bytes(self.data[self.banner_offset:])
+
+    def set_banner(self, banner: "NDSBanner") -> None:
+        """
+        Updates the ROM banner data with the provided NDSBanner instance and recalculates checksums.
+        """
+        banner_bytes = banner.to_bytes(recalc_crc=True)
+        if self.banner_offset > 0 and self.banner_offset + len(banner_bytes) <= len(self.data):
+            self.data[self.banner_offset : self.banner_offset + len(banner_bytes)] = banner_bytes
+        if len(self.data) >= 0x160:
+            self.fix_header_checksum()
+
+    def get_banner_title(self, language: Union[int, str] = 1) -> str:
         """
         Reads game title from the ROM banner.
-        Languages: 0=JP, 1=EN, 2=FR, 3=DE, 4=IT, 5=ES. Default: 1 (English).
+        Languages: 0=JP, 1=EN, 2=FR, 3=DE, 4=IT, 5=ES, 6=ZH, 7=KO. Default: 1 (English).
         """
-        if self.banner_offset == 0 or self.banner_offset >= len(self.data):
-            return self.title
+        banner = self.get_banner()
+        if banner is not None:
+            title = banner.get_title(language)
+            if title:
+                return title
+        return self.title
 
-        banner_data = self.data[self.banner_offset:]
-        if len(banner_data) < 0x240:
-            return self.title
+    def get_model(self, file_id_or_path: Union[int, str]) -> "NSBMDFile":
+        """
+        Extracts and parses an NSBMD 3D model file from the ROM filesystem.
+        """
+        from miorom.platforms.nds.nsbmd import NSBMDFile
 
-        # Titles start at banner_offset + 0x240 (576 bytes)
-        # Each title is 256 bytes of UTF-16-LE string
-        title_start = self.banner_offset + 0x240 + (language * 256)
-        if title_start + 256 > len(self.data):
-            return self.title
+        raw = self.get_file(file_id_or_path)
+        return NSBMDFile.from_bytes(raw)
 
-        title_raw = self.data[title_start : title_start + 256]
-        null_pos = title_raw.find(b"\x00\x00")
-        if null_pos != -1:
-            title_raw = title_raw[:null_pos + (null_pos % 2)]
-
-        try:
-            return title_raw.decode("utf-16-le").strip()
-        except UnicodeDecodeError:
-            return self.title
+    def set_model(self, file_id_or_path: Union[int, str], model: "NSBMDFile") -> None:
+        """
+        Serializes and writes an NSBMD 3D model back into the ROM filesystem.
+        """
+        model_bytes = model.to_bytes()
+        self.replace_file(file_id_or_path, model_bytes)
 
     def list_files(self) -> List[NDSFileEntry]:
         """Lists all files in the ROM File Allocation Table (FAT)."""
@@ -353,11 +452,15 @@ class NDSRom:
             tail = self.data[cur_end:]
             self.data[cur_start : cur_start + len(new_data)] = new_data
             self.data[cur_start + len(new_data) :] = tail
+            # Update self.fat_offset if FAT lives after the spliced region
+            if self.fat_offset >= cur_end:
+                self.fat_offset += delta
         else:
             del self.data[cur_start + len(new_data) : cur_end]
             self.data[cur_start : cur_start + len(new_data)] = new_data
 
-        # Update FAT entry for target
+        # Update FAT entry for target (re-derive off from possibly updated fat_offset)
+        off = self.fat_offset + (target_id * 8)
         self.data[off:off + NDSFatEntryStruct.sizeof()] = NDSFatEntryStruct(
             start_offset=cur_start,
             end_offset=cur_start + len(new_data),
@@ -543,8 +646,12 @@ class NDSRom:
         return calculate_nds_checksum(bytes(self.data[:0x15E]))
 
     def verify_header_checksum(self) -> bool:
-        """Verifies if CRC-16/IBM at 0x15E matches header data."""
+        """Verifies if CRC-16 at 0x15E matches header data."""
         return verify_nds_checksum(bytes(self.data[:0x160]))
+
+    def is_header_checksum_valid(self) -> bool:
+        """Standard alias for verify_header_checksum across platform ROM classes."""
+        return self.verify_header_checksum()
 
     def fix_header_checksum(self) -> int:
         """Calculates and writes the valid CRC-16 at offset 0x15E."""
@@ -639,21 +746,13 @@ class NDSRom:
         return f"<NDSRom '{self.title}' code={self.game_code} maker={self.maker_code}>"
 
 
-def calculate_nds_crc16(data: bytes) -> int:
-    """CRC-16/IBM (poly 0xA001, init 0xFFFF) used by Nintendo DS headers and banners."""
-    crc = 0xFFFF
-    for b in data:
-        crc ^= b
-        for _ in range(8):
-            if crc & 1:
-                crc = (crc >> 1) ^ 0xA001
-            else:
-                crc >>= 1
-    return crc & 0xFFFF
+def calculate_nds_crc16(data: bytes, init: int = 0xFFFF) -> int:
+    """CRC-16 SWI 0x0E (poly 0x8408, init 0xFFFF) used by Nintendo DS hardware headers."""
+    return RetroChecksum.crc16_nds(data, init=init)
 
 
 def calculate_nds_checksum(header_bytes: bytes) -> int:
-    """CRC-16/IBM checksum used by NDS header at 0x15E, covering bytes 0x000..0x15D."""
+    """CRC-16 SWI 0x0E checksum used by NDS header at 0x15E, covering bytes 0x000..0x15D."""
     return calculate_nds_crc16(header_bytes[:0x15E])
 
 
@@ -703,8 +802,16 @@ def extract_rom(rom_path: str, extract_dir: str, work_dir: str = "") -> None:
             with open(os.path.join(extract_dir, "arm7.bin"), "wb") as f:
                 f.write(arm7)
         if rom.banner_offset > 0 and rom.banner_offset + 0x840 <= len(rom.data):
+            b_ver = rom.data[rom.banner_offset] | (rom.data[rom.banner_offset + 1] << 8)
+            b_size = 0x840
+            if b_ver == 0x0103 and rom.banner_offset + 0x23C0 <= len(rom.data):
+                b_size = 0x23C0
+            elif b_ver >= 3 and rom.banner_offset + 0xA40 <= len(rom.data):
+                b_size = 0xA40
+            elif b_ver >= 2 and rom.banner_offset + 0x940 <= len(rom.data):
+                b_size = 0x940
             with open(os.path.join(extract_dir, "banner.bin"), "wb") as f:
-                f.write(rom.data[rom.banner_offset : rom.banner_offset + 0x840])
+                f.write(rom.data[rom.banner_offset : rom.banner_offset + b_size])
         if work_dir:
             import shutil
             shutil.copytree(extract_dir, work_dir, dirs_exist_ok=True)

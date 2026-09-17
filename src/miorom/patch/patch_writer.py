@@ -18,10 +18,11 @@ Transactional usage (v0.13+):
                                          # exposes pending writes pre-commit.
 """
 
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Union
+
+from miorom.core import schema
 from miorom.result import MioRomResult
-from dataclasses import dataclass, field
-import struct
-from typing import Any, Dict, List, Optional, Tuple, Union
 
 
 @dataclass
@@ -172,15 +173,15 @@ class PatchWriter:
 
     def write_u16(self, val: int, endian: Optional[str] = None) -> "PatchWriter":
         fmt = f"{endian or self.default_endian}H"
-        return self.write_bytes(struct.pack(fmt, val & 0xFFFF))
+        return self.write_bytes(schema.pack(fmt, val & 0xFFFF))
 
     def write_u32(self, val: int, endian: Optional[str] = None) -> "PatchWriter":
         fmt = f"{endian or self.default_endian}I"
-        return self.write_bytes(struct.pack(fmt, val & 0xFFFFFFFF))
+        return self.write_bytes(schema.pack(fmt, val & 0xFFFFFFFF))
 
     def write_i32(self, val: int, endian: Optional[str] = None) -> "PatchWriter":
         fmt = f"{endian or self.default_endian}i"
-        return self.write_bytes(struct.pack(fmt, val))
+        return self.write_bytes(schema.pack(fmt, val))
 
     def write_str(
         self,
@@ -199,7 +200,7 @@ class PatchWriter:
         """Writes ARM MOV r0, r0 (0xE1A00000) instructions."""
         end = endian or self.default_endian
         fmt = f"{end}I"
-        nop_bytes = struct.pack(fmt, 0xE1A00000) * count
+        nop_bytes = schema.pack(fmt, 0xE1A00000) * count
         return self.write_bytes(nop_bytes)
 
     def write_mips_nop(self, count: int = 1) -> "PatchWriter":
@@ -220,7 +221,7 @@ class PatchWriter:
             sz = len(rec.data)
             # IPS record: 3-byte offset, 2-byte size, payload
             out.extend(bytes([(off >> 16) & 0xFF, (off >> 8) & 0xFF, off & 0xFF]))
-            out.extend(struct.pack(">H", sz))
+            out.extend(schema.pack(">H", sz))
             out.extend(rec.data)
         out.extend(b"EOF")
         return bytes(out)

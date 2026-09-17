@@ -6,9 +6,11 @@ Packs sequences or dictionaries of strings/bytes into an aligned binary heap,
 calculating individual offsets, padding, and null-termination cleanly for ROM insertion.
 """
 
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Any, Dict, List, Union
+
 from miorom.result import MioRomResult
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 
 @dataclass

@@ -4,10 +4,10 @@ miorom.asm.m68k
 Sega Genesis / Mega Drive Motorola 68000 disassembler.
 """
 
-import struct
 from dataclasses import dataclass
 from typing import List, Optional, Union
 
+from miorom.core import schema
 from miorom.result import MioRomResult
 
 
@@ -49,11 +49,11 @@ _AREG = ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "SP"]
 
 
 def _read_word(data: Union[bytes, bytearray], offset: int) -> int:
-    return struct.unpack_from(">H", data, offset)[0]
+    return schema.unpack_from(">H", data, offset)[0]
 
 
 def _read_long(data: Union[bytes, bytearray], offset: int) -> int:
-    return struct.unpack_from(">I", data, offset)[0]
+    return schema.unpack_from(">I", data, offset)[0]
 
 
 def _sign_ext(value: int, bits: int) -> int:

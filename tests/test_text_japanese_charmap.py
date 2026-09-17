@@ -102,6 +102,27 @@ def test_search_kana_word_2byte():
     assert matches_le[0].base_delta == 0x2000
 
 
+def test_search_kana_word_2byte_odd_offset():
+    """Verify 2-byte search discovers strings located at odd (unaligned) byte offsets."""
+    base_delta = 0x3000
+    # "まほう": 'ま': 30, 'ほ': 29, 'う': 2
+    words = [
+        (base_delta + 30) & 0xFFFF,
+        (base_delta + 29) & 0xFFFF,
+        (base_delta + 2) & 0xFFFF,
+    ]
+    raw_be = struct.pack(">3H", *words)
+    # Place at odd offset 17
+    rom = b"\x00" * 17 + raw_be + b"\x00" * 20
+
+    matches = JapaneseCharMapMiner.search_kana_word(
+        rom, "まほう", ordering="hiragana_gojuon", mode="2byte_be"
+    )
+    assert len(matches) == 1
+    assert matches[0].offset == 17
+    assert matches[0].base_delta == 0x3000
+
+
 def test_mine_charmap_multi_word_consensus():
     """Test discovering a character table using multi-word consensus and rejecting false positives."""
     h_base = 0x30

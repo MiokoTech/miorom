@@ -1,3 +1,3 @@
-from miorom.platforms.nes.rom import NESRom, NESHeaderStruct
+from miorom.platforms.nes.rom import NESHeaderStruct, NESRom
 
 __all__ = ["NESRom", "NESHeaderStruct"]

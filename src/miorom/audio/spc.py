@@ -6,29 +6,29 @@ Extracts 64KB SPC700 sound RAM, DSP registers, ID666 metadata tags,
 and parses S-DSP BRR sample directories for direct WAV export.
 """
 
-import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
 
 from miorom.audio.brr import BRRCodec
+from miorom.core import schema
 from miorom.result import MioRomResult
 
 
 @dataclass
 class SpcHeader(MioRomResult):
     """Metadata and CPU registers extracted from an SPC700 sound file header."""
-    song_title: str
-    game_title: str
-    dumper_name: str
-    artist: str
-    comments: str
-    date_dumped: str
-    pc: int
-    a: int
-    x: int
-    y: int
-    psw: int
-    sp: int
+    song_title: str = ""
+    game_title: str = ""
+    dumper_name: str = ""
+    artist: str = ""
+    comments: str = ""
+    date_dumped: str = ""
+    pc: int = 0
+    a: int = 0
+    x: int = 0
+    y: int = 0
+    psw: int = 0
+    sp: int = 0
     duration_seconds: int = 0
 
 
@@ -65,7 +65,7 @@ class SpcFile(MioRomResult):
         if not data.startswith(cls.MAGIC):
             raise ValueError("Invalid SPC file magic signature")
 
-        pc, a, x, y, psw, sp = struct.unpack_from("<HBBBBB", data, 0x25)
+        pc, a, x, y, psw, sp = schema.unpack_from("<HBBBBB", data, 0x25)
 
         # Parse ID666 textual tags
         song_title = data[0x2E:0x4E].decode("ascii", errors="replace").rstrip("\x00").strip()
@@ -112,7 +112,7 @@ class SpcFile(MioRomResult):
         out[0x23] = 0x1A  # ID666 present
         out[0x24] = 0x1E  # v0.30
 
-        struct.pack_into(
+        schema.pack_into(
             "<HBBBBB",
             out,
             0x25,
@@ -160,7 +160,7 @@ class SpcFile(MioRomResult):
             if entry_off + 4 > len(self.ram):
                 break
 
-            start_addr, loop_addr = struct.unpack_from("<HH", self.ram, entry_off)
+            start_addr, loop_addr = schema.unpack_from("<HH", self.ram, entry_off)
             if start_addr == 0 and loop_addr == 0:
                 continue
             if start_addr >= len(self.ram):

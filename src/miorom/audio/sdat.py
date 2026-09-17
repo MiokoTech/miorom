@@ -9,11 +9,14 @@ and FILE (audio payloads: SSEQ, SBNK, SWAR, SSAR, STRM).
 from __future__ import annotations
 
 import os
-import struct
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
+from miorom.core.schema import U16, U32
 from miorom.errors import ParseError
+
+_U16_LE = U16(endian="<")
+_U32_LE = U32(endian="<")
 
 
 @dataclass
@@ -45,13 +48,17 @@ class SDATContainer:
             raise ParseError(f"Invalid SDAT magic: {data[:4]!r}")
 
         self.data = bytearray(data)
-        self.file_size = struct.unpack_from("<I", self.data, 8)[0]
+        self.file_size = _U32_LE.unpack(self.data, 8)[0]
 
         # Block locations from header
-        self.symb_offset, self.symb_size = struct.unpack_from("<II", self.data, 0x10)
-        self.info_offset, self.info_size = struct.unpack_from("<II", self.data, 0x18)
-        self.fat_offset, self.fat_size = struct.unpack_from("<II", self.data, 0x20)
-        self.file_block_offset, self.file_block_size = struct.unpack_from("<II", self.data, 0x28)
+        self.symb_offset = _U32_LE.unpack(self.data, 0x10)[0]
+        self.symb_size = _U32_LE.unpack(self.data, 0x14)[0]
+        self.info_offset = _U32_LE.unpack(self.data, 0x18)[0]
+        self.info_size = _U32_LE.unpack(self.data, 0x1C)[0]
+        self.fat_offset = _U32_LE.unpack(self.data, 0x20)[0]
+        self.fat_size = _U32_LE.unpack(self.data, 0x24)[0]
+        self.file_block_offset = _U32_LE.unpack(self.data, 0x28)[0]
+        self.file_block_size = _U32_LE.unpack(self.data, 0x2C)[0]
 
         self.entries: List[SDATFileEntry] = []
         self.sequences: Dict[str, SDATFileEntry] = {}
@@ -64,7 +71,7 @@ class SDATContainer:
         self._parse_and_link_symbols()
 
     @classmethod
-    def from_file(cls, path: str) -> "SDATContainer":
+    def from_file(cls, path: str) -> SDATContainer:
         """Loads an SDAT container from a file path."""
         with open(path, "rb") as f:
             return cls(f.read())
@@ -75,8 +82,8 @@ class SDATContainer:
         if self.fat_offset == 0 or self.fat_offset >= len(self.data):
             return
 
-        fat_block_size = struct.unpack_from("<I", self.data, self.fat_offset + 4)[0]
-        header_count = struct.unpack_from("<I", self.data, self.fat_offset + 8)[0]
+        fat_block_size = _U32_LE.unpack(self.data, self.fat_offset + 4)[0]
+        header_count = _U32_LE.unpack(self.data, self.fat_offset + 8)[0]
         records_len = fat_block_size - 12
         # Resolve record count for interleaved tables
         if records_len > 0 and records_len % 8 == 0 and (records_len // 8) > header_count:
@@ -88,7 +95,8 @@ class SDATContainer:
         for i in range(fat_count):
             if rec_pos + 8 > len(self.data):
                 break
-            raw_off, f_size = struct.unpack_from("<II", self.data, rec_pos)
+            raw_off = _U32_LE.unpack(self.data, rec_pos)[0]
+            f_size = _U32_LE.unpack(self.data, rec_pos + 4)[0]
 
             # In Nitro SDAT, offsets are absolute from the start of the SDAT file.
             # Handle fallback if raw_off is relative to file_block_offset.
@@ -140,8 +148,8 @@ class SDATContainer:
             if target_dict is None:
                 continue
 
-            symb_cat_off = struct.unpack_from("<I", self.data, self.symb_offset + 8 + cat_idx * 4)[0]
-            info_cat_off = struct.unpack_from("<I", self.data, self.info_offset + 8 + cat_idx * 4)[0]
+            symb_cat_off = _U32_LE.unpack(self.data, self.symb_offset + 8 + cat_idx * 4)[0]
+            info_cat_off = _U32_LE.unpack(self.data, self.info_offset + 8 + cat_idx * 4)[0]
 
             if symb_cat_off == 0 or info_cat_off == 0:
                 continue
@@ -149,22 +157,22 @@ class SDATContainer:
             symb_sub = self.symb_offset + symb_cat_off
             info_sub = self.info_offset + info_cat_off
 
-            symb_count = struct.unpack_from("<I", self.data, symb_sub)[0]
-            info_count = struct.unpack_from("<I", self.data, info_sub)[0]
+            symb_count = _U32_LE.unpack(self.data, symb_sub)[0]
+            info_count = _U32_LE.unpack(self.data, info_sub)[0]
             total_items = min(symb_count, info_count)
 
             expected_magic = cat_name.encode("ascii")
 
             for i in range(total_items):
-                n_off = struct.unpack_from("<I", self.data, symb_sub + 4 + i * 4)[0]
-                r_off = struct.unpack_from("<I", self.data, info_sub + 4 + i * 4)[0]
+                n_off = _U32_LE.unpack(self.data, symb_sub + 4 + i * 4)[0]
+                r_off = _U32_LE.unpack(self.data, info_sub + 4 + i * 4)[0]
 
                 if n_off == 0 or r_off == 0:
                     continue
 
                 name_bytes = self.data[self.symb_offset + n_off :].split(b"\x00")[0]
                 name = name_bytes.decode("ascii", errors="replace")
-                file_id = struct.unpack_from("<H", self.data, self.info_offset + r_off)[0]
+                file_id = _U16_LE.unpack(self.data, self.info_offset + r_off)[0]
 
                 # Interleaved FAT slot mapping
                 entry: Optional[SDATFileEntry] = None
@@ -321,8 +329,17 @@ class SDATContainer:
         info_block = self.data[self.info_offset : self.info_offset + self.info_size] if self.info_offset else b""
 
         new_symb_off = 64 if symb_block else 0
-        new_info_off = new_symb_off + len(symb_block) if info_block else 0
-        new_fat_off = (new_info_off + len(info_block)) if (new_info_off or new_symb_off) else 64
+        if info_block:
+            new_info_off = (new_symb_off + len(symb_block)) if symb_block else 64
+        else:
+            new_info_off = 0
+
+        if new_info_off:
+            new_fat_off = new_info_off + len(info_block)
+        elif new_symb_off:
+            new_fat_off = new_symb_off + len(symb_block)
+        else:
+            new_fat_off = 64
 
         fat_pad = (32 - (new_fat_off % 32)) % 32
         new_fat_off += fat_pad
@@ -339,7 +356,7 @@ class SDATContainer:
         # Construct new FILE block and FAT records
         new_file_block = bytearray(b"FILE")
         # Block size and count placeholder
-        new_file_block.extend(struct.pack("<II", 0, active_count))
+        new_file_block.extend(_U32_LE.pack(0) + _U32_LE.pack(active_count))
 
         fat_records = bytearray()
         cur_file_pos = new_file_off + len(new_file_block)
@@ -351,30 +368,30 @@ class SDATContainer:
                     new_file_block.extend(b"\x00" * pad)
                     cur_file_pos += pad
 
-                fat_records.extend(struct.pack("<II", cur_file_pos, len(entry.data)))
+                fat_records.extend(_U32_LE.pack(cur_file_pos) + _U32_LE.pack(len(entry.data)))
                 new_file_block.extend(entry.data)
                 cur_file_pos += len(entry.data)
             else:
-                fat_records.extend(struct.pack("<II", 0, 0))
+                fat_records.extend(_U32_LE.pack(0) + _U32_LE.pack(0))
 
         # Finalize FILE block header
-        struct.pack_into("<I", new_file_block, 4, len(new_file_block))
+        new_file_block[4:8] = _U32_LE.pack(len(new_file_block))
 
         # Assemble FAT block
         fat_block = bytearray(b"FAT ")
-        fat_block.extend(struct.pack("<II", fat_block_len, active_count))
+        fat_block.extend(_U32_LE.pack(fat_block_len) + _U32_LE.pack(len(self.entries)))
         fat_block.extend(fat_records)
 
         # Build 64-byte SDAT Header
         total_sdat_len = new_file_off + len(new_file_block)
         header = bytearray(self.MAGIC)
-        header.extend(struct.pack("<HH", 0xFEFF, 0x0100))
-        header.extend(struct.pack("<I", total_sdat_len))
-        header.extend(struct.pack("<HH", 64, 4))
-        header.extend(struct.pack("<II", new_symb_off, len(symb_block)))
-        header.extend(struct.pack("<II", new_info_off, len(info_block)))
-        header.extend(struct.pack("<II", new_fat_off, len(fat_block)))
-        header.extend(struct.pack("<II", new_file_off, len(new_file_block)))
+        header.extend(_U16_LE.pack(0xFEFF) + _U16_LE.pack(0x0100))
+        header.extend(_U32_LE.pack(total_sdat_len))
+        header.extend(_U16_LE.pack(64) + _U16_LE.pack(4))
+        header.extend(_U32_LE.pack(new_symb_off) + _U32_LE.pack(len(symb_block)))
+        header.extend(_U32_LE.pack(new_info_off) + _U32_LE.pack(len(info_block)))
+        header.extend(_U32_LE.pack(new_fat_off) + _U32_LE.pack(len(fat_block)))
+        header.extend(_U32_LE.pack(new_file_off) + _U32_LE.pack(len(new_file_block)))
         header = header.ljust(64, b"\x00")
 
         # Combine all sections

@@ -10,8 +10,8 @@ them back to raw byte payloads with automatic end-of-string termination.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from miorom.result import MioRomResult
 
@@ -39,7 +39,7 @@ class ControlCodeSchema:
             for c in codes:
                 self.register(c)
 
-    def register(self, code_def: ControlCodeDef) -> "ControlCodeSchema":
+    def register(self, code_def: ControlCodeDef) -> ControlCodeSchema:
         self.codes_by_byte[code_def.byte_id] = code_def
         self.codes_by_name[code_def.name.upper()] = code_def
         return self
@@ -233,7 +233,6 @@ class ControlCodeTokenizer:
                     errors.append(f"Unclosed tag starting at character index {pos}")
                     break
 
-                tag_content = text[pos + 1 : end_pos]
                 m_hex = cls._HEX_TAG_RE.match(text, pos)
                 m_named = cls._NAMED_TAG_RE.match(text, pos)
 

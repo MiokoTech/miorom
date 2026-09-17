@@ -6,13 +6,13 @@ Stores SignaturePattern entries with function metadata in a portable .miosig fil
 Enables mass auto-labeling of SDK boilerplate functions in binary analysis.
 """
 
-from miorom.result import MioRomResult
-import json
 import importlib.metadata
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+import json
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
-from miorom.core.signatures import SignaturePattern, SignatureScanner
+from miorom.core.signatures import SignaturePattern
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -85,7 +85,7 @@ class SignatureDatabase:
     @classmethod
     def load(cls, path: str) -> "SignatureDatabase":
         db = cls(path)
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         for e in data.get("entries", []):
             db.entries.append(SignatureEntry(**e))

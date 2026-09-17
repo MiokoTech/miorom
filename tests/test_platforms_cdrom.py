@@ -203,3 +203,102 @@ def test_disc_to_iso_bridge():
 
     iso_obj = disc.to_iso(1)
     assert iso_obj.volume_id == "TEST_DISC_IMAGE"
+
+
+def test_replace_track_data_mode1_edc():
+    """Verify Mode 1 replacement calculates Yellow Book standard EDC including SYNC_PATTERN."""
+    cue_text = """
+    FILE "game.bin" BINARY
+      TRACK 01 MODE1/2352
+        INDEX 01 00:00:00
+    """
+    cue = CueSheet.from_string(cue_text)
+    disc = CueBinDisc.from_tracks(cue, {"game.bin": bytes(2352)})
+
+    new_data = b"MODE1_PAYLOAD_TEST_DATA_" * 85 + b"12345678"  # exactly 2048 bytes
+    assert len(new_data) == 2048
+    disc.replace_track_data(1, new_data, is_raw=False)
+
+    raw_sec = disc.bin_buffers["game.bin"][:2352]
+    # Check sync pattern
+    assert raw_sec[:12] == b"\x00" + b"\xFF" * 10 + b"\x00"
+    # Check mode byte = 1
+    assert raw_sec[15] == 0x01
+    # Check user data at offset 16
+    assert raw_sec[16:2064] == new_data
+
+    # Check EDC checksum matches Yellow Book specification over sec[:2064]
+    written_edc = struct.unpack("<I", raw_sec[2064:2068])[0]
+    expected_edc = calculate_cdrom_edc(raw_sec[:2064])
+    assert written_edc == expected_edc
+
+    # Verify round-trip extraction
+    extracted = disc.extract_track_data(1, raw=False)
+    assert extracted == new_data
+
+
+def test_replace_track_data_mode2_form1_and_roundtrip():
+    """Verify Mode 2 Form 1 replacement writes subheaders, data at offset 24, and correct EDC."""
+    cue_text = """
+    FILE "psx.bin" BINARY
+      TRACK 01 MODE2/2352
+        INDEX 01 00:00:00
+    """
+    cue = CueSheet.from_string(cue_text)
+    disc = CueBinDisc.from_tracks(cue, {"psx.bin": bytes(2352)})
+
+    new_data = b"PSX_MODE2_USER_DATA_0123456789" * 68 + b"12345678"  # 2048 bytes
+    assert len(new_data) == 2048
+    disc.replace_track_data(1, new_data, is_raw=False)
+
+    raw_sec = disc.bin_buffers["psx.bin"][:2352]
+    # Check sync pattern
+    assert raw_sec[:12] == b"\x00" + b"\xFF" * 10 + b"\x00"
+    # Check mode byte = 2
+    assert raw_sec[15] == 0x02
+    # Check subheader at offset 16
+    assert raw_sec[16:24] == b"\x00\x00\x08\x00\x00\x00\x08\x00"
+    # Check user data at offset 24 (no 8-byte shift!)
+    assert raw_sec[24:2072] == new_data
+
+    # Check EDC checksum matches Mode 2 Form 1 specification over sec[16:2072]
+    written_edc = struct.unpack("<I", raw_sec[2072:2076])[0]
+    expected_edc = calculate_cdrom_edc(raw_sec[16:2072])
+    assert written_edc == expected_edc
+
+    # Verify round-trip extraction extracts the exact user data without shifting
+    extracted = disc.extract_track_data(1, raw=False)
+    assert extracted == new_data
+
+
+def test_replace_track_data_multi_track_single_bin_delta():
+    """Verify expanding track 1 in a single-BIN disc shifts subsequent track indexes correctly."""
+    cue_text = """
+    FILE "cd.bin" BINARY
+      TRACK 01 MODE1/2352
+        INDEX 01 00:00:00
+      TRACK 02 AUDIO
+        INDEX 01 00:00:01
+    """
+    cue = CueSheet.from_string(cue_text)
+    audio_pcm = b"AUDIO_DATA_TRACK_2" * 130 + b"\x00" * (2352 - (len(b"AUDIO_DATA_TRACK_2" * 130)))
+    bin_buf = bytearray(2352 + 2352)
+    bin_buf[2352:] = audio_pcm
+
+    disc = CueBinDisc.from_tracks(cue, {"cd.bin": bytes(bin_buf)})
+    assert disc.get_track(2).indexes[1] == 1
+
+    # Replace track 1 with 2 sectors of data (expanding by 1 sector)
+    expanded_data = b"EXPANDED_TRACK1_SECTOR_" * (2048 * 2 // 23)
+    expanded_data = expanded_data[:4096]
+    disc.replace_track_data(1, expanded_data, is_raw=False)
+
+    # Track 2's index in the single BIN must now be shifted from 1 to 2
+    assert disc.get_track(2).indexes[1] == 2
+    assert disc.get_track(1).sector_count == 2
+    assert disc.get_track(2).sector_count == 1
+
+    # Extract audio track and ensure data was not corrupted or clipped
+    extracted_audio = disc.extract_track_data(2, raw=True)
+    assert extracted_audio == audio_pcm
+

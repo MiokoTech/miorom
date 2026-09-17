@@ -26,6 +26,14 @@ def build_synthetic_gc_disc():
     )
     disc_data[:0x440] = header.pack()
 
+    # Mock DOL executable at dol_offset (0x10000)
+    dol_hdr = bytearray(0x100)
+    struct.pack_into(">I", dol_hdr, 0x00, 0x100)       # text_offset[0]
+    struct.pack_into(">I", dol_hdr, 0x48, 0x80003100)  # text_addr[0]
+    struct.pack_into(">I", dol_hdr, 0x90, 0x200)       # text_size[0]
+    disc_data[0x10000:0x10100] = dol_hdr
+    disc_data[0x10100:0x10300] = b"ORIGINAL_DOL_CODE" * 16
+
     # Build initial FST with 2 entries:
     # 0: Root directory (total entries: 3)
     # 1: dir "script" (parent: 0, next: 3)
@@ -108,3 +116,61 @@ def test_gc_disc_save_and_load(tmp_path):
 
     loaded = GameCubeDisc.from_file(str(out_iso))
     assert loaded.read_file("script/dialogue.bin") == b"NEW_DATA"
+
+
+def test_gc_rom_handler_main_dol_and_header_modification(tmp_path):
+    import os
+    from miorom.rom.handlers.gc import GameCubeRomHandler
+
+    handler = GameCubeRomHandler()
+    disc_bytes = build_synthetic_gc_disc()
+    unpacked_dir = tmp_path / "gc_extracted"
+
+    # Unpack GameCube disc
+    meta = handler.unpack(disc_bytes, str(unpacked_dir))
+    assert meta["game_id"] == "GALE"
+    assert meta["file_count"] == 1
+
+    # Verify extracted system files
+    sys_dir = unpacked_dir / "sys"
+    assert (sys_dir / "header.bin").is_file()
+    assert (sys_dir / "disc_base.bin").is_file()
+    assert (sys_dir / "main.dol").is_file()
+
+    # Read extracted main.dol and verify it contains original code
+    with open(sys_dir / "main.dol", "rb") as f:
+        extracted_dol = f.read()
+    assert b"ORIGINAL_DOL_CODE" in extracted_dol
+
+    # 1. Modify sys/main.dol (code cave / ASM patch)
+    patched_dol = bytearray(extracted_dol)
+    patched_dol = patched_dol.replace(b"ORIGINAL_DOL_CODE", b"PATCHED_DOL_HACK")
+    with open(sys_dir / "main.dol", "wb") as f:
+        f.write(patched_dol)
+
+    # 2. Modify sys/header.bin (game title / ID)
+    with open(sys_dir / "header.bin", "rb") as f:
+        hdr = GCHeader.parse(f.read())
+    hdr.game_title = "Melee Modified Mod"
+    hdr.game_id = "GALM"
+    with open(sys_dir / "header.bin", "wb") as f:
+        f.write(hdr.pack())
+
+    # 3. Modify root file
+    root_dir = unpacked_dir / "root"
+    with open(root_dir / "script" / "dialogue.bin", "wb") as f:
+        f.write(b"TRANSLATED_TEXT_IN_REPACK")
+
+    # Repack into new ISO
+    repacked_bytes = handler.repack(str(unpacked_dir))
+
+    # Parse repacked ISO and verify all modifications were applied
+    repacked_disc = GameCubeDisc(repacked_bytes)
+    assert repacked_disc.header.game_id == "GALM"
+    assert repacked_disc.header.game_title == "Melee Modified Mod"
+    assert repacked_disc.read_file("script/dialogue.bin") == b"TRANSLATED_TEXT_IN_REPACK"
+
+    # Verify DOL at dol_offset contains the injected patched code
+    dol_offset = repacked_disc.header.dol_offset
+    assert repacked_disc.raw_data[dol_offset : dol_offset + len(patched_dol)] == patched_dol
+    assert b"PATCHED_DOL_HACK" in repacked_disc.raw_data

@@ -8,9 +8,10 @@ without relying solely on return instructions.
 
 from __future__ import annotations
 
-import struct
 from dataclasses import dataclass
 from typing import List, Optional
+
+from miorom.core import schema
 from miorom.result import MioRomResult
 
 
@@ -46,7 +47,7 @@ class FunctionPrologueScanner:
             # MIPS prologue: addiu $sp, $sp, -imm (0x27BDxxxx where xxxx >= 0x8000)
             fmt = f"{end_char}I"
             for i in range(0, len(data) - 3, 4):
-                word = struct.unpack_from(fmt, data, i)[0]
+                word = schema.unpack_from(fmt, data, i)[0]
                 if (word >> 16) == 0x27BD and (word & 0x8000) != 0:
                     funcs.append(DiscoveredFunction(
                         address=base_address + i,
@@ -59,7 +60,7 @@ class FunctionPrologueScanner:
             # Thumb prologue: push {..., lr} -> 0xB5xx (16-bit halfword)
             fmt = f"{end_char}H"
             for i in range(0, len(data) - 1, 2):
-                hword = struct.unpack_from(fmt, data, i)[0]
+                hword = schema.unpack_from(fmt, data, i)[0]
                 if (hword & 0xFF00) == 0xB500:
                     funcs.append(DiscoveredFunction(
                         address=base_address + i,
@@ -72,7 +73,7 @@ class FunctionPrologueScanner:
             # ARM stmdb sp!, {..., lr}
             fmt = f"{end_char}I"
             for i in range(0, len(data) - 3, 4):
-                word = struct.unpack_from(fmt, data, i)[0]
+                word = schema.unpack_from(fmt, data, i)[0]
                 if (word & 0xFFFF4000) == 0xE92D4000:
                     funcs.append(DiscoveredFunction(
                         address=base_address + i,
@@ -85,7 +86,7 @@ class FunctionPrologueScanner:
             # PowerPC prologue: stwu r1, -imm(r1) -> 0x9421xxxx where xxxx is negative
             fmt = f"{end_char}I"
             for i in range(0, len(data) - 3, 4):
-                word = struct.unpack_from(fmt, data, i)[0]
+                word = schema.unpack_from(fmt, data, i)[0]
                 if (word >> 16) == 0x9421 and (word & 0x8000) != 0:
                     funcs.append(DiscoveredFunction(
                         address=base_address + i,

@@ -1,6 +1,6 @@
+
+from miorom.core.schema import U32, BinaryStruct
 from miorom.errors import CompressionError
-from miorom.core.schema import BinaryStruct, U32
-from typing import Union
 
 
 class LZExtendedSizeStruct(BinaryStruct):
@@ -114,20 +114,21 @@ class LZ10:
                 best_disp = 0
                 max_len = min(18, data_len - in_pos)
 
-                if in_pos >= 3 and max_len >= 3:
+                if max_len >= 3:
                     window_start = max(0, in_pos - 4096)
                     # Optimization: only check match candidates that match the first 3 bytes
                     target3 = data[in_pos:in_pos+3]
                     search_pos = in_pos - 1
 
                     while search_pos >= window_start:
-                        pos = data.rfind(target3, window_start, search_pos + 3)
+                        pos = data.rfind(target3, window_start, search_pos + 1)
                         if pos == -1:
                             break
 
                         # Measure match length
                         match_len = 3
                         while (match_len < max_len and
+                               pos + match_len < in_pos and
                                data[pos + match_len] == data[in_pos + match_len]):
                             match_len += 1
 

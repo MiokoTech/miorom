@@ -9,13 +9,11 @@ and memory pointers directly from display list binaries without guesswork.
 
 from __future__ import annotations
 
-import struct
 from dataclasses import dataclass
-from typing import Iterator, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
-from miorom.graphics.n64_texture import N64TextureDecoder, N64TextureFormat
+from miorom.core import schema
 from miorom.result import MioRomResult
-
 
 # Fast3D Image Formats & Sizes
 F3D_FMT_NAMES = {0: "rgba", 1: "yuv", 2: "ci", 3: "ia", 4: "i"}
@@ -63,10 +61,10 @@ class Fast3DParser:
         textures: List[F3DTextureDescriptor] = []
         fmt = f"{endian}II"
         curr_timg: Optional[Tuple[int, int, int, int]] = None  # (pc, fmt, siz, ptr)
-        curr_tile: Optional[Tuple[int, int, int, int]] = None  # (fmt, siz, tile, line)
+        _curr_tile: Optional[Tuple[int, int, int, int]] = None  # (fmt, siz, tile, line)
 
         for i in range(0, len(data) - 7, 8):
-            w0, w1 = struct.unpack_from(fmt, data, i)
+            w0, w1 = schema.unpack_from(fmt, data, i)
             cmd = (w0 >> 24) & 0xFF
             pc = base_address + i
 
@@ -85,7 +83,7 @@ class Fast3DParser:
                 t_siz = (w0 >> 19) & 0x03
                 t_line = (w0 >> 9) & 0x1FF
                 tile_idx = (w1 >> 24) & 0x07
-                curr_tile = (t_fmt, t_siz, tile_idx, t_line)
+                _curr_tile = (t_fmt, t_siz, tile_idx, t_line)
 
             elif cmd in (cls.G_SETTILESIZE, cls.G_LOADTILE):
                 # w1: [uls 12b][ult 12b]
@@ -152,7 +150,7 @@ class Fast3DBuilder:
         self.endian = endian
         self.commands: List[Tuple[int, int]] = []
 
-    def set_timg(self, fmt: int, siz: int, image_ptr: int) -> "Fast3DBuilder":
+    def set_timg(self, fmt: int, siz: int, image_ptr: int) -> Fast3DBuilder:
         """Emits G_SETTIMG: Set texture image source pointer."""
         w0 = (0xFD << 24) | ((fmt & 0x07) << 21) | ((siz & 0x03) << 19)
         w1 = image_ptr & 0xFFFFFFFF
@@ -173,7 +171,7 @@ class Fast3DBuilder:
         mask_t: int = 0,
         shift_s: int = 0,
         shift_t: int = 0,
-    ) -> "Fast3DBuilder":
+    ) -> Fast3DBuilder:
         """Emits G_SETTILE: Configure texture tile descriptor."""
         w0 = (
             (0xF5 << 24)
@@ -202,7 +200,7 @@ class Fast3DBuilder:
         ult: int,
         lrs: int,
         lrt: int,
-    ) -> "Fast3DBuilder":
+    ) -> Fast3DBuilder:
         """Emits G_SETTILESIZE: Configure tile dimension bounding coordinates (10.2 fixed point)."""
         w0 = (0xF2 << 24) | (((uls << 2) & 0x0FFF) << 12) | ((ult << 2) & 0x0FFF)
         w1 = ((tile & 0x07) << 24) | (((lrs << 2) & 0x0FFF) << 12) | ((lrt << 2) & 0x0FFF)
@@ -216,14 +214,14 @@ class Fast3DBuilder:
         ult: int,
         texels: int,
         dxt: int = 0,
-    ) -> "Fast3DBuilder":
+    ) -> Fast3DBuilder:
         """Emits G_LOADBLOCK: Load contiguous texture block into TMEM."""
         w0 = (0xF3 << 24) | ((uls & 0x0FFF) << 12) | (ult & 0x0FFF)
         w1 = ((tile & 0x07) << 24) | (((texels - 1) & 0x0FFF) << 12) | (dxt & 0x0FFF)
         self.commands.append((w0, w1))
         return self
 
-    def end_dl(self) -> "Fast3DBuilder":
+    def end_dl(self) -> Fast3DBuilder:
         """Emits G_ENDDL: End display list execution."""
         self.commands.append((0xDF000000, 0x00000000))
         return self
@@ -233,5 +231,5 @@ class Fast3DBuilder:
         out = bytearray()
         fmt = f"{self.endian}II"
         for w0, w1 in self.commands:
-            out.extend(struct.pack(fmt, w0, w1))
+            out.extend(schema.pack(fmt, w0, w1))
         return bytes(out)

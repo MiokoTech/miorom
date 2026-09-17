@@ -8,13 +8,13 @@ Standard resource archive container used extensively in Nintendo GameCube and Wi
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
-import struct
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from miorom.core.binary import BinaryReader, BinaryWriter
-from miorom.core.schema import BinaryStruct, RawBytes, U16, U32
+from miorom.core import schema
+from miorom.core.binary import BinaryReader
+from miorom.core.schema import U16, U32, BinaryStruct, RawBytes
 from miorom.errors import ParseError
 from miorom.result import MioRomResult
 from miorom.security import sanitize_extract_path
@@ -78,7 +78,7 @@ class RARCArchive:
         return len(data) >= 4 and data[:4] == cls.MAGIC
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "RARCArchive":
+    def from_bytes(cls, data: bytes) -> RARCArchive:
         if len(data) < 0x40:
             raise ParseError("Data too small for RARC header.")
 
@@ -110,7 +110,7 @@ class RARCArchive:
             reader.seek(pos)
             n_type = reader.read_bytes(4)
             name_off = reader.read_u32()
-            name_h = reader.read_u16()
+            _name_h = reader.read_u16()
             e_cnt = reader.read_u16()
             first_idx = reader.read_u32()
             name = read_str(name_off)
@@ -231,27 +231,27 @@ class RARCArchive:
         # Node table (1 root node)
         node_count = 1
         entry_count = 2 + len(files)  # . and .. plus all files
-        first_entry_index = 0
+        _first_entry_index = 0
 
         node_bytes = bytearray()
         node_bytes.extend(b"ROOT")
-        node_bytes.extend(struct.pack(">IHH I", name_offsets["ROOT"], rarc_hash("ROOT"), entry_count, 0))
+        node_bytes.extend(schema.pack(">IHH I", name_offsets["ROOT"], rarc_hash("ROOT"), entry_count, 0))
 
         # Entries table
         # 0: . (directory)
         # 1: .. (directory)
         entries_bytes = bytearray()
         # Entry 0: .
-        entries_bytes.extend(struct.pack(">HH HHI II", 0, rarc_hash("."), 0x0200, name_offsets["."], 0, 16, 0))
+        entries_bytes.extend(schema.pack(">HH HHI II", 0, rarc_hash("."), 0x0200, name_offsets["."], 0, 16, 0))
         # Entry 1: ..
-        entries_bytes.extend(struct.pack(">HH HHI II", 1, rarc_hash(".."), 0x0200, name_offsets[".."], 0xFFFFFFFF, 16, 0))
+        entries_bytes.extend(schema.pack(">HH HHI II", 1, rarc_hash(".."), 0x0200, name_offsets[".."], 0xFFFFFFFF, 16, 0))
 
         # File entries
         for i, f in enumerate(files):
             d_off, d_len = file_offsets[i]
             n_off = name_offsets[f.name]
             entries_bytes.extend(
-                struct.pack(">HH HHI II", 2 + i, rarc_hash(f.name), 0x1100, n_off, d_off, d_len, 0)
+                schema.pack(">HH HHI II", 2 + i, rarc_hash(f.name), 0x1100, n_off, d_off, d_len, 0)
             )
 
         # Build Directory Information
@@ -262,7 +262,7 @@ class RARCArchive:
 
         dir_info_header = bytearray()
         dir_info_header.extend(
-            struct.pack(
+            schema.pack(
                 ">IIII II HHI",
                 node_count,
                 node_table_offset,
@@ -291,7 +291,7 @@ class RARCArchive:
         # RARC Main Header
         header = bytearray(self.MAGIC)
         header.extend(
-            struct.pack(
+            schema.pack(
                 ">IIII III",
                 total_file_size,
                 header_size,

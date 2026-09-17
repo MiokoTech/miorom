@@ -5,13 +5,13 @@ Save subsystem integration for PlayStation 1 (PSX) Memory Card.
 """
 
 from miorom.platforms.psx.memory_card import (
-    CARD_SIZE,
     BLOCK_SIZE,
-    NUM_BLOCKS,
+    CARD_SIZE,
     FRAME_SIZE,
+    NUM_BLOCKS,
     PSXBlockState,
-    PSXSaveFile,
     PSXMemoryCard,
+    PSXSaveFile,
     calculate_frame_xor,
 )
 

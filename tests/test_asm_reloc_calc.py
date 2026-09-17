@@ -123,3 +123,79 @@ def test_rebase_block_6502():
     assert items[1].offset == 4
     assert items[1].in_range is True
     assert new_code[4:6] == items[1].new_bytes
+
+
+def test_patch_single_branch_mips_endianness():
+    reloc = BranchRelocator()
+    # MIPS BEQ $4, $5, label (opcode 0x04, rs=4, rt=5 -> 0x10850000 | imm16)
+    orig_pc = 0x80010000
+    new_pc = 0x80020000
+    target_addr = 0x80020020  # delta = 0x20 - 4 = 28 bytes = 7 words -> imm16 = 7
+
+    # 1. Little-Endian (PSX / PSP / default "mips")
+    inst_le = struct.pack("<I", 0x10850000)
+    res_le = reloc.patch_single_branch(
+        inst_le,
+        orig_pc=orig_pc,
+        new_pc=new_pc,
+        target_addr=target_addr,
+        arch="psx",
+    )
+    assert res_le.in_range is True
+    assert res_le.displacement == 28
+    # In LE, lower 16 bits (0x0007) are in bytes 0..1: [0x07, 0x00, 0x85, 0x10]
+    expected_le = struct.pack("<I", 0x10850007)
+    assert res_le.new_bytes == expected_le
+
+    # 2. Big-Endian (N64 / arch="mips_be" / endian="big")
+    inst_be = struct.pack(">I", 0x10850000)
+    res_be = reloc.patch_single_branch(
+        inst_be,
+        orig_pc=orig_pc,
+        new_pc=new_pc,
+        target_addr=target_addr,
+        arch="mips_be",
+    )
+    assert res_be.in_range is True
+    assert res_be.displacement == 28
+    # In BE, lower 16 bits (0x0007) are in bytes 2..3: [0x10, 0x85, 0x00, 0x07]
+    expected_be = struct.pack(">I", 0x10850007)
+    assert res_be.new_bytes == expected_be
+
+
+def test_rebase_block_mips_psx():
+    reloc = BranchRelocator()
+    orig_base = 0x80010000
+    new_base = 0x80050000
+    # Block of 16 bytes (4 MIPS instructions, Little-Endian):
+    # 0x00: NOP (0x00000000)
+    # 0x04: BEQ to 0x8001000C (internal, forward 1 instruction past delay slot: (12 - 8) >> 2 = 1 word)
+    # 0x08: NOP (delay slot)
+    # 0x0C: BNE to external function at 0x80011000
+    # Target 0x80011000 remapped to 0x80052000
+    code = bytearray()
+    code.extend(struct.pack("<I", 0x00000000))  # NOP
+    code.extend(struct.pack("<I", 0x10000001))  # BEQ $0, $0, +1
+    code.extend(struct.pack("<I", 0x00000000))  # NOP (delay slot)
+    code.extend(struct.pack("<I", 0x14000000))  # BNE $0, $0, 0
+
+    new_code, items = reloc.rebase_block(
+        bytes(code),
+        orig_base=orig_base,
+        new_base=new_base,
+        arch="psx",
+        external_targets={0x80010010: 0x80052000},
+    )
+    assert len(items) == 2
+    # Internal branch at offset 4: retains relative displacement
+    assert items[0].offset == 4
+    assert items[0].new_bytes == struct.pack("<I", 0x10000001)
+
+    # External branch at offset 12: patched to target 0x80052000
+    # delta = 0x80052000 - (0x8005000C + 4) = 0x80052000 - 0x80050010 = 0x1FF0 bytes = 2044 words
+    assert items[1].offset == 12
+    assert items[1].in_range is True
+    expected_bne = struct.pack("<I", 0x14000000 | 2044)
+    assert items[1].new_bytes == expected_bne
+    assert new_code[12:16] == expected_bne
+

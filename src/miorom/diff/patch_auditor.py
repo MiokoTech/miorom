@@ -9,7 +9,8 @@ Validates IPS, BPS, and binary hunk patches against critical memory regions
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Tuple
+
 from miorom.patch.hunks import PatchHunk
 from miorom.result import MioRomResult
 

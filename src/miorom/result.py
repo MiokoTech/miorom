@@ -5,13 +5,11 @@ Serialization contract for public MioROM result objects.
 """
 
 import json
-
-from miorom.errors import ParseError
-from dataclasses import is_dataclass
-from dataclasses import fields
+from dataclasses import fields, is_dataclass
 from enum import Enum
 from typing import Any, Dict, Type, TypeVar, Union, get_args, get_origin, get_type_hints
 
+from miorom.errors import ParseError
 
 T = TypeVar("T", bound="MioRomResult")
 

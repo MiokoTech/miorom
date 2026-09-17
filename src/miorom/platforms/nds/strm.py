@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import math
 import os
-import struct
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Tuple
 
 from miorom.audio.adpcm import ADPCMCodec
+from miorom.core import schema
 from miorom.errors import ParseError
 
 
@@ -55,14 +55,14 @@ class STRMFile:
             raise ParseError(f"Invalid STRM magic: {data[:4]!r}")
 
         self.data = bytearray(data)
-        endian, version, self.file_size, self.header_size, num_blocks = struct.unpack_from("<HHIHH", self.data, 4)
+        endian, version, self.file_size, self.header_size, num_blocks = schema.unpack_from("<HHIHH", self.data, 4)
 
         if endian != 0xFEFF:
             raise ParseError(f"Unsupported STRM endianness: 0x{endian:04X} (expected 0xFEFF).")
 
         # Parse HEAD block
         head_off = self.header_size
-        head_magic, head_size = struct.unpack_from("<4sI", self.data, head_off)
+        head_magic, head_size = schema.unpack_from("<4sI", self.data, head_off)
         if head_magic != b"HEAD":
             raise ParseError(f"Invalid HEAD block magic: {head_magic!r}")
 
@@ -81,7 +81,7 @@ class STRMFile:
             spb,
             last_block_sz,
             last_spb,
-        ) = struct.unpack_from("<BBBBHHIIIIIIII", self.data, head_off + 8)
+        ) = schema.unpack_from("<BBBBHHIIIIIIII", self.data, head_off + 8)
 
         self.header = STRMHeader(
             wave_type=wave_type,
@@ -102,14 +102,14 @@ class STRMFile:
 
         # Locate DATA block
         data_block_off = head_off + head_size
-        data_magic, data_size = struct.unpack_from("<4sI", self.data, data_block_off)
+        data_magic, data_size = schema.unpack_from("<4sI", self.data, data_block_off)
         if data_magic != b"DATA":
             raise ParseError(f"Invalid DATA block magic: {data_magic!r}")
 
         self.data_payload = self.data[self.header.data_offset : head_off + head_size + data_size]
 
     @classmethod
-    def from_file(cls, path: str) -> "STRMFile":
+    def from_file(cls, path: str) -> STRMFile:
         """Loads and parses an STRM file from disk."""
         with open(path, "rb") as f:
             return cls(f.read())
@@ -124,7 +124,7 @@ class STRMFile:
         pos = 0
 
         # State tracking for ADPCM continuation
-        adpcm_states: List[Tuple[int, int]] = [(0, 0) for _ in range(h.channels)]
+        _adpcm_states: List[Tuple[int, int]] = [(0, 0) for _ in range(h.channels)]
 
         for b in range(h.num_blocks):
             is_last = (b == h.num_blocks - 1)
@@ -138,7 +138,7 @@ class STRMFile:
                 if h.wave_type == 2:
                     # IMA-ADPCM 4-bit
                     if len(block_bytes) >= 4:
-                        init_samp, init_idx = struct.unpack_from("<hb", block_bytes, 0)
+                        init_samp, init_idx = schema.unpack_from("<hb", block_bytes, 0)
                         # Clamp initial index to valid table range
                         init_idx = max(0, min(88, init_idx))
                         adpcm_payload = block_bytes[4:]
@@ -149,12 +149,12 @@ class STRMFile:
                 elif h.wave_type == 1:
                     # PCM16 signed Little Endian
                     sample_count = cur_spb
-                    raw_samps = struct.unpack(f"<{sample_count}h", block_bytes[: sample_count * 2])
+                    raw_samps = schema.unpack(f"<{sample_count}h", block_bytes[: sample_count * 2])
                     channels_data[ch].extend(raw_samps)
                 elif h.wave_type == 0:
                     # PCM8 signed
                     sample_count = cur_spb
-                    raw_samps = struct.unpack(f"<{sample_count}b", block_bytes[:sample_count])
+                    raw_samps = schema.unpack(f"<{sample_count}b", block_bytes[:sample_count])
                     # Scale signed 8-bit to 16-bit
                     channels_data[ch].extend([s << 8 for s in raw_samps])
                 else:
@@ -203,7 +203,7 @@ class STRMFile:
         wav_bytes: bytes,
         wave_type: int = 2,
         block_size: int = 512,
-    ) -> "STRMFile":
+    ) -> STRMFile:
         """
         Encodes standard WAV audio into a Nintendo DS Nitro STRM binary.
         Supports IMA-ADPCM (wave_type=2) and PCM16 (wave_type=1).
@@ -277,7 +277,7 @@ class STRMFile:
                     adpcm_states[ch] = (final_samp, final_idx)
 
                     # Build block: 4-byte header + compressed nibbles
-                    block_header = struct.pack("<hbB", init_samp, init_idx, 0)
+                    block_header = schema.pack("<hbB", init_samp, init_idx, 0)
                     ch_block = bytearray(block_header)
                     ch_block.extend(comp_bytes)
                     target_sz = last_block_size if is_last else block_size
@@ -289,7 +289,7 @@ class STRMFile:
                     # PCM16
                     raw_b = bytearray()
                     for s in block_samps:
-                        raw_b.extend(struct.pack("<h", s))
+                        raw_b.extend(schema.pack("<h", s))
                     target_sz = last_block_size if is_last else block_size
                     if len(raw_b) < target_sz:
                         raw_b.extend(b"\x00" * (target_sz - len(raw_b)))
@@ -299,7 +299,7 @@ class STRMFile:
                     # PCM8
                     raw_b = bytearray()
                     for s in block_samps:
-                        raw_b.extend(struct.pack("<b", max(-128, min(127, s >> 8))))
+                        raw_b.extend(schema.pack("<b", max(-128, min(127, s >> 8))))
                     target_sz = last_block_size if is_last else block_size
                     if len(raw_b) < target_sz:
                         raw_b.extend(b"\x00" * (target_sz - len(raw_b)))
@@ -308,7 +308,7 @@ class STRMFile:
         # Construct DATA block (aligned to 4 bytes)
         data_block = bytearray(b"DATA")
         data_block_size = 8 + len(encoded_data)
-        data_block.extend(struct.pack("<I", data_block_size))
+        data_block.extend(schema.pack("<I", data_block_size))
         data_block.extend(encoded_data)
         pad = (4 - (len(data_block) % 4)) % 4
         if pad > 0:
@@ -320,9 +320,9 @@ class STRMFile:
         timer_period = 0x0020
 
         head_block = bytearray(b"HEAD")
-        head_block.extend(struct.pack("<I", head_size))
+        head_block.extend(schema.pack("<I", head_size))
         head_block.extend(
-            struct.pack(
+            schema.pack(
                 "<BBBBHHIIIIIIII",
                 wave_type,
                 0,  # loop_flag
@@ -347,7 +347,7 @@ class STRMFile:
         # Construct STRM file header (16 bytes)
         total_file_size = 16 + len(head_block) + len(data_block)
         header = bytearray(cls.MAGIC)
-        header.extend(struct.pack("<HHIHH", 0xFEFF, 0x0100, total_file_size, 16, 2))
+        header.extend(schema.pack("<HHIHH", 0xFEFF, 0x0100, total_file_size, 16, 2))
 
         full_bytes = bytes(header + head_block + data_block)
         return cls(full_bytes)

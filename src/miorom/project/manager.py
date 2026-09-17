@@ -7,15 +7,14 @@ translation catalogs (.po / .json), and one-command rebuilding with automated
 text lengthening, VWF auto-pagination, heap relocation, and checksum verification.
 """
 
-from miorom.result import MioRomResult
-from dataclasses import dataclass, field
 import json
 import os
-from typing import Any, Dict, List, Optional, Union
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 from miorom.core.integrity import RomIntegrityManager
-from miorom.patch.relocator import RelocationSummary
-from miorom.text.paginator import SmartAutoPaginator, PaginationConfig
+from miorom.result import MioRomResult
+from miorom.text.paginator import PaginationConfig, SmartAutoPaginator
 from miorom.text.pipeline import StringTablePipeline
 from miorom.text.po_handler import PoHandler
 
@@ -147,7 +146,7 @@ class ProjectWorkflowManager:
         - Writes output ROM if output_rom_path is specified.
         """
         manifest_path = os.path.join(project_dir, "project.json")
-        with open(manifest_path, "r", encoding="utf-8") as f:
+        with open(manifest_path, encoding="utf-8") as f:
             manifest = ProjectManifest.from_dict(json.load(f))
 
         total_strings = 0

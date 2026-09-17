@@ -8,12 +8,12 @@ exceeds physical textbox limits, it automatically weaves VM control opcodes
 so long translations flow seamlessly across pages without manual script splitting.
 """
 
-from miorom.result import MioRomResult
-from dataclasses import dataclass, field
 import re
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from dataclasses import dataclass
+from typing import Any, List, Optional, Tuple
 
-from miorom.text.paginator import SmartAutoPaginator, PaginationConfig
+from miorom.result import MioRomResult
+from miorom.text.paginator import PaginationConfig, SmartAutoPaginator
 from miorom.text.vwf import GlyphWidthTable
 
 

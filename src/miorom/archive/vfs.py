@@ -1,10 +1,11 @@
 import os
-from typing import Dict, Generator, List, Optional, Tuple, Union
+from collections.abc import Generator
+from typing import Dict, List, Optional, Tuple, Union
 
 from miorom.archive.container import ArchiveContainer, ArchiveEntry
-
-
+from miorom.core.vfs import NestedArchiveVFS
 from miorom.errors import ParseError
+
 
 class VFSNode:
     """Base class for any virtual file system node."""
@@ -12,7 +13,7 @@ class VFSNode:
     def __init__(self, name: str, is_dir: bool = False):
         self.name = name
         self.is_dir = is_dir
-        self.parent: Optional["VFSDirectory"] = None
+        self.parent: Optional[VFSDirectory] = None
 
     @property
     def path(self) -> str:
@@ -48,6 +49,10 @@ class VFSFile(VFSNode):
 
     def set_content(self, new_data: bytes):
         self.data = bytearray(new_data)
+
+    def truncate(self, size: int = 0) -> None:
+        """Truncate the file data to at most size bytes."""
+        self.data = self.data[:size]
 
 
 class VFSDirectory(VFSNode):
@@ -249,7 +254,7 @@ class VirtualFileSystem:
         Mount an ArchiveContainer, a dictionary of {path: bytes}, or another VFS
         into the specified mount point path.
         """
-        target_dir = self.mkdir(mount_point, exist_ok=True)
+        self.mkdir(mount_point, exist_ok=True)
 
         if isinstance(source, ArchiveContainer):
             for entry in source.entries:
@@ -319,9 +324,6 @@ class VirtualFileSystem:
                 idx += 1
         return ArchiveContainer(entries)
 
-
-# Expose NestedArchiveVFS from core.vfs
-from miorom.core.vfs import NestedArchiveVFS
 
 __all__ = [
     "VFSNode",

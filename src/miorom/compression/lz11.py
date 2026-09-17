@@ -1,5 +1,5 @@
+from miorom.compression.lz10 import LZExtendedSizeStruct
 from miorom.errors import CompressionError
-from miorom.core.schema import BinaryStruct, U32
 
 
 class LZ11:
@@ -132,18 +132,19 @@ class LZ11:
                 best_disp = 0
                 max_len = min(65808, data_len - in_pos)
 
-                if in_pos >= 3 and max_len >= 3:
+                if max_len >= 3:
                     window_start = max(0, in_pos - 4096)
                     target3 = data[in_pos:in_pos+3]
                     search_pos = in_pos - 1
 
                     while search_pos >= window_start:
-                        pos = data.rfind(target3, window_start, search_pos + 3)
+                        pos = data.rfind(target3, window_start, search_pos + 1)
                         if pos == -1:
                             break
 
                         match_len = 3
                         while (match_len < max_len and
+                               pos + match_len < in_pos and
                                data[pos + match_len] == data[in_pos + match_len]):
                             match_len += 1
 

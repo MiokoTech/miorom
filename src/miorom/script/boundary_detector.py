@@ -5,10 +5,11 @@ Statistical script delimiter, string terminator, and embedded control code
 discovery engine cross-referencing pointer table target sequences.
 """
 
-from collections import Counter
-from dataclasses import dataclass, field
 import math
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from collections import Counter
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple
 
 from miorom.result import MioRomResult
 

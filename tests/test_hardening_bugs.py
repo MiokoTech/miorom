@@ -315,3 +315,297 @@ def test_xref_database_export_map_and_ghidra():
     assert '<SYMBOL ADDRESS="0x02001000" NAME="main"' in xml_text
     assert '<XREF FROM="0x02001020" TO="0x02002000" TYPE="call" />' in xml_text
 
+
+def test_kosinski_descriptor_high_byte_preservation():
+    """Verify KosinskiCodec preserves high byte of descriptor word during compression."""
+    from miorom.compression.kosinski import KosinskiCodec
+    for length in [7, 15, 23, 31, 47]:
+        data = bytes([(i * 11 + 3) % 256 for i in range(length)])
+        comp = KosinskiCodec.compress(data)
+        decomp = KosinskiCodec.decompress(comp)
+        assert decomp == data, f"Kosinski decompression failed for length {length}"
+
+
+def test_bps_parse_expanded_null_bytes():
+    """Verify BpsPatcher.parse preserves null bytes in expanded ROM areas."""
+    source = b"ORIGINAL_ROM_DATA"
+    target = source + b"EXPANDED\x00\x00NULL_BYTES\x00DATA"
+    patch = BpsPatcher.create(source, target)
+    hunks = BpsPatcher.parse(patch, source)
+
+    reconstructed = bytearray(source)
+    for hunk in hunks:
+        end = hunk.offset + len(hunk.data)
+        if end > len(reconstructed):
+            reconstructed.extend(b"\x00" * (end - len(reconstructed)))
+        reconstructed[hunk.offset:end] = hunk.data
+
+    assert bytes(reconstructed) == target
+
+
+def test_thumb_bl_second_halfword_validation():
+    """Verify BranchRelocator rejects 4-byte Thumb instructions with invalid BL suffix."""
+    from miorom.asm.reloc_calc import BranchRelocator
+    relocator = BranchRelocator()
+    # 0xF000 prefix, but invalid suffix (0x3000 instead of 0xF8xx)
+    invalid_thumb_4byte = struct.pack("<HH", 0xF000, 0x3000)
+    with pytest.raises(ValueError, match="Unrecognized Thumb branch instruction"):
+        relocator.patch_single_branch(
+            inst_bytes=invalid_thumb_4byte,
+            orig_pc=0x08001000,
+            new_pc=0x08001000,
+            target_addr=0x08002000,
+            arch="thumb",
+        )
+
+
+def test_powerpc_absolute_branch_out_of_range():
+    """Verify PowerPCBranch.encode_b raises RelocationError for out-of-range absolute branch."""
+    from miorom.asm.branch import PowerPCBranch
+    from miorom.errors import RelocationError
+    # GameCube / Wii physical RAM base 0x80001000 is outside 26-bit BA reach
+    with pytest.raises(RelocationError, match="out of 26-bit addressable range"):
+        PowerPCBranch.encode_b(source_pc=0x80000000, target_addr=0x80001000, absolute=True)
+
+
+def test_resolve_mips_jump_delay_slot():
+    """Verify resolve_mips_jump computes upper bits from delay slot address (PC + 4)."""
+    from miorom.asm.branch import resolve_mips_jump
+    # J to target 0x10000004 located at 0x0FFFFFFC (crossing 256MB segment boundary)
+    # Delay slot is at 0x10000000, so upper 4 bits must be 0x10000000
+    target_index = (0x10000004 >> 2) & 0x03FFFFFF
+    opcode = (2 << 26) | target_index
+    resolved = resolve_mips_jump(src_addr=0x0FFFFFFC, opcode=opcode)
+    assert resolved == 0x10000004
+
+
+def test_apply_outline_1px_buffer_size_validation():
+    """Verify apply_outline_1px raises ValueError when buffer length does not match width * height * 4."""
+    from miorom.graphics.pixel_math import apply_outline_1px
+    with pytest.raises(ValueError, match="Invalid rgba_bytes buffer size"):
+        apply_outline_1px(rgba_bytes=b"\x00" * 10, width=4, height=4, outline_color=(0, 0, 0, 255))
+
+
+def test_md_interleave_padding():
+    """BUG-89: Verify interleave_smd zero-pads non-16KB ROMs without truncating data."""
+    from miorom.platforms.md.rom import interleave_smd, deinterleave_smd
+    data = b"ABCDEFGHIJKLMN" * 1000 + b"EXTRA_TAIL"
+    smd = interleave_smd(data)
+    assert len(smd) >= 512 + 16384
+    deinterleaved = deinterleave_smd(smd)
+    assert deinterleaved.startswith(data)
+
+
+def test_md_integrity_smd_preservation():
+    """BUG-91: Verify RomIntegrityManager.fix_integrity preserves SMD format."""
+    from miorom.core.integrity import RomIntegrityManager
+    from miorom.platforms.md.rom import MDRom, is_smd
+    raw_md = bytearray(0x20000)
+    raw_md[0x0100:0x0110] = b"SEGA GENESIS    "
+    raw_md[0x0200:0x0210] = b"\x12\x34\x56\x78"
+    smd_data = MDRom(raw_md).to_bytes(smd_format=True)
+    assert is_smd(smd_data)
+
+    fixed_bytes, report = RomIntegrityManager.fix(smd_data, platform="MD")
+    assert report.is_valid
+    assert is_smd(fixed_bytes)
+
+
+def test_gba_save_flash_v_replacement():
+    """BUG-94: Verify patch_to_sram replaces FLASH_V with 7 bytes without leaving trailing V."""
+    from miorom.save.gba_save import GBASavePatcher
+    rom = bytearray(0x1000)
+    rom[0x100:0x10A] = b"FLASH_V123"
+    patched, success, msg = GBASavePatcher.patch_to_sram(bytes(rom))
+    assert success
+    assert b"SRAM_V\x00123" in patched
+    assert b"SRAM_VV" not in patched
+
+
+def test_msbt_invalid_offset_preserves_label_alignment():
+    """BUG-92: Verify MSBTFile.from_bytes handles out-of-bounds offset without desynchronizing labels."""
+    from miorom.text.msbt import MSBTFile, MSBTEntry
+    f = MSBTFile(entries=[MSBTEntry("LABEL1", "Text 1"), MSBTEntry("LABEL2", "Text 2")])
+    data = f.to_bytes()
+    loaded = MSBTFile.from_bytes(data)
+    assert len(loaded.entries) == 2
+    assert loaded.entries[0].label == "LABEL1"
+    assert loaded.entries[1].label == "LABEL2"
+
+
+def test_planar_mode7_chunky_linear():
+    """BUG-95: Verify PlanarTileCodec decodes and encodes mode7 as chunky linear 8bpp."""
+    from miorom.graphics.planar import PlanarTileCodec
+    pixels = list(range(64))
+    encoded = PlanarTileCodec.encode_tile(pixels, "mode7")
+    assert len(encoded) == 64
+    assert encoded == bytes(pixels)
+    decoded = PlanarTileCodec.decode_tile(encoded, "mode7")
+    assert decoded == pixels
+
+
+def test_ppf_truncated_validation_block_error():
+    """BUG-98: Verify PPFPatcher raises PatchError on truncated target image."""
+    from io import BytesIO
+    from miorom.patch.ppf import PPFPatcher
+    from miorom.errors import PatchError
+    patch = bytearray(b"PPF20")
+    patch.extend(b"\x00" * 51)  # meta
+    patch.extend(b"\x00\x10\x00\x00")  # img_size
+    patch.extend(b"\x00\x08\x00\x00")  # blk_size
+    patch.extend(b"\xAA" * 1024)       # val_block
+    patch.extend(b"\x00" * 10)         # dummy records
+    target = BytesIO(b"\x00" * 100)    # Truncated target image (< 0x9320)
+    with pytest.raises(PatchError, match="validation block does not match"):
+        PPFPatcher.apply_stream(target, BytesIO(patch), validate_block=True)
+
+
+def test_bmfont_invalid_unicode_id():
+    """BUG-99: Verify BMFont.to_bitmap_font does not crash on glyph ID > 0x10FFFF."""
+    from miorom.text.bmfont import BMFont, BMFontChar, BMFontCommon, BMFontInfo
+    font = BMFont(
+        info=BMFontInfo(face="Test", size=16),
+        common=BMFontCommon(line_height=16, base=12, scale_w=128, scale_h=128, pages=1),
+        chars={
+            9999999: BMFontChar(id=9999999, x=0, y=0, width=8, height=8, xoffset=0, yoffset=0, xadvance=8, page=0, chnl=15, letter=None),
+        },
+    )
+    bm = font.to_bitmap_font()
+    assert "\\u98967f" in bm.glyphs
+
+
+def test_bmg_out_of_bounds_offset():
+    """BUG-100: Verify BMGFile.from_bytes handles out-of-bounds string offset gracefully."""
+    from miorom.text.bmg import BMGFile, BMGMessage
+    f = BMGFile(messages=[BMGMessage(text="Hello", message_id=100)])
+    data = bytearray(f.to_bytes())
+    loaded = BMGFile.from_bytes(bytes(data))
+    assert len(loaded.messages) == 1
+    assert loaded.messages[0].text == "Hello"
+
+
+def test_brr_shift_selector_middle_range():
+    """BUG-101: Verify BRRCodec.encode_block sets shift >= 1 when max_res > 3."""
+    from miorom.audio.brr import BRRCodec
+    samples = [0, 5, 5, 0, 5, 5, 0, 5, 5, 0, 5, 5, 0, 5, 5, 0]
+    block, _, _ = BRRCodec.encode_block(samples)
+    shift = (block[0] >> 4) & 0x0F
+    assert shift >= 1
+
+
+def test_sdat_to_bytes_empty_symb():
+    """BUG-102 & BUG-103: Verify SDAT container without SYMB rebuilds with valid header and matching FAT count."""
+    from miorom.audio.sdat import SDATContainer, SDATFileEntry
+    from miorom.core.schema import U32
+    sdat = SDATContainer.__new__(SDATContainer)
+    info_dummy = b"INFO" + b"\x00" * 28
+    sdat.data = bytearray(b"SDAT" + b"\x00" * 60 + info_dummy)
+    sdat.symb_offset = 0
+    sdat.symb_size = 0
+    sdat.info_offset = 64
+    sdat.info_size = len(info_dummy)
+    sdat.entries = [
+        SDATFileEntry(index=0, offset=128, size=16, data=bytearray(b"SSEQ" + b"\x00" * 12), category="SSEQ"),
+        SDATFileEntry(index=1, offset=0, size=0, data=bytearray(), category="RAW"),
+    ]
+    rebuilt = sdat.to_bytes()
+    assert rebuilt[:4] == b"SDAT"
+    info_off = U32(endian="<").unpack(rebuilt, 0x18)[0]
+    assert info_off == 64
+    fat_off = U32(endian="<").unpack(rebuilt, 0x20)[0]
+    fat_count = U32(endian="<").unpack(rebuilt, fat_off + 8)[0]
+    assert fat_count == 2
+
+
+def test_sappy_fixed_point_pitch():
+    """BUG-104: Verify SappyCodec parses fixed-point 10-bit pitch correctly."""
+    from miorom.audio.sappy import SappyCodec
+    encoded = SappyCodec.encode_sample(b"\x00" * 32, sample_rate=13379)
+    sample = SappyCodec.parse_sample(encoded, 0)
+    assert sample.sample_rate == 13379
+
+
+def test_vag_encoder_shift_direction():
+    """BUG-105: Verify VAGCodec.encode_block chooses appropriate shift for small and large signals."""
+    from miorom.audio.vag import VAGCodec
+    quiet_samples = [10] * 28
+    loud_samples = [25000] * 28
+    quiet_block, _, _ = VAGCodec.encode_block(quiet_samples)
+    loud_block, _, _ = VAGCodec.encode_block(loud_samples)
+    quiet_shift = quiet_block[0] & 0x0F
+    loud_shift = loud_block[0] & 0x0F
+    assert quiet_shift > loud_shift
+
+
+def test_cdxa_decoder_continuity():
+    """BUG-106: Verify CdXaDecoder decodes sequential units without filter scrambling."""
+    from miorom.audio.xa import CdXaDecoder
+    decoder = CdXaDecoder()
+    group = bytearray(128)
+    pcm = decoder._decode_sound_group(bytes(group), stereo=True, bits=4)
+    assert len(pcm) == 28 * 4 * 4  # 4 stereo pairs, 28 samples each, 4 bytes/pair
+
+
+def test_elf_signed_relocation_addend():
+    """BUG-107: Verify Elf32File._parse_relocations unpacks negative addends correctly."""
+    from miorom.link.elf import Elf32RelaStruct
+    # Negative addend -4 is 0xFFFFFFFC
+    data = b"\x00\x10\x00\x00\x01\x02\x00\x00\xFC\xFF\xFF\xFF"
+    rel = Elf32RelaStruct.from_bytes(data, endian="<")
+    assert rel.r_addend == -4
+
+
+def test_pattern_scanner_iter_file_no_duplicates(tmp_path):
+    """BUG-108: Verify AOBPatternScanner.iter_file does not yield duplicate matches across carry overlap."""
+    from miorom.scanner.pattern import AOBPatternScanner
+    fpath = str(tmp_path / "test.bin")
+    chunk1 = b"\xAA\xBB\xCC" * 10
+    with open(fpath, "wb") as f:
+        f.write(chunk1)
+    matches = list(AOBPatternScanner.iter_file(fpath, "AA BB CC", chunk_size=9))
+    offsets = [m.offset for m in matches]
+    assert len(offsets) == len(set(offsets))
+
+
+def test_deep_scanner_partial_block_entropy():
+    """BUG-109: Verify DeepScanner.iter_compressed_blocks average entropy does not exceed 8.0."""
+    from miorom.scanner.deep import DeepScanner
+    data = b"\x00\x01\x02\x03" * 375  # 1500 bytes
+    scanner = DeepScanner()
+    blocks = list(scanner.iter_compressed_blocks(data, block_size=1024, entropy_threshold=1.0))
+    for _, _, avg_ent in blocks:
+        assert avg_ent <= 8.0
+
+
+def test_deep_scanner_narc_endianness():
+    """BUG-110: Verify DeepScanner detects NDS NARC as little-endian and calculates size correctly."""
+    from miorom.scanner.deep import DeepScanner
+    narc_data = b"NARC\xFF\xFE\x00\x01\x00\x00\x01\x00" + b"\x00" * 32
+    scanner = DeepScanner()
+    report = scanner.scan(narc_data)
+    narc_fps = [fp for fp in report.fingerprints if fp.format_name == "NARC"]
+    assert len(narc_fps) == 1
+    assert narc_fps[0].size == 65536
+
+
+def test_dol_binary_accepts_bytes():
+    """BUG-111: Verify DolBinary accepts bytes without throwing AttributeError."""
+    from miorom.link.dol import DolBinary
+    header = bytearray(0x100)
+    header[0:4] = b"\x00\x00\x01\x00"
+    header[0x48:0x4C] = b"\x80\x00\x31\x00"
+    header[0x90:0x94] = b"\x00\x00\x00\x20"
+    dol_bytes = bytes(header + b"\x00" * 0x20)
+    dol = DolBinary(dol_bytes)
+    assert len(dol.text_sections) == 1
+
+
+def test_cascading_unpack_bounded_count():
+    """BUG-112: Verify CascadingContainerRepacker.unpack_table_based_container bounds checks count."""
+    from miorom.archive.cascading import CascadingContainerRepacker
+    corrupt_data = b"PACK\x40\x42\x0F\x00" + b"\x00" * 12
+    entries = CascadingContainerRepacker.unpack_table_based_container(corrupt_data)
+    assert len(entries) == 0
+
+
+

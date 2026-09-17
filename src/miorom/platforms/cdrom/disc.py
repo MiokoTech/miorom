@@ -1,9 +1,8 @@
-import io
-from miorom.errors import ParseError
 import os
-import struct
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
+from miorom.core import schema
+from miorom.errors import ParseError
 from miorom.platforms.cdrom.cue import CueSheet, CueTrack, lba_to_msf
 from miorom.platforms.iso.iso9660 import ISO9660
 
@@ -207,8 +206,9 @@ class CueBinDisc:
 
     def replace_track_data(self, track_number: int, new_data: bytes, is_raw: bool = False):
         """
-        Replace track data. If is_raw=False on a MODE1/2352 track, packages 2048-byte chunks
-        into compliant 2352-byte sectors with sync, MSF header, EDC, and padding.
+        Replace track data. If is_raw=False on a MODE1/2352 or MODE2/2352 track,
+        packages 2048-byte chunks into compliant 2352-byte sectors with sync,
+        MSF header, subheader (for Mode 2), and verified 32-bit EDC checksums.
         """
         trk = self.get_track(track_number)
         fn, start_byte, length = self._get_track_byte_slice(trk)
@@ -220,6 +220,7 @@ class CueBinDisc:
             chunk_size = 2048
             num_sectors = (len(new_data) + chunk_size - 1) // chunk_size
             packed = bytearray()
+            is_mode2 = trk.track_type.startswith("MODE2")
 
             for i in range(num_sectors):
                 chunk = new_data[i * chunk_size:(i + 1) * chunk_size]
@@ -230,19 +231,43 @@ class CueBinDisc:
                 lba = trk.start_lba + i + 150
                 m, s, f = lba_to_msf(lba)
 
-                header = bytes([_to_bcd(m), _to_bcd(s), _to_bcd(f), 0x01])  # Mode 1
-                sector_core = header + chunk  # 2052 bytes
-                edc = calculate_cdrom_edc(sector_core)
-
                 sector = bytearray(2352)
                 sector[0:12] = SYNC_PATTERN
-                sector[12:16] = header
-                sector[16:2064] = chunk
-                struct.pack_into("<I", sector, 2064, edc)
-                # bytes 2068..2352: zero reserved + ECC
+
+                if is_mode2:
+                    # Mode 2 Form 1
+                    header = bytes([_to_bcd(m), _to_bcd(s), _to_bcd(f), 0x02])
+                    sector[12:16] = header
+                    # Subheader (Form 1: submode = 0x08)
+                    sector[16:24] = b"\x00\x00\x08\x00\x00\x00\x08\x00"
+                    sector[24:2072] = chunk
+                    # EDC over subheader + user data: bytes 16..2072 (2056 bytes)
+                    edc = calculate_cdrom_edc(bytes(sector[16:2072]))
+                    schema.pack_into("<I", sector, 2072, edc)
+                else:
+                    # Mode 1
+                    header = bytes([_to_bcd(m), _to_bcd(s), _to_bcd(f), 0x01])
+                    sector[12:16] = header
+                    sector[16:2064] = chunk
+                    # Yellow Book standard Mode 1 EDC over bytes 0..2064 (2064 bytes)
+                    edc = calculate_cdrom_edc(bytes(sector[:2064]))
+                    schema.pack_into("<I", sector, 2064, edc)
+
                 packed.extend(sector)
 
             packed_bytes = bytes(packed)
+
+        # Handle delta length in multi-track single-BIN file
+        delta_bytes = len(packed_bytes) - length
+        if delta_bytes != 0:
+            sec_size = trk.sector_size
+            delta_sectors = delta_bytes // sec_size
+            for file_name, _, tracks in self.cue.files:
+                if file_name == fn and len(tracks) > 1:
+                    idx = tracks.index(trk)
+                    for next_trk in tracks[idx + 1:]:
+                        for idx_k in list(next_trk.indexes.keys()):
+                            next_trk.indexes[idx_k] += delta_sectors
 
         # Replace in bin buffer
         buf = self.bin_buffers[fn]
@@ -260,19 +285,19 @@ class CueBinDisc:
         pcm_data = self.extract_track_data(track_number, raw=True)
 
         # WAV RIFF header (PCM 44.1kHz 16-bit stereo)
-        fmt_chunk = struct.pack("<HHIIHH", 1, 2, 44100, 176400, 4, 16)
+        fmt_chunk = schema.pack("<HHIIHH", 1, 2, 44100, 176400, 4, 16)
         data_len = len(pcm_data)
         riff_len = 4 + (8 + len(fmt_chunk)) + (8 + data_len)
 
         wav = bytearray()
         wav.extend(b"RIFF")
-        wav.extend(struct.pack("<I", riff_len))
+        wav.extend(schema.pack("<I", riff_len))
         wav.extend(b"WAVE")
         wav.extend(b"fmt ")
-        wav.extend(struct.pack("<I", len(fmt_chunk)))
+        wav.extend(schema.pack("<I", len(fmt_chunk)))
         wav.extend(fmt_chunk)
         wav.extend(b"data")
-        wav.extend(struct.pack("<I", data_len))
+        wav.extend(schema.pack("<I", data_len))
         wav.extend(pcm_data)
 
         res = bytes(wav)
@@ -297,7 +322,7 @@ class CueBinDisc:
         pcm_bytes = None
         while offset + 8 <= len(wav_data):
             chunk_id = wav_data[offset:offset + 4]
-            chunk_sz = struct.unpack_from("<I", wav_data, offset + 4)[0]
+            chunk_sz = schema.unpack_from("<I", wav_data, offset + 4)[0]
             chunk_data = wav_data[offset + 8:offset + 8 + chunk_sz]
 
             if chunk_id == b"data":

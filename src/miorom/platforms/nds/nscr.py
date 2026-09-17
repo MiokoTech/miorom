@@ -8,13 +8,13 @@ Supports Text BG and multi-page sub-screen base block (SBB) coordinate mapping.
 
 from __future__ import annotations
 
+import struct
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional
+
 from miorom.core.binary import BinaryReader, BinaryWriter
-from miorom.core.schema import BinaryStruct, RawBytes, U16, U32
+from miorom.core.schema import U16, U32, BinaryStruct, RawBytes
 from miorom.errors import ParseError
-from miorom.graphics.palette import Color, Palette
-from miorom.graphics.tiles import Tile
 
 
 @dataclass
@@ -34,7 +34,7 @@ class ScreenEntry:
         return val
 
     @classmethod
-    def from_u16(cls, val: int) -> "ScreenEntry":
+    def from_u16(cls, val: int) -> ScreenEntry:
         return cls(
             tile_index=val & 0x03FF,
             flip_x=bool(val & (1 << 10)),
@@ -127,7 +127,28 @@ class NSCRFile:
         return None
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "NSCRFile":
+    def quick_max_tile_index(cls, data: bytes) -> int:
+        """Lightweight scan of the maximum tile index referenced in the NSCR entry array."""
+        if len(data) < 0x20:
+            return 0
+        header = NSCRHeaderStruct.from_bytes(data, offset=0)
+        if header.magic not in (cls.MAGIC, b"NSCR"):
+            return 0
+        offset = header.header_size
+        scrn = SCRNSectionStruct.from_bytes(data, offset=offset)
+        if scrn.magic not in (cls.SECTION_MAGIC, b"SCRN"):
+            return 0
+        entry_data_start = offset + 20
+        count = scrn.data_size // 2
+        if entry_data_start + count * 2 > len(data):
+            count = max(0, (len(data) - entry_data_start) // 2)
+        if count == 0:
+            return 0
+        vals = struct.unpack_from(f"<{count}H", data, entry_data_start)
+        return max((v & 0x03FF for v in vals), default=0)
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> NSCRFile:
         if len(data) < 0x20:
             raise ParseError("Data too small for NSCR header.")
 
@@ -142,14 +163,19 @@ class NSCRFile:
 
         entry_data_start = offset + 20
         count = scrn.data_size // 2
+        if entry_data_start + count * 2 > len(data):
+            count = max(0, (len(data) - entry_data_start) // 2)
 
-        reader = BinaryReader(data, endian="<")
-        reader.seek(entry_data_start)
-        entries: List[ScreenEntry] = []
-        for _ in range(count):
-            if reader.tell() + 2 <= len(data):
-                val = reader.read_u16()
-                entries.append(ScreenEntry.from_u16(val))
+        vals = struct.unpack_from(f"<{count}H", data, entry_data_start) if count else ()
+        entries: List[ScreenEntry] = [
+            ScreenEntry(
+                tile_index=val & 0x03FF,
+                flip_x=bool(val & (1 << 10)),
+                flip_y=bool(val & (1 << 11)),
+                palette_index=(val >> 12) & 0x0F,
+            )
+            for val in vals
+        ]
 
         return cls(
             entries=entries,

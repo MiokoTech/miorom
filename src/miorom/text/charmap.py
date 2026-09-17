@@ -1,5 +1,4 @@
-from typing import Dict, Tuple, Optional
-import os
+from typing import Dict, Optional
 
 
 class CharMap:
@@ -26,7 +25,7 @@ class CharMap:
     def from_tbl_file(cls, filepath: str, encoding: str = "utf-8") -> "CharMap":
         """Load a standard .tbl file (format: HEX=CHAR)."""
         cm = cls()
-        with open(filepath, "r", encoding=encoding, errors="replace") as f:
+        with open(filepath, encoding=encoding, errors="replace") as f:
             for line in f:
                 line = line.rstrip("\r\n")
                 if not line or line.startswith("#") or line.startswith("//"):

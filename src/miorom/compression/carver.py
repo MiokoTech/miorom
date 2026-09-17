@@ -6,17 +6,17 @@ from ROM files, archives, and memory dumps.
 Supports Nintendo standard formats: LZ10, LZ11, RLE, Huffman, and Yaz0.
 """
 
-from miorom.result import MioRomResult
 import os
-import struct
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional
 
+from miorom.compression.huffman import Huffman
 from miorom.compression.lz10 import LZ10
 from miorom.compression.lz11 import LZ11
 from miorom.compression.rle import RLE
-from miorom.compression.huffman import Huffman
 from miorom.compression.yaz0 import Yaz0
+from miorom.core import schema
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -77,7 +77,7 @@ class CompressionCarver:
             # Yaz0 header check
             if "yaz0" in target_formats and data[i : i + 4] == b"Yaz0":
                 try:
-                    dec_sz = struct.unpack(">I", data[i + 4 : i + 8])[0]
+                    dec_sz = schema.unpack(">I", data[i + 4 : i + 8])[0]
                     if min_decomp_size <= dec_sz <= max_decomp_size:
                         decomp = Yaz0.decompress(data[i:])
                         if len(decomp) == dec_sz:
@@ -102,7 +102,7 @@ class CompressionCarver:
             header_len = 4
             if expected_sz == 0 and magic in (0x10, 0x11):
                 if i + 8 <= data_len:
-                    expected_sz = struct.unpack("<I", data[i + 4 : i + 8])[0]
+                    expected_sz = schema.unpack("<I", data[i + 4 : i + 8])[0]
                     header_len = 8
 
             if min_decomp_size <= expected_sz <= max_decomp_size:

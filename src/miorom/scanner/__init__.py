@@ -10,10 +10,11 @@ from miorom.core.scanner import (
     StringScanner,
     TextBlock,
 )
+from miorom.scanner.crypto import CryptoMatch, CryptoReport, CryptoScanner
 from miorom.scanner.deep import (
     BinaryFingerprint,
-    DeepScanReport,
     DeepScanner,
+    DeepScanReport,
     calculate_block_entropy,
     calculate_entropy,
 )
@@ -22,12 +23,11 @@ from miorom.scanner.inspector import (
     InspectionReport,
     SmartInspector,
 )
-from miorom.scanner.crypto import CryptoMatch, CryptoReport, CryptoScanner
-from miorom.scanner.xref import XRefType, XRefEntry, XRefGraph, XRefAnalyzer
-from miorom.scanner.pattern import AOBPatternScanner, PatternMatch, CompiledPattern
-from miorom.scanner.triage import RomTriageEngine, TriageReport, FileTriageRecord, AssetType
+from miorom.scanner.pattern import AOBPatternScanner, CompiledPattern, PatternMatch
 from miorom.scanner.table_detector import HeuristicTableDetector, TableCandidate
 from miorom.scanner.text_stream import TextStreamScanner, TextStreamSpan
+from miorom.scanner.triage import AssetType, FileTriageRecord, RomTriageEngine, TriageReport
+from miorom.scanner.xref import XRefAnalyzer, XRefEntry, XRefGraph, XRefType
 
 __all__ = [
     "BinaryFingerprint",

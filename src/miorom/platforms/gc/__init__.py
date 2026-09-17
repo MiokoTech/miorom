@@ -5,8 +5,8 @@ file extraction, and compliant disc repacking.
 """
 
 from miorom.platforms.gc.disc import FSTEntry, GameCubeDisc, GCHeader
-from miorom.platforms.gc.fst_injector import FstInjector, FstNode
 from miorom.platforms.gc.dol import DolFile, DolSection
+from miorom.platforms.gc.fst_injector import FstInjector, FstNode
 
 __all__ = [
     "GCHeader",

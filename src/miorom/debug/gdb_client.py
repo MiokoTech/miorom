@@ -7,14 +7,14 @@ register reading, and string tracing across mGBA, No$gba, MelonDS, PCSX-Redux,
 Dolphin, Citra, and QEMU.
 """
 
+import socket
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+from miorom.core import schema
+from miorom.debug.client import EmulatorClient
 from miorom.errors import ParseError
 from miorom.result import MioRomResult
-import socket
-import struct
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Union
-
-from miorom.debug.client import EmulatorClient
 
 
 @dataclass
@@ -67,13 +67,13 @@ class GDBProtocolMock:
             if 0 <= reg_idx < len(self.registers):
                 # Little-endian 32-bit hex
                 val = self.registers[reg_idx]
-                return struct.pack("<I", val).hex()
+                return schema.pack("<I", val).hex()
             return "E01"
         elif cmd.startswith("P"):
             # P<reg>=<val>
             reg_s, val_s = cmd[1:].split("=")
             reg_idx = int(reg_s, 16)
-            val = struct.unpack("<I", bytes.fromhex(val_s))[0]
+            val = schema.unpack("<I", bytes.fromhex(val_s))[0]
             if 0 <= reg_idx < len(self.registers):
                 self.registers[reg_idx] = val
                 return "OK"
@@ -215,11 +215,11 @@ class GDBEmulatorClient(EmulatorClient):
         if resp.startswith("E") or not resp:
             raise ParseError(f"Failed to read register R{reg_num}: {resp}")
         raw = bytes.fromhex(resp)
-        return struct.unpack("<I", raw)[0]
+        return schema.unpack("<I", raw)[0]
 
     def write_register(self, reg_num: int, value: int) -> None:
         """Writes a 32-bit CPU register value."""
-        hex_val = struct.pack("<I", value).hex()
+        hex_val = schema.pack("<I", value).hex()
         resp = self.send_packet(f"P{reg_num:x}={hex_val}")
         if resp != "OK":
             raise ParseError(f"Failed to write register R{reg_num}: {resp}")
@@ -339,7 +339,7 @@ class GDBEmulatorClient(EmulatorClient):
         Searches live emulator RAM for 16-bit or 32-bit pointers pointing to target_address.
         """
         fmt = f"{endian}I" if pointer_size == 4 else f"{endian}H"
-        pattern = struct.pack(fmt, target_address)
+        pattern = schema.pack(fmt, target_address)
         return self.find_bytes_in_ram(pattern, start_addr, end_addr, chunk_size=chunk_size)
 
     def dump_ram_range(

@@ -1,8 +1,9 @@
-from miorom.result import MioRomResult
-from miorom.errors import ParseError
 from dataclasses import dataclass
-from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U16, U32, U8
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional
+
+from miorom.core.schema import U8, U16, U32, BinaryStruct, FixedString, RawBytes
+from miorom.errors import ParseError
+from miorom.result import MioRomResult
 
 
 class ISOBothU32Struct(BinaryStruct):
@@ -184,6 +185,9 @@ class ISO9660:
 
         if sectors_needed > old_sectors:
             # Append new sectors at the end of the ISO
+            rem = len(self.data) % self.SECTOR_SIZE
+            if rem != 0:
+                self.data.extend(b"\x00" * (self.SECTOR_SIZE - rem))
             current_total_sectors = len(self.data) // self.SECTOR_SIZE
             target_lba = current_total_sectors
 

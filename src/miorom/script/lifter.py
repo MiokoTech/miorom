@@ -3,12 +3,12 @@ import json
 import os
 from collections import defaultdict
 from dataclasses import asdict
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple
 
 from miorom.asm.disasm import DisasmInstruction, UniversalDisassembler
 from miorom.script.ir import IRBlock, IRFunction, IRInstruction, IROp, IRVar
 
-_CACHE_SCHEMA = 2
+_CACHE_SCHEMA = 4
 
 
 class BinaryLifter:
@@ -54,32 +54,79 @@ class BinaryLifter:
 
         func_name = function_name or f"sub_{base_address:08X}"
         ir_func = IRFunction(name=func_name, entry_address=base_address)
+        arch_norm = arch.lower()
+        has_mips_delay_slots = "mips" in arch_norm
 
         # Partition into basic blocks
         leaders: Set[int] = {base_address}
-        for ins in disasm_list:
+        for idx, ins in enumerate(disasm_list):
             if ins.is_branch or ins.is_return:
                 if ins.target_address:
                     leaders.add(ins.target_address)
-                # Next instruction after branch/call is a potential leader
-                leaders.add(ins.address + ins.size)
+                if has_mips_delay_slots and idx + 1 < len(disasm_list):
+                    leaders.add(ins.address + (ins.size * 2))
+                else:
+                    # Next instruction after branch/call is a potential leader
+                    leaders.add(ins.address + ins.size)
+
+        next_ins_addr: Dict[int, int] = {}
+        for idx, ins in enumerate(disasm_list):
+            if has_mips_delay_slots and (ins.is_branch or ins.is_return) and idx + 1 < len(disasm_list):
+                next_ins_addr[ins.address] = disasm_list[idx + 1].address + disasm_list[idx + 1].size
+            elif idx + 1 < len(disasm_list):
+                next_ins_addr[ins.address] = disasm_list[idx + 1].address
+            else:
+                next_ins_addr[ins.address] = ins.address + ins.size
 
         blocks: Dict[int, IRBlock] = {}
         cur_block: Optional[IRBlock] = None
 
-        for ins in disasm_list:
+        def last_non_nop(block: IRBlock) -> Optional[IRInstruction]:
+            for past_ins in reversed(block.instructions):
+                if past_ins.op != IROp.NOP:
+                    return past_ins
+            return None
+
+        idx = 0
+        while idx < len(disasm_list):
+            ins = disasm_list[idx]
             if ins.address in leaders or cur_block is None:
                 lbl = f"loc_{ins.address:08X}"
                 cur_block = IRBlock(label=lbl, address=ins.address)
                 blocks[ins.address] = cur_block
                 ir_func.add_block(cur_block)
 
-            ir_ins = cls._lift_instruction(ins, arch)
+            if has_mips_delay_slots and (ins.is_branch or ins.is_return):
+                delay_slot_available = idx + 1 < len(disasm_list)
+                if delay_slot_available:
+                    delay_ins = disasm_list[idx + 1]
+                    delay_ir = cls._lift_instruction(
+                        delay_ins,
+                        arch,
+                        prev_ins=last_non_nop(cur_block),
+                    )
+                    if delay_ir:
+                        cur_block.add_instruction(delay_ir)
+
+                ir_ins = cls._lift_instruction(ins, arch, prev_ins=last_non_nop(cur_block))
+                if ir_ins:
+                    if not delay_slot_available:
+                        ir_ins.comment = (
+                            f"{ir_ins.comment}; " if ir_ins.comment else ""
+                        ) + "MIPS delay slot outside lifted data"
+                    cur_block.add_instruction(ir_ins)
+
+                cur_block = None
+                idx += 2 if delay_slot_available else 1
+                continue
+
+            ir_ins = cls._lift_instruction(ins, arch, prev_ins=last_non_nop(cur_block))
             if ir_ins:
                 cur_block.add_instruction(ir_ins)
 
-            if ins.is_return or (ins.is_branch and not ins.is_conditional):
+            if ins.is_return or ins.is_branch:
                 cur_block = None
+            idx += 1
 
         # Control flow graph edges
         for addr, b in blocks.items():
@@ -90,17 +137,42 @@ class BinaryLifter:
                 target_addr = last.args[0]
                 if isinstance(target_addr, int) and target_addr in blocks:
                     target_lbl = blocks[target_addr].label
-                    b.successors.append(target_lbl)
-                    blocks[target_addr].predecessors.append(b.label)
+                    if target_lbl not in b.successors:
+                        b.successors.append(target_lbl)
+                    if b.label not in blocks[target_addr].predecessors:
+                        blocks[target_addr].predecessors.append(b.label)
             elif last.op == IROp.BRANCH_COND and last.args:
+                # Taken branch edge
                 target_addr = last.args[0]
                 if isinstance(target_addr, int) and target_addr in blocks:
                     target_lbl = blocks[target_addr].label
-                    b.successors.append(target_lbl)
-                    blocks[target_addr].predecessors.append(b.label)
+                    if target_lbl not in b.successors:
+                        b.successors.append(target_lbl)
+                    if b.label not in blocks[target_addr].predecessors:
+                        blocks[target_addr].predecessors.append(b.label)
+                # Fall-through branch edge
+                fallthrough_addr = next_ins_addr.get(last.pc)
+                if fallthrough_addr is not None and fallthrough_addr in blocks:
+                    ft_lbl = blocks[fallthrough_addr].label
+                    if ft_lbl not in b.successors:
+                        b.successors.append(ft_lbl)
+                    if b.label not in blocks[fallthrough_addr].predecessors:
+                        blocks[fallthrough_addr].predecessors.append(b.label)
+            elif last.op == IROp.RETURN:
+                pass
+            else:
+                # Non-branch, non-return block falls through to next block
+                fallthrough_addr = next_ins_addr.get(last.pc)
+                if fallthrough_addr is not None and fallthrough_addr in blocks:
+                    ft_lbl = blocks[fallthrough_addr].label
+                    if ft_lbl not in b.successors:
+                        b.successors.append(ft_lbl)
+                    if b.label not in blocks[fallthrough_addr].predecessors:
+                        blocks[fallthrough_addr].predecessors.append(b.label)
 
         # SSA register versioning
         cls.convert_to_ssa(ir_func)
+        cls.insert_phi_nodes(ir_func)
 
         if cache_path:
             cls._write_cache(cache_path, ir_func)
@@ -136,7 +208,7 @@ class BinaryLifter:
     @classmethod
     def _read_cache(cls, path: str) -> Optional[IRFunction]:
         try:
-            with open(path, "r", encoding="utf-8") as cache_file:
+            with open(path, encoding="utf-8") as cache_file:
                 payload = json.load(cache_file)
             if payload.get("schema") != _CACHE_SCHEMA:
                 return None
@@ -164,6 +236,12 @@ class BinaryLifter:
         def var_or_value(item):
             if isinstance(item, dict) and {"name", "version", "var_type"} <= set(item):
                 return IRVar(**item)
+            if (
+                isinstance(item, list)
+                and len(item) == 2
+                and isinstance(item[0], str)
+            ):
+                return (item[0], var_or_value(item[1]))
             return item
 
         blocks: Dict[str, IRBlock] = {}
@@ -201,7 +279,12 @@ class BinaryLifter:
         )
 
     @classmethod
-    def _lift_instruction(cls, ins: DisasmInstruction, arch: str) -> Optional[IRInstruction]:
+    def _lift_instruction(
+        cls,
+        ins: DisasmInstruction,
+        arch: str,
+        prev_ins: Optional[IRInstruction] = None,
+    ) -> Optional[IRInstruction]:
         arch_norm = arch.lower()
         mnem = ins.mnemonic.lower()
         ops = ins.operands
@@ -227,12 +310,25 @@ class BinaryLifter:
                 return IRInstruction(IROp.LOAD, dst=ops[0], args=[ops[1]], pc=ins.address)
             elif mnem == "stw" and len(ops) >= 2:
                 return IRInstruction(IROp.STORE, dst=None, args=[ops[1], ops[0]], pc=ins.address)
+            elif mnem in ("cmpw", "cmpwi", "cmplw", "cmplwi", "cmp", "cmpi", "cmpl", "cmpli") and len(ops) >= 2:
+                reg = ops[1] if len(ops) >= 3 else ops[0]
+                val_str = ops[2] if len(ops) >= 3 else ops[1]
+                val = int(val_str, 0) if val_str.startswith("0x") else (int(val_str) if val_str.lstrip("-").isdigit() else val_str)
+                return IRInstruction(IROp.CMP, args=[reg, val], pc=ins.address)
             elif mnem in ("b", "ba") and ins.target_address:
                 return IRInstruction(IROp.BRANCH, args=[ins.target_address], pc=ins.address)
             elif mnem in ("bl", "bla") and ins.target_address:
                 return IRInstruction(IROp.CALL, dst="r3", args=[ins.target_address], pc=ins.address)
             elif mnem in ("bc", "bca") and ins.target_address:
                 return IRInstruction(IROp.BRANCH_COND, args=[ins.target_address, f"cond_{ops[0]}_{ops[1]}"], pc=ins.address)
+            elif mnem in ("beq", "bne", "blt", "bgt", "ble", "bge") and ins.target_address:
+                cond_map = {"beq": "==", "bne": "!=", "blt": "<", "bgt": ">", "ble": "<=", "bge": ">="}
+                cond = cond_map[mnem]
+                if prev_ins and prev_ins.op == IROp.CMP and len(prev_ins.args) >= 2:
+                    cond_expr = f"{prev_ins.args[0]} {cond} {prev_ins.args[1]}"
+                else:
+                    cond_expr = mnem
+                return IRInstruction(IROp.BRANCH_COND, args=[ins.target_address, cond_expr], pc=ins.address)
 
         # ARM & Thumb Lifting
         elif arch_norm in ("arm", "arm32", "thumb", "arm_thumb"):
@@ -281,12 +377,51 @@ class BinaryLifter:
                 return IRInstruction(IROp.LOAD, dst=ops[0], args=[ops[1]], pc=ins.address)
             elif mnem in ("str", "strb", "strh") and len(ops) >= 2:
                 return IRInstruction(IROp.STORE, dst=None, args=[ops[1], ops[0]], pc=ins.address)
+            elif mnem in ("cmp", "cmn", "tst", "teq") and len(ops) >= 2:
+                op0 = ops[0]
+                raw_val = ops[1].replace("#", "") if ops[1].startswith("#") else ops[1]
+                val = int(raw_val, 0) if raw_val.startswith("0x") else (int(raw_val) if raw_val.lstrip("-").isdigit() else raw_val)
+                if mnem == "cmn":
+                    val = -val if isinstance(val, int) else f"-({val})"
+                elif mnem == "tst":
+                    return IRInstruction(IROp.CMP, args=[f"({op0} & {val})", 0], pc=ins.address)
+                elif mnem == "teq":
+                    return IRInstruction(IROp.CMP, args=[f"({op0} ^ {val})", 0], pc=ins.address)
+                return IRInstruction(IROp.CMP, args=[op0, val], pc=ins.address)
             elif mnem == "bl" and ins.target_address:
                 return IRInstruction(IROp.CALL, dst="r0", args=[ins.target_address], pc=ins.address)
-            elif mnem == "b" and ins.target_address:
+            elif mnem in ("b", "bal") and ins.target_address:
+                if ins.is_conditional:
+                    return IRInstruction(IROp.BRANCH_COND, args=[ins.target_address, "cond"], pc=ins.address)
                 return IRInstruction(IROp.BRANCH, args=[ins.target_address], pc=ins.address)
             elif mnem in ("beq", "bne", "bcs", "bcc", "bmi", "bpl", "bvs", "bvc", "bhi", "bls", "bge", "blt", "bgt", "ble") and ins.target_address:
-                return IRInstruction(IROp.BRANCH_COND, args=[ins.target_address, mnem], pc=ins.address)
+                arm_cond_map = {
+                    "beq": "==",
+                    "bne": "!=",
+                    "blt": "<",
+                    "ble": "<=",
+                    "bgt": ">",
+                    "bge": ">=",
+                    "blo": "<",
+                    "bcc": "<",
+                    "bls": "<=",
+                    "bhi": ">",
+                    "bhs": ">=",
+                    "bcs": ">=",
+                    "bmi": "< 0",
+                    "bpl": ">= 0",
+                }
+                if prev_ins and prev_ins.op == IROp.CMP and len(prev_ins.args) >= 2:
+                    op_sym = arm_cond_map.get(mnem, mnem)
+                    if mnem in ("bmi", "bpl"):
+                        cond_expr = f"{prev_ins.args[0]} {op_sym}"
+                    elif mnem in ("blo", "bcc", "bls", "bhi", "bhs", "bcs"):
+                        cond_expr = f"(unsigned){prev_ins.args[0]} {op_sym} (unsigned){prev_ins.args[1]}"
+                    else:
+                        cond_expr = f"{prev_ins.args[0]} {op_sym} {prev_ins.args[1]}"
+                else:
+                    cond_expr = mnem
+                return IRInstruction(IROp.BRANCH_COND, args=[ins.target_address, cond_expr], pc=ins.address)
 
         # MIPS Lifting
         elif "mips" in arch_norm:
@@ -355,7 +490,18 @@ class BinaryLifter:
             elif mnem == "ld" and len(ops) >= 2:
                 val = int(ops[1], 0) if ops[1].startswith("0x") else ops[1]
                 return IRInstruction(IROp.ASSIGN, dst=ops[0], args=[val], pc=ins.address)
+            elif mnem == "cp" and ops:
+                val = int(ops[0], 0) if ops[0].startswith("0x") else (int(ops[0]) if ops[0].lstrip("-").isdigit() else ops[0])
+                return IRInstruction(IROp.CMP, args=["a", val], pc=ins.address)
             elif mnem in ("jp", "jr") and ins.target_address:
+                if ins.is_conditional:
+                    cond_name = ops[0].lower() if ops else "cond"
+                    cond_sm83_map = {"z": "==", "nz": "!=", "c": "<", "nc": ">="}
+                    if prev_ins and prev_ins.op == IROp.CMP and len(prev_ins.args) >= 2 and cond_name in cond_sm83_map:
+                        cond_expr = f"{prev_ins.args[0]} {cond_sm83_map[cond_name]} {prev_ins.args[1]}"
+                    else:
+                        cond_expr = cond_name
+                    return IRInstruction(IROp.BRANCH_COND, args=[ins.target_address, cond_expr], pc=ins.address)
                 return IRInstruction(IROp.BRANCH, args=[ins.target_address], pc=ins.address)
             elif mnem == "call" and ins.target_address:
                 return IRInstruction(IROp.CALL, dst="a", args=[ins.target_address], pc=ins.address)
@@ -369,8 +515,28 @@ class BinaryLifter:
             elif mnem == "moveq" and len(ops) >= 2:
                 val = int(ops[0].replace("#", ""), 0) if ops[0].startswith("#") else ops[0]
                 return IRInstruction(IROp.ASSIGN, dst=ops[1], args=[val], pc=ins.address)
+            elif mnem in ("cmp", "cmpi", "cmpa") and len(ops) >= 2:
+                op0 = ops[0].replace("#", "") if ops[0].startswith("#") else ops[0]
+                val = int(op0, 0) if op0.startswith("0x") else (int(op0) if op0.lstrip("-").isdigit() else op0)
+                return IRInstruction(IROp.CMP, args=[ops[1], val], pc=ins.address)
+            elif mnem == "tst" and ops:
+                return IRInstruction(IROp.CMP, args=[ops[0], 0], pc=ins.address)
             elif mnem in ("bra", "jmp") and ins.target_address:
                 return IRInstruction(IROp.BRANCH, args=[ins.target_address], pc=ins.address)
+            elif mnem in ("beq", "bne", "blt", "ble", "bgt", "bge", "bcs", "bcc", "bmi", "bpl") and ins.target_address:
+                m68k_cond_map = {
+                    "beq": "==", "bne": "!=", "blt": "<", "ble": "<=", "bgt": ">", "bge": ">=",
+                    "bcs": "<", "bcc": ">=", "bmi": "< 0", "bpl": ">= 0"
+                }
+                if prev_ins and prev_ins.op == IROp.CMP and len(prev_ins.args) >= 2:
+                    op_sym = m68k_cond_map.get(mnem, mnem)
+                    if mnem in ("bmi", "bpl"):
+                        cond_expr = f"{prev_ins.args[0]} {op_sym}"
+                    else:
+                        cond_expr = f"{prev_ins.args[0]} {op_sym} {prev_ins.args[1]}"
+                else:
+                    cond_expr = mnem
+                return IRInstruction(IROp.BRANCH_COND, args=[ins.target_address, cond_expr], pc=ins.address)
             elif mnem in ("bsr", "jsr") and ins.target_address:
                 return IRInstruction(IROp.CALL, dst="d0", args=[ins.target_address], pc=ins.address)
 
@@ -393,6 +559,11 @@ class BinaryLifter:
                 return IRInstruction(IROp.STORE, dst=None, args=[ops[0], src_reg], pc=ins.address)
             elif mnem == "stz" and ops:
                 return IRInstruction(IROp.STORE, dst=None, args=[ops[0], 0], pc=ins.address)
+            elif mnem in ("cmp", "cpx", "cpy") and ops:
+                target_reg = "a" if mnem == "cmp" else ("x" if mnem == "cpx" else "y")
+                op0 = ops[0]
+                val = int(op0.replace("#$", "0x").replace("#", ""), 0) if (op0.startswith("#$") or op0.startswith("#")) else op0
+                return IRInstruction(IROp.CMP, args=[target_reg, val], pc=ins.address)
             elif mnem in ("tax", "txa", "tay", "tya", "tsx", "txs", "txy", "tyx", "tcd", "tdc", "tcs", "tsc"):
                 src_dst_map = {
                     "tax": ("x", "a"), "txa": ("a", "x"),
@@ -433,7 +604,18 @@ class BinaryLifter:
             elif mnem in ("jmp", "jml", "bra", "brl") and ins.target_address is not None:
                 return IRInstruction(IROp.BRANCH, args=[ins.target_address], pc=ins.address)
             elif mnem in ("beq", "bne", "bcs", "bcc", "bmi", "bpl", "bvs", "bvc") and ins.target_address is not None:
-                return IRInstruction(IROp.BRANCH_COND, args=[ins.target_address, mnem], pc=ins.address)
+                cond_6502_map = {
+                    "beq": "==", "bne": "!=", "bcc": "<", "bcs": ">=", "bmi": "< 0", "bpl": ">= 0"
+                }
+                if prev_ins and prev_ins.op == IROp.CMP and len(prev_ins.args) >= 2:
+                    op_sym = cond_6502_map.get(mnem, mnem)
+                    if mnem in ("bmi", "bpl"):
+                        cond_expr = f"{prev_ins.args[0]} {op_sym}"
+                    else:
+                        cond_expr = f"{prev_ins.args[0]} {op_sym} {prev_ins.args[1]}"
+                else:
+                    cond_expr = mnem
+                return IRInstruction(IROp.BRANCH_COND, args=[ins.target_address, cond_expr], pc=ins.address)
 
         # Generic fallback
         return IRInstruction(IROp.NOP, pc=ins.address, comment=f"{ins.mnemonic} {', '.join(ops)}")
@@ -450,7 +632,7 @@ class BinaryLifter:
                 # Replace read args with current version
                 new_args = []
                 for a in ins.args:
-                    if isinstance(a, str) and (a.startswith("r") or a.startswith("$") or a.startswith("d") or a in ("a", "x", "y", "sp")):
+                    if cls._is_register_name(a):
                         v = var_counts[a]
                         new_args.append(IRVar(name=a, version=v))
                     else:
@@ -458,9 +640,130 @@ class BinaryLifter:
                 ins.args = new_args
 
                 # Assign new version to written dst
-                if ins.dst and isinstance(ins.dst, str) and (ins.dst.startswith("r") or ins.dst.startswith("$")):
+                if ins.dst and cls._is_register_name(ins.dst):
                     var_counts[ins.dst] += 1
                     ins.dst = IRVar(name=ins.dst, version=var_counts[ins.dst])
+
+    @classmethod
+    def insert_phi_nodes(cls, ir_func: IRFunction) -> None:
+        """
+        Insert PHI nodes for live-in registers at CFG merge points.
+        """
+        block_out_versions = cls._block_out_versions(ir_func)
+        max_versions = cls._max_ssa_versions(ir_func)
+
+        for block in ir_func.blocks.values():
+            if len(block.predecessors) < 2:
+                continue
+
+            live_in_regs = cls._live_in_registers(block)
+            phi_nodes: List[IRInstruction] = []
+            replacements: Dict[str, IRVar] = {}
+
+            for reg_name in sorted(live_in_regs):
+                incoming: List[Tuple[str, IRVar]] = []
+                incoming_versions: Set[int] = set()
+                missing_version = False
+
+                for pred_label in block.predecessors:
+                    pred_versions = block_out_versions.get(pred_label, {})
+                    pred_var = pred_versions.get(reg_name)
+                    if pred_var is None:
+                        missing_version = True
+                        break
+                    incoming.append((pred_label, pred_var))
+                    incoming_versions.add(pred_var.version)
+
+                if missing_version or len(incoming_versions) < 2:
+                    continue
+
+                max_versions[reg_name] += 1
+                phi_dst = IRVar(name=reg_name, version=max_versions[reg_name])
+                phi_nodes.append(IRInstruction(op=IROp.PHI, dst=phi_dst, args=incoming, pc=block.address))
+                replacements[reg_name] = phi_dst
+
+            if not phi_nodes:
+                continue
+
+            cls._rewrite_block_live_in_uses(block, replacements)
+            block.instructions = phi_nodes + block.instructions
+
+    @classmethod
+    def _is_register_name(cls, name: object) -> bool:
+        if not isinstance(name, str):
+            return False
+        if " " in name or any(op in name for op in ("==", "!=", "<", ">", "+", "-", "*", "/", "&", "|", "^")):
+            return False
+        return (
+            name.startswith("$")
+            or name in ("a", "x", "y", "sp", "lr", "pc")
+            or (name.startswith("r") and name[1:].isdigit())
+            or (name.startswith("d") and name[1:].isdigit())
+        )
+
+    @classmethod
+    def _block_out_versions(cls, ir_func: IRFunction) -> Dict[str, Dict[str, IRVar]]:
+        versions: Dict[str, IRVar] = {}
+        out_versions: Dict[str, Dict[str, IRVar]] = {}
+
+        for block in ir_func.blocks.values():
+            block_versions = dict(versions)
+            for ins in block.instructions:
+                if isinstance(ins.dst, IRVar):
+                    block_versions[ins.dst.name] = ins.dst
+            versions = block_versions
+            out_versions[block.label] = dict(block_versions)
+
+        return out_versions
+
+    @classmethod
+    def _max_ssa_versions(cls, ir_func: IRFunction) -> Dict[str, int]:
+        max_versions: Dict[str, int] = defaultdict(int)
+
+        def record(value: object) -> None:
+            if isinstance(value, IRVar):
+                max_versions[value.name] = max(max_versions[value.name], value.version)
+
+        for block in ir_func.blocks.values():
+            for ins in block.instructions:
+                record(ins.dst)
+                for arg in ins.args:
+                    if isinstance(arg, tuple) and len(arg) == 2:
+                        record(arg[1])
+                    else:
+                        record(arg)
+
+        return max_versions
+
+    @classmethod
+    def _live_in_registers(cls, block: IRBlock) -> Set[str]:
+        live_in: Set[str] = set()
+        defined: Set[str] = set()
+
+        for ins in block.instructions:
+            for arg in ins.args:
+                if isinstance(arg, IRVar) and arg.name not in defined:
+                    live_in.add(arg.name)
+            if isinstance(ins.dst, IRVar):
+                defined.add(ins.dst.name)
+
+        return live_in
+
+    @classmethod
+    def _rewrite_block_live_in_uses(cls, block: IRBlock, replacements: Dict[str, IRVar]) -> None:
+        defined: Set[str] = set()
+
+        for ins in block.instructions:
+            new_args = []
+            for arg in ins.args:
+                if isinstance(arg, IRVar) and arg.name in replacements and arg.name not in defined:
+                    new_args.append(replacements[arg.name])
+                else:
+                    new_args.append(arg)
+            ins.args = new_args
+
+            if isinstance(ins.dst, IRVar):
+                defined.add(ins.dst.name)
 
     @classmethod
     def decompile_to_c(cls, ir_func: IRFunction, symbols: Optional[Dict[int, str]] = None) -> str:
@@ -501,6 +804,10 @@ class BinaryLifter:
                 elif ins.op == IROp.SUB:
                     op2 = f"0x{ins.args[1]:X}" if isinstance(ins.args[1], int) else str(ins.args[1])
                     lines.append(f"    {ins.dst} = {ins.args[0]} - {op2};")
+
+                elif ins.op == IROp.CMP:
+                    op2 = f"0x{ins.args[1]:X}" if isinstance(ins.args[1], int) else str(ins.args[1])
+                    lines.append(f"    // cmp {ins.args[0]}, {op2};")
 
                 elif ins.op == IROp.LOAD:
                     lines.append(f"    {ins.dst} = *({ins.args[0]});")

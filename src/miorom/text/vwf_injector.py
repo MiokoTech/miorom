@@ -7,11 +7,11 @@ into proportional variable-width renderers by compiling glyph width lookup table
 and synthesizing assembly trampoline hooks (ARM, MIPS, 65816).
 """
 
-from miorom.result import MioRomResult
-from dataclasses import dataclass, field
-import struct
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from dataclasses import dataclass
+from typing import Dict, Union
 
+from miorom.core import schema
+from miorom.result import MioRomResult
 from miorom.text.vwf import GlyphWidthTable
 
 
@@ -59,6 +59,7 @@ class DynamicVWFInjector:
         table_vaddr: int,
         fallback_width: int = 12,
         endian: str = "<",
+        standalone: bool = True,
     ) -> bytes:
         """
         Generates an ARM32 assembly hook function for glyph width lookup:
@@ -67,28 +68,33 @@ class DynamicVWFInjector:
         """
         # Minimal ARM32 instructions:
         # 0x00: CMP r0, #0x20                 (0xE3500020)
-        # 0x04: BLT fallback (PC+0x18)        (0xBA000004)
+        # 0x04: BLT fallback (PC+0x18 -> 0x1C)(0xBA000004)
         # 0x08: SUB r0, r0, #0x20             (0xE2400020)
-        # 0x0C: LDR r2, [PC, #8] -> table_vaddr (0xE59F2008)
+        # 0x0C: LDR r2, [PC, #16] -> 0x24     (0xE59F2010)
         # 0x10: LDRB r3, [r2, r0]             (0xE7D23000)
         # 0x14: ADD r1, r1, r3                (0xE0811003)
-        # 0x18: BX lr                         (0xE12FFF1E)
+        # 0x18: BX lr / B .after_pool (0x28)  (0xE12FFF1E / 0xEA000002)
         # fallback:
-        # 0x1C: ADD r1, r1, #fallback_width
-        # 0x20: BX lr                         (0xE12FFF1E)
+        # 0x1C: ADD r1, r1, #fallback_width   (0xE2811000 | fallback_width)
+        # 0x20: BX lr / B .after_pool (0x28)  (0xE12FFF1E / 0xEA000000)
         # pool:
         # 0x24: table_vaddr (32-bit literal)
         buf = bytearray()
-        buf.extend(struct.pack(f"{endian}I", 0xE3500020))
-        buf.extend(struct.pack(f"{endian}I", 0xBA000004))
-        buf.extend(struct.pack(f"{endian}I", 0xE2400020))
-        buf.extend(struct.pack(f"{endian}I", 0xE59F2008))
-        buf.extend(struct.pack(f"{endian}I", 0xE7D23000))
-        buf.extend(struct.pack(f"{endian}I", 0xE0811003))
-        buf.extend(struct.pack(f"{endian}I", 0xE12FFF1E))
-        buf.extend(struct.pack(f"{endian}I", 0xE2811000 | (fallback_width & 0xFF)))
-        buf.extend(struct.pack(f"{endian}I", 0xE12FFF1E))
-        buf.extend(struct.pack(f"{endian}I", table_vaddr))
+        buf.extend(schema.pack(f"{endian}I", 0xE3500020))
+        buf.extend(schema.pack(f"{endian}I", 0xBA000004))
+        buf.extend(schema.pack(f"{endian}I", 0xE2400020))
+        buf.extend(schema.pack(f"{endian}I", 0xE59F2010))
+        buf.extend(schema.pack(f"{endian}I", 0xE7D23000))
+        buf.extend(schema.pack(f"{endian}I", 0xE0811003))
+        if standalone:
+            buf.extend(schema.pack(f"{endian}I", 0xE12FFF1E))
+            buf.extend(schema.pack(f"{endian}I", 0xE2811000 | (fallback_width & 0xFF)))
+            buf.extend(schema.pack(f"{endian}I", 0xE12FFF1E))
+        else:
+            buf.extend(schema.pack(f"{endian}I", 0xEA000002))
+            buf.extend(schema.pack(f"{endian}I", 0xE2811000 | (fallback_width & 0xFF)))
+            buf.extend(schema.pack(f"{endian}I", 0xEA000000))
+        buf.extend(schema.pack(f"{endian}I", table_vaddr))
         return bytes(buf)
 
     @classmethod
@@ -97,6 +103,7 @@ class DynamicVWFInjector:
         table_vaddr: int,
         fallback_width: int = 12,
         endian: str = "<",
+        standalone: bool = True,
     ) -> bytes:
         """
         Generates a MIPS assembly hook function for glyph width lookup:
@@ -108,8 +115,7 @@ class DynamicVWFInjector:
         # addu $t0, $t0, $a0
         # lb $t1, %lo(table_vaddr)($t0)
         # addu $a1, $a1, $t1
-        # jr $ra
-        # nop
+        # [standalone only]: jr $ra; nop
         hi = (table_vaddr >> 16) & 0xFFFF
         lo = table_vaddr & 0xFFFF
         if lo >= 0x8000:
@@ -122,9 +128,13 @@ class DynamicVWFInjector:
         jr = 0x03E00008                   # jr $ra
         nop = 0x00000000                  # nop
 
+        ops = [lui, addu, lb, addu_res]
+        if standalone:
+            ops.extend([jr, nop])
+
         buf = bytearray()
-        for op in (lui, addu, lb, addu_res, jr, nop):
-            buf.extend(struct.pack(f"{endian}I", op))
+        for op in ops:
+            buf.extend(schema.pack(f"{endian}I", op))
         return bytes(buf)
 
     @classmethod

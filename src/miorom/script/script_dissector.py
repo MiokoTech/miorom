@@ -12,14 +12,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from miorom.core.binary import BinaryReader, BinaryWriter
-
-from miorom.errors import ParseError
 from miorom.result import MioRomResult
 from miorom.text.charmap import CharMap
-from miorom.text.po_handler import PoEntry, PoHandler
+from miorom.text.po_handler import PoHandler
 
 
 class VMOpcodeType(Enum):

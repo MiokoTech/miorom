@@ -39,6 +39,10 @@ def test_apply_vertical_gradient():
     assert grad[10] == 255
     assert grad[11] == 128
 
+    # Invalid buffer size should raise ValueError
+    with pytest.raises(ValueError):
+        apply_vertical_gradient(b"\x00" * 5, 2, 2, red, blue)
+
 
 def test_apply_outline_1px():
     # 3x3 image with single opaque center pixel

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 from miorom.core.binary import BinaryReader, BinaryWriter
-from miorom.core.schema import BinaryStruct, Padding, RawBytes, U16, U32
+from miorom.core.schema import U16, U32, BinaryStruct, Padding, RawBytes
 from miorom.errors import ParseError
 
 
@@ -111,7 +111,7 @@ class NANRFile:
         return sum(s.frame_count for s in self.sequences)
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "NANRFile":
+    def from_bytes(cls, data: bytes) -> NANRFile:
         if len(data) < NANRHeaderStruct.sizeof():
             raise ParseError("Data too small for NANR header.")
 
@@ -124,7 +124,7 @@ class NANRFile:
         if abnk.magic not in (cls.SECTION_MAGIC, b"ABNK"):
             raise ParseError(f"Invalid ABNK section magic: {abnk.magic!r}")
 
-        reader = BinaryReader(data, endian="<")
+        _reader = BinaryReader(data, endian="<")
         seq_base = offset + 8 + abnk.seq_data_offset
         frame_base = offset + 8 + abnk.frame_data_offset
 

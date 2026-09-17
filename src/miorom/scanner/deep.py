@@ -1,9 +1,12 @@
-from miorom.result import MioRomResult
 import math
-import struct
 from collections import Counter
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+from miorom.core import schema
+from miorom.core.schema import U16, U32
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -116,6 +119,7 @@ class DeepScanner:
         current_start = None
         current_len = 0
         entropy_sum = 0.0
+        block_count = 0
 
         for off, ent in iter_block_entropy(data, block_size=block_size):
             if ent >= entropy_threshold:
@@ -123,20 +127,21 @@ class DeepScanner:
                     current_start = off
                     current_len = min(block_size, len(data) - off)
                     entropy_sum = ent
+                    block_count = 1
                 else:
                     current_len += min(block_size, len(data) - off)
                     entropy_sum += ent
+                    block_count += 1
             else:
                 if current_start is not None:
-                    num_blocks = current_len // block_size or 1
-                    yield (current_start, current_len, entropy_sum / num_blocks)
+                    yield (current_start, current_len, entropy_sum / block_count)
                     current_start = None
                     current_len = 0
                     entropy_sum = 0.0
+                    block_count = 0
 
         if current_start is not None:
-            num_blocks = current_len // block_size or 1
-            yield (current_start, current_len, entropy_sum / num_blocks)
+            yield (current_start, current_len, entropy_sum / block_count)
 
     def _check_primary_rom_headers(self, data: bytes, out: List[BinaryFingerprint]):
         sz = len(data)
@@ -180,8 +185,8 @@ class DeepScanner:
 
         # NDS
         if sz >= 0x200:
-            arm9_off, = struct.unpack_from("<I", data, 0x20)
-            arm7_off, = struct.unpack_from("<I", data, 0x30)
+            arm9_off, = schema.unpack_from("<I", data, 0x20)
+            arm7_off, = schema.unpack_from("<I", data, 0x30)
             if 0x200 <= arm9_off < sz and 0x200 <= arm7_off < sz:
                 title = data[0x00:0x0C].decode("ascii", errors="replace").strip("\x00")
                 game_code = data[0x0C:0x10].decode("ascii", errors="replace").strip("\x00")
@@ -209,7 +214,7 @@ class DeepScanner:
         # SNES header check (LoROM/HiROM)
         for snes_off, name in [(0x7FC0, "SNES (LoROM)"), (0xFFC0, "SNES (HiROM)")]:
             if sz >= snes_off + 0x30:
-                csum, comp = struct.unpack_from("<HH", data, snes_off + 0x1C)
+                csum, comp = schema.unpack_from("<HH", data, snes_off + 0x1C)
                 if (csum + comp) == 0xFFFF and csum > 0:
                     title = data[snes_off:snes_off + 21].decode("ascii", errors="replace").strip()
                     out.append(BinaryFingerprint(
@@ -236,7 +241,7 @@ class DeepScanner:
 
         # Sony PS-X EXE
         if data[:8] == b"PS-X EXE":
-            pc0, gp0, t_addr, t_size = struct.unpack_from("<IIII", data, 0x10)
+            pc0, gp0, t_addr, t_size = schema.unpack_from("<IIII", data, 0x10)
             out.append(BinaryFingerprint(
                 offset=0, category="code", format_name="PS-X EXE",
                 confidence=1.0, description="Sony PlayStation Executable (PS-X EXE)",
@@ -257,7 +262,7 @@ class DeepScanner:
 
         # Neverland TOC Archive (NLCM)
         if data[:4] == b"NLCM" and sz >= 0x38:
-            num_entries = struct.unpack_from(">I", data, 0x0C)[0]
+            num_entries = schema.unpack_from(">I", data, 0x0C)[0]
             out.append(BinaryFingerprint(
                 offset=0, category="archive", format_name="Neverland_NLCM",
                 confidence=1.0, description=f"Neverland TOC Archive ({num_entries} files)",
@@ -268,11 +273,11 @@ class DeepScanner:
         if (sz >= 0x60 and
             data[:4] == b"\x00\x00\x00\x00" and
             data[8:12] == b"\x00\x00\x00\x01"):
-            hdr_size = struct.unpack_from(">I", data, 4)[0]
+            hdr_size = schema.unpack_from(">I", data, 4)[0]
             if hdr_size == sz or abs(hdr_size - sz) < 64:
-                num_sec = struct.unpack_from(">I", data, 0x14)[0]
+                num_sec = schema.unpack_from(">I", data, 0x14)[0]
                 if 1 <= num_sec <= 32:
-                    sec2_off = struct.unpack_from(">I", data, 0x48)[0] if sz > 0x4C else 0
+                    sec2_off = schema.unpack_from(">I", data, 0x48)[0] if sz > 0x4C else 0
                     out.append(BinaryFingerprint(
                         offset=0, category="script", format_name="Neverland_Script",
                         confidence=0.95,
@@ -290,10 +295,10 @@ class DeepScanner:
 
             # --- Archive / Container Formats ---
             if b4 == b"NARC":
-                byte_order = struct.unpack_from("<H", data, off + 4)[0]
-                if byte_order == 0xFFFE or byte_order == 0xFEFF:
-                    endian = "<" if byte_order == 0xFFFE else ">"
-                    narc_size = struct.unpack_from(f"{endian}I", data, off + 8)[0]
+                byte_order = U16(endian="<").unpack(data, off + 4)[0]
+                if byte_order in (0xFFFE, 0xFEFF):
+                    endian = "<" if byte_order == 0xFEFF else ">"
+                    narc_size = U32(endian=endian).unpack(data, off + 8)[0]
                     out.append(BinaryFingerprint(
                         offset=off, size=narc_size, category="archive",
                         format_name="NARC", confidence=0.98,
@@ -311,7 +316,7 @@ class DeepScanner:
                     confidence=0.95, description="CRIWARE CPK Container",
                 ))
             elif b4 == b"AFS\x00":
-                count, = struct.unpack_from("<I", data, off + 4)
+                count, = schema.unpack_from("<I", data, off + 4)
                 if 0 < count < 65536:
                     out.append(BinaryFingerprint(
                         offset=off, category="archive", format_name="AFS",
@@ -322,7 +327,7 @@ class DeepScanner:
             # --- Graphics Formats ---
             elif b4 == b"\x10\x00\x00\x00":  # TIM magic
                 if off + 12 <= length:
-                    bpp_flag = struct.unpack_from("<I", data, off + 4)[0] & 0x07
+                    bpp_flag = schema.unpack_from("<I", data, off + 4)[0] & 0x07
                     if bpp_flag in (0, 1, 2, 3):  # 4bpp, 8bpp, 16bpp, 24bpp
                         out.append(BinaryFingerprint(
                             offset=off, category="graphics", format_name="TIM",
@@ -357,7 +362,7 @@ class DeepScanner:
 
             # --- Audio Formats ---
             elif b4 == b"SDAT":
-                sdat_sz, = struct.unpack_from("<I", data, off + 8)
+                sdat_sz, = schema.unpack_from("<I", data, off + 8)
                 out.append(BinaryFingerprint(
                     offset=off, size=sdat_sz, category="audio",
                     format_name="SDAT", confidence=0.98,
@@ -376,7 +381,7 @@ class DeepScanner:
                     confidence=0.95, description="Standard MIDI File Header",
                 ))
             elif b4 == b"RIFF" and off + 12 <= length and data[off + 8:off + 12] == b"WAVE":
-                wave_sz = struct.unpack_from("<I", data, off + 4)[0] + 8
+                wave_sz = schema.unpack_from("<I", data, off + 4)[0] + 8
                 out.append(BinaryFingerprint(
                     offset=off, size=wave_sz, category="audio",
                     format_name="WAV", confidence=0.99,
@@ -386,7 +391,7 @@ class DeepScanner:
 
             # --- Compression Formats ---
             elif b4 == b"Yaz0":
-                decomp_sz, = struct.unpack_from(">I", data, off + 4)
+                decomp_sz, = schema.unpack_from(">I", data, off + 4)
                 out.append(BinaryFingerprint(
                     offset=off, category="compression", format_name="Yaz0",
                     confidence=0.98, description=f"Yaz0 Compressed Stream (Decompressed: {decomp_sz} bytes)",
@@ -410,12 +415,12 @@ class DeepScanner:
                   data[off:off + 4] == b"\x00\x00\x00\x00" and
                   data[off + 8:off + 12] == b"\x00\x00\x00\x01" and
                   data[off + 12:off + 16] == b"\x00\x00\x00\x00"):
-                t2_offset = struct.unpack_from(">I", data, off + 4)[0]
+                t2_offset = schema.unpack_from(">I", data, off + 4)[0]
                 file_sz = length - off
                 # FEFE containers are text sub-files (< 2MB)
                 is_script = (off == 0 and length > 0x60 and
-                             struct.unpack_from(">I", data, 4)[0] == length and
-                             1 <= struct.unpack_from(">I", data, 0x14)[0] <= 32)
+                             schema.unpack_from(">I", data, 4)[0] == length and
+                             1 <= schema.unpack_from(">I", data, 0x14)[0] <= 32)
                 if not is_script and 0 < t2_offset < file_sz and file_sz < 2 * 1024 * 1024:
                     out.append(BinaryFingerprint(
                         offset=off, category="archive", format_name="Neverland_FEFE",

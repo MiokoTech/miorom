@@ -1,12 +1,11 @@
-from miorom.result import MioRomResult
-import struct
 from dataclasses import dataclass
-from typing import List, Dict, Optional, Tuple, Union, Any
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+from miorom.core import schema
 from miorom.core.mapper import ByteOffsetMapper
-
-
 from miorom.errors import RelocationError
+from miorom.result import MioRomResult
+
 
 @dataclass
 class RegisteredPointer(MioRomResult):
@@ -175,13 +174,13 @@ class RelocatableBuffer:
             if old_pos + ptr.size > len(self._pristine_data):
                 continue
 
-            old_target = struct.unpack_from(fmt, self._pristine_data, old_pos)[0]
+            old_target = schema.unpack_from(fmt, self._pristine_data, old_pos)[0]
             new_target = mapper.map_offset(old_target - ptr.base_offset) + ptr.base_offset
             new_pos = mapper.map_offset(old_pos)
 
             max_val = 0xFFFF if ptr.size == 2 else 0xFFFFFFFF
             if new_pos + ptr.size <= len(self._data) and 0 <= new_target <= max_val:
-                struct.pack_into(fmt, self._data, new_pos, new_target)
+                schema.pack_into(fmt, self._data, new_pos, new_target)
                 report["pointers_updated"] += 1
                 report["details"].append(
                     f"Pointer at 0x{old_pos:X}->0x{new_pos:X}: 0x{old_target:X}->0x{new_target:X}"
@@ -195,7 +194,7 @@ class RelocatableBuffer:
             if old_pos + field.size > len(self._pristine_data):
                 continue
 
-            old_val = struct.unpack_from(fmt, self._pristine_data, old_pos)[0]
+            old_val = schema.unpack_from(fmt, self._pristine_data, old_pos)[0]
             if field.sentinel is not None and old_val == field.sentinel:
                 continue
 
@@ -209,7 +208,7 @@ class RelocatableBuffer:
 
             max_val = 0xFFFF if field.size == 2 else 0xFFFFFFFF
             if new_pos + field.size <= len(self._data) and 0 <= new_val <= max_val:
-                struct.pack_into(fmt, self._data, new_pos, new_val)
+                schema.pack_into(fmt, self._data, new_pos, new_val)
                 report["fields_updated"] += 1
                 report["details"].append(
                     f"Anchored field at 0x{old_pos:X}->0x{new_pos:X}: 0x{old_val:X}->0x{new_val:X}"

@@ -1,23 +1,16 @@
 import os
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from miorom.rom.base import BaseRomHandler
 from miorom.core.schema import U16, U32
-from miorom.platforms.nds.rom import NDSFatEntryStruct, NDSFntDirectoryEntryStruct, NDSHeaderCrcStruct, NDSRom
+from miorom.platforms.nds.rom import (
+    NDSFatEntryStruct,
+    NDSFntDirectoryEntryStruct,
+    NDSHeaderCrcStruct,
+    NDSRom,
+    calculate_nds_crc16,
+)
+from miorom.rom.base import BaseRomHandler
 from miorom.security import sanitize_extract_path
-
-
-def calculate_nds_crc16(data: bytes, init: int = 0xFFFF) -> int:
-    """Calculates NDS BIOS SWI 0x0E CRC-16 checksum (LSB-first, poly 0x8408)."""
-    crc = init
-    for b in data:
-        crc ^= b
-        for _ in range(8):
-            if crc & 1:
-                crc = (crc >> 1) ^ 0x8408
-            else:
-                crc >>= 1
-    return crc & 0xFFFF
 
 
 def parse_nds_fnt(fnt_data: bytes) -> Dict[int, str]:
@@ -28,8 +21,8 @@ def parse_nds_fnt(fnt_data: bytes) -> Dict[int, str]:
         return {}
 
     root = NDSFntDirectoryEntryStruct.from_bytes(fnt_data, offset=0)
-    root_start = root.first_entry_offset
-    root_top_id = root.first_file_id
+    _root_start = root.first_entry_offset
+    _root_top_id = root.first_file_id
     num_dirs = root.parent_directory_id
     # Clamp num_dirs to prevent corrupted loop
     num_dirs = min(num_dirs & 0x0FFF, len(fnt_data) // 8)
@@ -231,8 +224,16 @@ class NDSRomHandler(BaseRomHandler):
                 f.write(arm7)
 
         if rom.banner_offset > 0 and rom.banner_offset + 0x840 <= len(data):
+            b_ver = data[rom.banner_offset] | (data[rom.banner_offset + 1] << 8)
+            b_size = 0x840
+            if b_ver == 0x0103 and rom.banner_offset + 0x23C0 <= len(data):
+                b_size = 0x23C0
+            elif b_ver >= 3 and rom.banner_offset + 0xA40 <= len(data):
+                b_size = 0xA40
+            elif b_ver >= 2 and rom.banner_offset + 0x940 <= len(data):
+                b_size = 0x940
             with open(os.path.join(sys_dir, "banner.bin"), "wb") as f:
-                f.write(data[rom.banner_offset : rom.banner_offset + 0x840])
+                f.write(data[rom.banner_offset : rom.banner_offset + b_size])
 
         # Extract filesystem entries
         file_map: Dict[int, str] = {}

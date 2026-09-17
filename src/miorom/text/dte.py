@@ -7,8 +7,9 @@ longest-match text compression/decompression, and .tbl character table export.
 """
 
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Union
 
 from miorom.result import MioRomResult
 from miorom.text.charmap import CharMap
@@ -222,6 +223,8 @@ class DteCodec:
         while i < text_len:
             matched = False
             for code, target_str in sorted_pairs:
+                if not target_str:
+                    continue
                 if text.startswith(target_str, i):
                     out.append(code)
                     i += len(target_str)
@@ -233,7 +236,11 @@ class DteCodec:
                 if charmap and ch in charmap.char_to_byte:
                     out.extend(charmap.char_to_byte[ch])
                 else:
-                    out.append(ord(ch) & 0xFF)
+                    if ord(ch) > 0xFF:
+                        raise ValueError(
+                            f"Character {ch!r} (U+{ord(ch):04X}) at index {i} cannot be encoded as a single byte without a charmap mapping."
+                        )
+                    out.append(ord(ch))
                 i += 1
 
         return bytes(out)
@@ -349,6 +356,8 @@ class DTEMiner:
         while i < text_len:
             matched = False
             for target_str in sorted_pairs:
+                if not target_str:
+                    continue
                 if text.startswith(target_str, i):
                     out.extend(str_to_token[target_str])
                     i += len(target_str)

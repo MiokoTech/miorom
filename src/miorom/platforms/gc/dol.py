@@ -7,10 +7,10 @@ memory reading/writing, and section creation for ASM code caves and translation 
 """
 
 import os
-import struct
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Union
 
+from miorom.core import schema
 from miorom.result import MioRomResult
 
 
@@ -81,14 +81,14 @@ class DolFile(MioRomResult):
 
         header = memoryview(data)[:cls.HEADER_SIZE]
 
-        text_offsets = [struct.unpack_from(">I", header, i * 4)[0] for i in range(cls.NUM_TEXT_SECTIONS)]
-        data_offsets = [struct.unpack_from(">I", header, 0x1C + i * 4)[0] for i in range(cls.NUM_DATA_SECTIONS)]
-        text_addrs = [struct.unpack_from(">I", header, 0x48 + i * 4)[0] for i in range(cls.NUM_TEXT_SECTIONS)]
-        data_addrs = [struct.unpack_from(">I", header, 0x64 + i * 4)[0] for i in range(cls.NUM_DATA_SECTIONS)]
-        text_sizes = [struct.unpack_from(">I", header, 0x90 + i * 4)[0] for i in range(cls.NUM_TEXT_SECTIONS)]
-        data_sizes = [struct.unpack_from(">I", header, 0xAC + i * 4)[0] for i in range(cls.NUM_DATA_SECTIONS)]
+        text_offsets = [schema.unpack_from(">I", header, i * 4)[0] for i in range(cls.NUM_TEXT_SECTIONS)]
+        data_offsets = [schema.unpack_from(">I", header, 0x1C + i * 4)[0] for i in range(cls.NUM_DATA_SECTIONS)]
+        text_addrs = [schema.unpack_from(">I", header, 0x48 + i * 4)[0] for i in range(cls.NUM_TEXT_SECTIONS)]
+        data_addrs = [schema.unpack_from(">I", header, 0x64 + i * 4)[0] for i in range(cls.NUM_DATA_SECTIONS)]
+        text_sizes = [schema.unpack_from(">I", header, 0x90 + i * 4)[0] for i in range(cls.NUM_TEXT_SECTIONS)]
+        data_sizes = [schema.unpack_from(">I", header, 0xAC + i * 4)[0] for i in range(cls.NUM_DATA_SECTIONS)]
 
-        bss_addr, bss_size, entry = struct.unpack_from(">III", header, 0xD8)
+        bss_addr, bss_size, entry = schema.unpack_from(">III", header, 0xD8)
 
         text_secs: List[DolSection] = []
         for i in range(cls.NUM_TEXT_SECTIONS):
@@ -244,18 +244,18 @@ class DolFile(MioRomResult):
         for i in range(self.NUM_TEXT_SECTIONS):
             if i in text_by_idx:
                 s = text_by_idx[i]
-                struct.pack_into(">I", header, i * 4, s.offset)
-                struct.pack_into(">I", header, 0x48 + i * 4, s.address)
-                struct.pack_into(">I", header, 0x90 + i * 4, s.size)
+                schema.pack_into(">I", header, i * 4, s.offset)
+                schema.pack_into(">I", header, 0x48 + i * 4, s.address)
+                schema.pack_into(">I", header, 0x90 + i * 4, s.size)
 
         for i in range(self.NUM_DATA_SECTIONS):
             if i in data_by_idx:
                 s = data_by_idx[i]
-                struct.pack_into(">I", header, 0x1C + i * 4, s.offset)
-                struct.pack_into(">I", header, 0x64 + i * 4, s.address)
-                struct.pack_into(">I", header, 0xAC + i * 4, s.size)
+                schema.pack_into(">I", header, 0x1C + i * 4, s.offset)
+                schema.pack_into(">I", header, 0x64 + i * 4, s.address)
+                schema.pack_into(">I", header, 0xAC + i * 4, s.size)
 
-        struct.pack_into(">III", header, 0xD8, self.bss_address, self.bss_size, self.entry_point)
+        schema.pack_into(">III", header, 0xD8, self.bss_address, self.bss_size, self.entry_point)
 
         # Determine output file size
         all_secs = self.all_sections

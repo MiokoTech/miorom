@@ -7,12 +7,11 @@ Format used in .dsp, .brstm, and .hps audio streams.
 
 from __future__ import annotations
 
-import struct
-from typing import List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import List, Optional, Tuple
 
 from miorom.audio.adpcm import ADPCMCodec
 from miorom.errors import ParseError
-
 
 # Standard neutral DSP coefficients (8 pairs)
 DEFAULT_DSP_COEFFS: List[int] = [

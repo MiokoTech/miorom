@@ -19,6 +19,63 @@ def test_ips_patch():
     assert reconstructed == modified
 
 
+def test_ips_patch_eof_offset_collision():
+    """Verify that changes at offset 0x454F46 ('EOF') are correctly patched and not skipped."""
+    original = bytearray(0x454F50)
+    modified = bytearray(0x454F50)
+    modified[0x454F46] = 0x99
+    modified[0x454F47] = 0xAA
+
+    patch = IpsPatcher.create(bytes(original), bytes(modified))
+    assert patch.startswith(b"PATCH")
+    assert patch.endswith(b"EOF")
+
+    reconstructed = IpsPatcher.apply(bytes(original), patch)
+    assert reconstructed[0x454F46] == 0x99
+    assert reconstructed[0x454F47] == 0xAA
+    assert reconstructed == bytes(modified)
+
+
+def test_ips_stream_overlapping_and_truncation():
+    """Verify that apply_stream handles overlapping records and truncation identically to apply."""
+    import io
+    import struct
+
+    # 1. Overlapping records test
+    patch = bytearray(b"PATCH")
+    patch.extend(struct.pack(">I", 10)[1:])
+    patch.extend(struct.pack(">H", 6))
+    patch.extend(b"ABCDEF")
+    patch.extend(struct.pack(">I", 12)[1:])
+    patch.extend(struct.pack(">H", 2))
+    patch.extend(b"99")
+    patch.extend(b"EOF")
+
+    orig = b"0123456789" * 4
+    in_mem = IpsPatcher.apply(orig, bytes(patch))
+    assert in_mem[10:16] == b"AB99EF"
+
+    out_stream = io.BytesIO()
+    IpsPatcher.apply_stream(io.BytesIO(orig), bytes(patch), out_stream)
+    assert out_stream.getvalue() == in_mem
+
+    # 2. Truncation test
+    trunc_patch = bytearray(b"PATCH")
+    trunc_patch.extend(struct.pack(">I", 0)[1:])
+    trunc_patch.extend(struct.pack(">H", 4))
+    trunc_patch.extend(b"TEST")
+    trunc_patch.extend(b"EOF")
+    trunc_patch.extend(struct.pack(">I", 15)[1:])  # Truncate to 15 bytes
+
+    trunc_in_mem = IpsPatcher.apply(orig, bytes(trunc_patch))
+    assert len(trunc_in_mem) == 15
+
+    trunc_out_stream = io.BytesIO()
+    IpsPatcher.apply_stream(io.BytesIO(orig), bytes(trunc_patch), trunc_out_stream)
+    assert trunc_out_stream.getvalue() == trunc_in_mem
+
+
+
 def test_bps_patch():
     original = b"Some source data that will be patched with BPS. " * 50
     modified = b"Some TARGET data that will be patched with BPS! " * 50

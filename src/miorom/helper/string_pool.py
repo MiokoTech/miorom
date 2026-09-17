@@ -5,8 +5,10 @@ Developer helper for building string pools and calculating pointer tables.
 Simplifies the most common and error-prone task in translation repacking.
 """
 
-import struct
-from typing import Dict, Iterable, List, Optional, Tuple, Union
+from collections.abc import Iterable
+from typing import Dict, List, Optional, Tuple
+
+from miorom.core import schema
 
 
 class StringPoolBuilder:
@@ -84,11 +86,11 @@ class StringPoolBuilder:
 
         # Optional length prefix
         if self.length_prefix == 1:
-            self._pool_buffer.extend(struct.pack(f"{self.endian}B", min(255, len(encoded))))
+            self._pool_buffer.extend(schema.pack(f"{self.endian}B", min(255, len(encoded))))
         elif self.length_prefix == 2:
-            self._pool_buffer.extend(struct.pack(f"{self.endian}H", min(0xFFFF, len(encoded))))
+            self._pool_buffer.extend(schema.pack(f"{self.endian}H", min(0xFFFF, len(encoded))))
         elif self.length_prefix == 4:
-            self._pool_buffer.extend(struct.pack(f"{self.endian}I", len(encoded)))
+            self._pool_buffer.extend(schema.pack(f"{self.endian}I", len(encoded)))
 
         self._pool_buffer.extend(encoded)
 
@@ -143,10 +145,10 @@ class StringPoolBuilder:
         fmt_ptr = f"{self.endian}{'H' if self.stride == 2 else 'I'}"
 
         for i, off in enumerate(self._offsets):
-            out.extend(struct.pack(fmt_ptr, off))
+            out.extend(schema.pack(fmt_ptr, off))
             if flags_stride > 0:
                 flag_val = self._flags[i] if self._flags[i] is not None else 0
-                out.extend(struct.pack(f"{self.endian}I", flag_val))
+                out.extend(schema.pack(f"{self.endian}I", flag_val))
 
         return bytes(out)
 

@@ -1,9 +1,10 @@
-from miorom.result import MioRomResult
 import os
+from dataclasses import dataclass
+from typing import Dict, List
+
+from miorom.core.schema import U8, U32, BinaryStruct, FixedString, RawBytes
 from miorom.errors import ParseError
-from dataclasses import dataclass, field
-from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U32, U8
-from typing import Dict, List, Optional, Tuple
+from miorom.result import MioRomResult
 
 
 class GCHeaderStruct(BinaryStruct):

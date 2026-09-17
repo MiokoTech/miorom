@@ -8,12 +8,21 @@ Parses song tables, voice tables, instrument envelopes, and exports
 8-bit signed PCM audio samples to standard RIFF WAVE (.wav) files.
 """
 
-from dataclasses import dataclass, field
-import struct
-from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional
 
+from miorom.core import schema
+from miorom.core.schema import U32, BinaryStruct
 from miorom.errors import ParseError
 from miorom.result import MioRomResult
+
+
+class SappySampleHeaderStruct(BinaryStruct):
+    _endian = "<"
+    flags = U32()
+    pitch = U32()
+    loop_start = U32()
+    length = U32()
 
 
 GBA_ROM_BASE = 0x08000000
@@ -63,18 +72,18 @@ class SappySample(MioRomResult):
 
         wav = bytearray()
         wav.extend(b"RIFF")
-        wav.extend(struct.pack("<I", file_size_minus_8))
+        wav.extend(schema.pack("<I", file_size_minus_8))
         wav.extend(b"WAVE")
         wav.extend(b"fmt ")
-        wav.extend(struct.pack("<I", 16))              # Subchunk1 size (16 for PCM)
-        wav.extend(struct.pack("<H", 1))               # Audio format (1 = PCM)
-        wav.extend(struct.pack("<H", 1))               # Num channels (1 = Mono)
-        wav.extend(struct.pack("<I", self.sample_rate))
-        wav.extend(struct.pack("<I", byte_rate))
-        wav.extend(struct.pack("<H", block_align))
-        wav.extend(struct.pack("<H", bits_per_sample))
+        wav.extend(schema.pack("<I", 16))              # Subchunk1 size (16 for PCM)
+        wav.extend(schema.pack("<H", 1))               # Audio format (1 = PCM)
+        wav.extend(schema.pack("<H", 1))               # Num channels (1 = Mono)
+        wav.extend(schema.pack("<I", self.sample_rate))
+        wav.extend(schema.pack("<I", byte_rate))
+        wav.extend(schema.pack("<H", block_align))
+        wav.extend(schema.pack("<H", bits_per_sample))
         wav.extend(b"data")
-        wav.extend(struct.pack("<I", len(pcm_u8)))
+        wav.extend(schema.pack("<I", len(pcm_u8)))
         wav.extend(pcm_u8)
         return bytes(wav)
 
@@ -129,23 +138,22 @@ class SappyCodec:
         Parses a Sappy SoundSample header and its following signed 8-bit PCM data.
         Header is 16 bytes: flags (4B), pitch (4B), loop_start (4B), length (4B).
         """
-        if offset + 16 > len(rom):
+        if offset + SappySampleHeaderStruct.sizeof() > len(rom):
             raise ParseError(f"Offset 0x{offset:X} out of range for Sappy sample header.")
 
-        flags, pitch, loop_start, length = struct.unpack_from("<IIII", rom, offset)
+        hdr = SappySampleHeaderStruct.from_bytes(rom, offset=offset)
+        flags, pitch, loop_start, length = hdr.flags, hdr.pitch, hdr.loop_start, hdr.length
         loop_enabled = (flags & 0x4000) != 0
 
-        # Calculate sample rate in Hz
-        if pitch > 4000:
+        # Calculate sample rate in Hz (GBA M4A pitch is fixed-point freq << 10)
+        if pitch >= 4000 * 1024:
+            sample_rate = pitch >> 10
+        elif pitch >= 4000:
             sample_rate = pitch
-        elif pitch > 0:
-            sample_rate = (pitch * 1024) >> 10
-            if sample_rate < 4000:
-                sample_rate = 13379  # Standard GBA default
         else:
             sample_rate = 13379
 
-        sample_data_offset = offset + 16
+        sample_data_offset = offset + SappySampleHeaderStruct.sizeof()
         if sample_data_offset + length > len(rom):
             actual_len = max(0, len(rom) - sample_data_offset)
         else:
@@ -173,8 +181,8 @@ class SappyCodec:
         Encodes signed 8-bit PCM data into a GBA SoundSample 16-byte header and payload.
         """
         flags = 0x4000 if loop_enabled else 0
-        pitch = sample_rate
-        header = struct.pack("<IIII", flags, pitch, loop_start, len(data))
+        pitch = sample_rate << 10
+        header = SappySampleHeaderStruct(flags=flags, pitch=pitch, loop_start=loop_start, length=len(data)).to_bytes()
         raw_bytes = bytes((b & 0xFF) for b in data)
         return header + raw_bytes
 
@@ -202,7 +210,7 @@ class SappyScanner:
             valid_count = 0
             curr_off = off
             while curr_off + 8 <= rom_len:
-                hdr_ptr, ms, me = struct.unpack_from("<IHH", rom, curr_off)
+                hdr_ptr, ms, me = schema.unpack_from("<IHH", rom, curr_off)
                 if not is_gba_rom_ptr(hdr_ptr, rom_len):
                     break
                 if ms > 15:
@@ -239,7 +247,7 @@ class SappyScanner:
         curr_off = table_offset
         idx = 0
         while curr_off + 8 <= rom_len and idx < max_songs:
-            hdr_ptr, ms, _ = struct.unpack_from("<IHH", rom, curr_off)
+            hdr_ptr, ms, _ = schema.unpack_from("<IHH", rom, curr_off)
             if not is_gba_rom_ptr(hdr_ptr, rom_len):
                 break
             if ms > 15:
@@ -252,7 +260,7 @@ class SappyScanner:
             if track_count == 0 or track_count > 16:
                 break
 
-            voice_table_ptr = struct.unpack_from("<I", rom, hdr_off + 4)[0]
+            voice_table_ptr = schema.unpack_from("<I", rom, hdr_off + 4)[0]
             voice_table_off = (
                 gba_ptr_to_offset(voice_table_ptr)
                 if is_gba_rom_ptr(voice_table_ptr, rom_len)
@@ -293,9 +301,9 @@ class SappyScanner:
             if entry_off + 12 > rom_len:
                 break
 
-            inst_type, root_key, _, pan_sweep = struct.unpack_from("BBBB", rom, entry_off)
-            sample_ptr = struct.unpack_from("<I", rom, entry_off + 4)[0]
-            attack, decay, sustain, release = struct.unpack_from("BBBB", rom, entry_off + 8)
+            inst_type, root_key, _, pan_sweep = schema.unpack_from("BBBB", rom, entry_off)
+            sample_ptr = schema.unpack_from("<I", rom, entry_off + 4)[0]
+            attack, decay, sustain, release = schema.unpack_from("BBBB", rom, entry_off + 8)
 
             sub_table_ptr = None
             sample_obj = None
@@ -341,3 +349,8 @@ class SappyScanner:
             if inst.sample is not None:
                 samples[idx] = inst.sample
         return samples
+
+
+# Backward compatibility and ergonomics alias
+SappyEngine = SappyScanner
+

@@ -1,9 +1,8 @@
-from miorom.result import MioRomResult
-import string
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict
 
+from miorom.result import MioRomResult
 from miorom.text.charmap import CharMap
 
 
@@ -58,11 +57,9 @@ class CharMapMiner:
             for b in data:
                 val = b - offset
                 if val == 0x20:
-                    score += 3.0  # space is very common
-                elif 0x61 <= val <= 0x7A:  # a-z
+                    score += 3.5  # space is very common and case-independent
+                elif 0x61 <= val <= 0x7A or 0x41 <= val <= 0x5A:  # a-z / A-Z
                     score += 2.0
-                elif 0x41 <= val <= 0x5A:  # A-Z
-                    score += 1.5
                 elif 0x30 <= val <= 0x39:  # 0-9
                     score += 1.0
                 elif val in (ord("."), ord(","), ord("!"), ord("?"), ord("'"), ord('"')):

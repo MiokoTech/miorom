@@ -86,3 +86,48 @@ def test_6502_branch():
     # Out of range error (> 127 bytes)
     with pytest.raises(ValueError):
         calc_6502_branch(src, 0x8200)
+
+
+def test_thumb_branch_class_and_range_check():
+    from miorom.asm.branch import ThumbBranch
+    from miorom.errors import RelocationError, ParseError
+
+    source = 0x08000400
+
+    # In-range forward branch (+1000 bytes)
+    target_ok = source + 1000
+    b_bytes = ThumbBranch.encode_b(source, target_ok)
+    assert len(b_bytes) == 2
+    assert ThumbBranch.decode_b(source, b_bytes) == target_ok
+
+    # In-range backward branch (-1000 bytes)
+    target_back = source - 1000
+    b_back = ThumbBranch.encode_b(source, target_back)
+    assert ThumbBranch.decode_b(source, b_back) == target_back
+
+    # Out of range positive (> +2046 bytes)
+    with pytest.raises(RelocationError, match="out of range"):
+        ThumbBranch.encode_b(source, source + 2052)
+
+    # Out of range negative (< -2048 bytes)
+    with pytest.raises(RelocationError, match="out of range"):
+        ThumbBranch.encode_b(source, source - 2054)
+
+    # Non 2-byte aligned target
+    with pytest.raises(ParseError, match="not 2-byte aligned"):
+        ThumbBranch.encode_b(source, source + 101)
+
+    # Thumb BL 32-bit roundtrip
+    bl_target = source + 0x10000
+    bl_bytes = ThumbBranch.encode_bl(source, bl_target)
+    assert len(bl_bytes) == 4
+    assert ThumbBranch.decode_bl(source, bl_bytes) == bl_target
+
+
+def test_powerpc_branch_high_address_absolute_decode():
+    """Ensure PowerPC absolute branch to high memory (e.g. 0xFE000000) decodes to unsigned uint32."""
+    from miorom.asm.branch import PowerPCBranch
+    b = PowerPCBranch.encode_b(0x1000, 0xFE000000, absolute=True)
+    target, lk, aa = PowerPCBranch.decode_b(0x1000, b)
+    assert aa is True
+    assert target == 0xFE000000

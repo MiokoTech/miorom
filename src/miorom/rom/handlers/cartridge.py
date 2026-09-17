@@ -1,14 +1,14 @@
-import os
 import json
-from typing import Dict, Any, Optional
-from miorom.core.binary import BinaryReader
+import os
+from typing import Any, Dict, Optional
 
-from miorom.rom.base import BaseRomHandler
-from miorom.platforms.gba import GBARom, fix_gba_checksum
+from miorom.core.binary import BinaryReader
 from miorom.platforms.gb import GBRom, fix_gb_checksum
+from miorom.platforms.gba import GBARom, fix_gba_checksum
+from miorom.platforms.md import MDRom, fix_md_checksum
 from miorom.platforms.n64 import N64Rom, fix_n64_checksum
 from miorom.platforms.snes import SNESRom
-from miorom.platforms.md import MDRom, fix_md_checksum
+from miorom.rom.base import BaseRomHandler
 
 
 class CartridgeRomHandler(BaseRomHandler):
@@ -93,7 +93,7 @@ class CartridgeRomHandler(BaseRomHandler):
                 rom_gb = GBRom(data)
                 title = rom_gb.title
                 meta_info["title"] = rom_gb.title
-                meta_info["cartridge_type"] = rom_gb.cartridge_type_name
+                meta_info["cartridge_type"] = rom_gb.cartridge_type
             elif sub == "n64" and len(data) >= 0x40:
                 rom_n64 = N64Rom(data)
                 title = rom_n64.header.title
@@ -126,7 +126,7 @@ class CartridgeRomHandler(BaseRomHandler):
             meta_path = os.path.join(input_dir, "miorom.meta.json")
             if os.path.isfile(meta_path):
                 try:
-                    with open(meta_path, "r", encoding="utf-8") as f:
+                    with open(meta_path, encoding="utf-8") as f:
                         meta = json.load(f)
                     sub = meta.get("subplatform")
                 except Exception:

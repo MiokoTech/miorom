@@ -86,6 +86,16 @@ def test_yaz0_roundtrip():
     assert decomp == original
 
 
+def test_yaz0_compress_large_search_depth_roundtrip():
+    from miorom.compression.yaz0 import Yaz0
+    # Create repetitive data longer than 4096 bytes
+    pattern = b"0123456789ABCDEF" * 500  # 8000 bytes
+    compressed = Yaz0.compress(pattern, search_depth=8192)
+    assert compressed[:4] == b"Yaz0"
+    decompressed = Yaz0.decompress(compressed)
+    assert decompressed == pattern
+
+
 def test_huffman_roundtrip():
     original = b"Huffman coding test for Nintendo BIOS standard!" * 10
     comp4 = compress(original, "huffman4")

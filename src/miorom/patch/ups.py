@@ -7,13 +7,13 @@ Commonly used across Game Boy Advance (GBA) and Nintendo translation and hacking
 
 from __future__ import annotations
 
-import struct
 import zlib
 from io import BytesIO
 from typing import Dict, Union
 
-from miorom.core.vlq import encode_ups_varint, decode_ups_varint
-from miorom.errors import PatchError, ParseError
+from miorom.core import schema
+from miorom.core.vlq import decode_ups_varint, encode_ups_varint
+from miorom.errors import ParseError, PatchError
 
 
 def _encode_vlq(val: int) -> bytes:
@@ -47,7 +47,7 @@ class UpsPatcher:
             raise PatchError("Invalid UPS patch: missing 'UPS1' header magic.")
 
         # Check patch file CRC32 (last 4 bytes)
-        src_crc, dst_crc, patch_crc = struct.unpack("<III", patch[-12:])
+        src_crc, dst_crc, patch_crc = schema.unpack("<III", patch[-12:])
         actual_patch_crc = zlib.crc32(patch[:-4]) & 0xFFFFFFFF
         if not ignore_checksums and actual_patch_crc != patch_crc:
             raise PatchError(
@@ -134,9 +134,9 @@ class UpsPatcher:
 
         src_crc = zlib.crc32(source) & 0xFFFFFFFF
         dst_crc = zlib.crc32(target) & 0xFFFFFFFF
-        out.extend(struct.pack("<II", src_crc, dst_crc))
+        out.extend(schema.pack("<II", src_crc, dst_crc))
         patch_crc = zlib.crc32(out) & 0xFFFFFFFF
-        out.extend(struct.pack("<I", patch_crc))
+        out.extend(schema.pack("<I", patch_crc))
         return bytes(out)
 
     @classmethod
@@ -169,7 +169,7 @@ class UpsPatcher:
         if len(patch) < 16 or not patch.startswith(cls.MAGIC):
             raise PatchError("Invalid UPS patch data.")
 
-        src_crc, dst_crc, patch_crc = struct.unpack("<III", patch[-12:])
+        src_crc, dst_crc, patch_crc = schema.unpack("<III", patch[-12:])
         actual_patch_crc = zlib.crc32(patch[:-4]) & 0xFFFFFFFF
         stream = BytesIO(patch[4:-12])
         src_len = _decode_vlq(stream)

@@ -1,6 +1,7 @@
 import struct
-from miorom.errors import ParseError
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
+
+from miorom.errors import ParseError
 
 
 class SchemaField:
@@ -84,9 +85,19 @@ class U64(PrimitiveField):
         super().__init__("Q", 8, default=default, endian=endian, **kwargs)
 
 
+class I64(PrimitiveField):
+    def __init__(self, default: int = 0, endian: Optional[str] = None, **kwargs):
+        super().__init__("q", 8, default=default, endian=endian, **kwargs)
+
+
 class Float32(PrimitiveField):
     def __init__(self, default: float = 0.0, endian: Optional[str] = None, **kwargs):
         super().__init__("f", 4, default=default, endian=endian, **kwargs)
+
+
+class Float64(PrimitiveField):
+    def __init__(self, default: float = 0.0, endian: Optional[str] = None, **kwargs):
+        super().__init__("d", 8, default=default, endian=endian, **kwargs)
 
 
 class FixedString(SchemaField):
@@ -696,3 +707,57 @@ class Computed(SchemaField):
 
     def pack(self, value: Any, endian: Optional[str] = None, context: Any = None) -> bytes:
         return b""
+
+
+# ---------------------------------------------------------------------------
+# Core Binary Serialization Functions & Wrappers
+# ---------------------------------------------------------------------------
+
+error = struct.error
+
+
+def pack(fmt: str, *values: Any) -> bytes:
+    """Pack values according to format string using MioROM schema engine."""
+    return struct.pack(fmt, *values)
+
+
+def unpack(fmt: str, buffer: Union[bytes, bytearray, memoryview]) -> Tuple[Any, ...]:
+    """Unpack values from buffer according to format string using MioROM schema engine."""
+    return struct.unpack(fmt, buffer)
+
+
+def unpack_from(fmt: str, buffer: Union[bytes, bytearray, memoryview], offset: int = 0) -> Tuple[Any, ...]:
+    """Unpack values from buffer starting at offset using MioROM schema engine."""
+    return struct.unpack_from(fmt, buffer, offset)
+
+
+def pack_into(fmt: str, buffer: Union[bytearray, memoryview], offset: int, *values: Any) -> None:
+    """Pack values into buffer starting at offset using MioROM schema engine."""
+    struct.pack_into(fmt, buffer, offset, *values)
+
+
+def calcsize(fmt: str) -> int:
+    """Calculate the size of format string using MioROM schema engine."""
+    return struct.calcsize(fmt)
+
+
+class Struct:
+    """MioROM Schema Struct wrapper for compiled struct format strings."""
+
+    def __init__(self, fmt: str):
+        self._struct = struct.Struct(fmt)
+        self.format = fmt
+        self.size = self._struct.size
+
+    def pack(self, *values: Any) -> bytes:
+        return self._struct.pack(*values)
+
+    def unpack(self, buffer: Union[bytes, bytearray, memoryview]) -> Tuple[Any, ...]:
+        return self._struct.unpack(buffer)
+
+    def unpack_from(self, buffer: Union[bytes, bytearray, memoryview], offset: int = 0) -> Tuple[Any, ...]:
+        return self._struct.unpack_from(buffer, offset)
+
+    def pack_into(self, buffer: Union[bytearray, memoryview], offset: int, *values: Any) -> None:
+        self._struct.pack_into(buffer, offset, *values)
+

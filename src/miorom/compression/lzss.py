@@ -11,9 +11,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from miorom.errors import CompressionError
 from miorom.result import MioRomResult
-
 
 INDEX_BIT_COUNT = 12
 LENGTH_BIT_COUNT = 4

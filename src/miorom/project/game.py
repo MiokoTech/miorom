@@ -5,11 +5,11 @@ Base Game Framework class for declaring and automating ROM hacking workflows.
 Implements the core lifecycle: analyze, extract, validate, and build.
 """
 
-import os
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
-from miorom.formats.csv_handler import CsvHandler, TranslationRow
+from miorom.formats.csv_handler import CsvHandler
 from miorom.project.assets import TocArchive
 from miorom.project.protocols import AssetProtocol
 from miorom.project.rules import Rule

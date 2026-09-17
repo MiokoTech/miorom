@@ -237,3 +237,129 @@ def test_invalid_card_errors():
     )
     with pytest.raises(ValueError, match="Not enough free blocks"):
         card.inject_file(huge_save)
+
+
+def test_psx_save_file_long_shift_jis_title(tmp_path):
+    pal = _create_sample_palette()
+    # 43 bytes in Shift-JIS (>32 bytes)
+    title_jp = "ファイナルファンタジーVII クラウド レベル99"
+    encoded = title_jp.encode("shift_jis")
+    assert len(encoded) > 32
+    assert len(encoded) <= 64
+
+    save = PSXSaveFile(
+        filename="BASLUS-00892FF7",
+        title=title_jp,
+        payload=b"SAVE_DATA",
+        palette=pal,
+        icon_bitmaps=[bytes([0x12] * 128)],
+    )
+
+    card = PSXMemoryCard.format_blank()
+    card.inject_file(save)
+
+    # Export to bytes and re-parse
+    reloaded = PSXMemoryCard.from_bytes(card.to_bytes())
+    assert reloaded.has_file("BASLUS-00892FF7")
+    reloaded_save = reloaded.get_file("baslus-00892ff7")
+    assert reloaded_save is not None
+    assert reloaded_save.title == title_jp
+
+    # Test MCS export and re-import
+    mcs = save.to_mcs()
+    from_mcs_save = PSXSaveFile.from_mcs(mcs)
+    assert from_mcs_save.title == title_jp
+
+    # Test zero-dependency save_icon_png
+    png_path = tmp_path / "icon.png"
+    save.save_icon_png(str(png_path), frame_idx=0)
+    assert png_path.exists()
+    assert png_path.stat().st_size > 0
+
+
+def test_psx_save_file_dynamic_payload_expansion():
+    pal = _create_sample_palette()
+    save = PSXSaveFile(
+        filename="BASCUS-99999EXP",
+        title="Expansion Test",
+        payload=b"A" * 100,
+        palette=pal,
+        icon_bitmaps=[bytes([0x01] * 128)],
+    )
+    assert save.block_count == 1
+
+    # Modify payload to exceed 1 block (needs 2 blocks)
+    save.payload = b"B" * 9000
+    block_bytes = save.build_block_data()
+    assert save.block_count == 2
+    assert len(block_bytes) == 2 * BLOCK_SIZE
+    assert save.file_size == 128 + 128 + 9000
+
+
+def test_psx_multi_block_directory_entry_standards():
+    card = PSXMemoryCard.format_blank()
+    pal = _create_sample_palette()
+    save = PSXSaveFile(
+        filename="BASCUS-11111MULTI",
+        title="Multi-Block Spec Check",
+        payload=b"C" * 20000,  # 3 blocks
+        palette=pal,
+        icon_bitmaps=[bytes(128)],
+    )
+
+    start_block = card.inject_file(save)
+    assert start_block == 1
+    assert save.block_count == 3
+
+    ent1 = card.get_directory_entry(1)
+    ent2 = card.get_directory_entry(2)
+    ent3 = card.get_directory_entry(3)
+
+    # Initial block: has full file_size and filename
+    assert ent1.alloc_state == PSXBlockState.IN_USE_INITIAL
+    assert ent1.file_size == save.file_size
+    assert ent1.filename.decode("ascii").rstrip("\x00") == "BASCUS-11111MULTI"
+    assert ent1.next_block == 2
+
+    # Middle block: file_size must be 0 and filename must be empty
+    assert ent2.alloc_state == PSXBlockState.IN_USE_MIDDLE
+    assert ent2.file_size == 0
+    assert bytes(ent2.filename).rstrip(b"\x00") == b""
+    assert ent2.next_block == 3
+
+    # Last block: file_size must be 0 and filename must be empty
+    assert ent3.alloc_state == PSXBlockState.IN_USE_LAST
+    assert ent3.file_size == 0
+    assert bytes(ent3.filename).rstrip(b"\x00") == b""
+    assert ent3.next_block == 0xFFFF
+
+
+def test_psx_delete_file_safety_checks():
+    card = PSXMemoryCard.format_blank()
+    pal = _create_sample_palette()
+    save = PSXSaveFile(
+        filename="TEST_DEL",
+        title="Delete Test",
+        payload=b"D" * 10000,
+        palette=pal,
+        icon_bitmaps=[bytes(128)],
+    )
+    card.inject_file(save)
+
+    # Cannot delete invalid block index
+    with pytest.raises(IndexError):
+        card.delete_file(0)
+    with pytest.raises(IndexError):
+        card.delete_file(16)
+
+    # Cannot delete mid-block or free block
+    with pytest.raises(ValueError, match="not the start of an active save file"):
+        card.delete_file(2)  # Block 2 is IN_USE_LAST
+    with pytest.raises(ValueError, match="not the start of an active save file"):
+        card.delete_file(3)  # Block 3 is FREE
+
+    # Deleting start block 1 succeeds
+    card.delete_file(1)
+    assert not card.has_file("TEST_DEL")
+    assert card.get_file("TEST_DEL") is None
+

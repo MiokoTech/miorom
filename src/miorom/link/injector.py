@@ -1,24 +1,22 @@
-from miorom.result import MioRomResult
 import json
-from miorom.errors import ParseError
-import os
 import re
-import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
 from miorom.asm.branch import ARMBranch, MIPSBranch, PowerPCBranch, ThumbBranch
-from miorom.asm.codecave import CodeCave, CodeCaveFinder
+from miorom.asm.codecave import CodeCaveFinder
 from miorom.asm.trampoline import HookRecord, TrampolineHook
-from miorom.link.dol import DolBinary, DolSection
+from miorom.errors import ParseError
+from miorom.link.dol import DolBinary
 from miorom.link.elf import (
-    Elf32File,
     EM_ARM,
     EM_MIPS,
     EM_PPC,
+    Elf32File,
 )
-from miorom.link.relocator import ElfLinkResult, ElfRelocator
+from miorom.link.relocator import ElfRelocator
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -63,7 +61,7 @@ class InjectionReport(MioRomResult):
             f"  Entry Point (RAM)  : 0x{self.entry_point_ram:08X}",
             f"  Hook Installed     : {'YES' if self.hook_installed else 'NO'}",
             f"  Unresolved Symbols : {unres_str}",
-            f"  Relocated Sections :",
+            "  Relocated Sections :",
         ]
         for sname, soff in self.section_offsets.items():
             ssz = self.section_sizes.get(sname, 0)

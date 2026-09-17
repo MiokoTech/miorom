@@ -1,7 +1,8 @@
-from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
+
 from miorom.graphics.tiles import Tile
+from miorom.result import MioRomResult
 
 
 @dataclass

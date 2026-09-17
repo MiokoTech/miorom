@@ -1,4 +1,3 @@
-import struct
 from typing import Dict, List, Optional, Tuple
 
 try:
@@ -12,7 +11,7 @@ except ImportError:
 
 from miorom.graphics.tiles import Tile, encode_tile
 from miorom.platforms.nds.nftr import NFTRFont, NFTRGlyph
-from miorom.text.font_builder import BitmapFont, Glyph
+from miorom.text.font_builder import BitmapFont
 
 
 class TTFCompiler:

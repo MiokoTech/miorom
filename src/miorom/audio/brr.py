@@ -7,12 +7,11 @@ Decodes 9-byte BRR audio blocks to signed 16-bit PCM and encodes PCM to BRR.
 
 from __future__ import annotations
 
-import struct
-from typing import List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import List, Optional, Tuple
 
 from miorom.audio.adpcm import ADPCMCodec
 from miorom.errors import ParseError
-
 
 # Standard SNES S-DSP BRR Filter Coefficients
 BRR_FILTERS: List[Tuple[float, float]] = [
@@ -135,7 +134,7 @@ class BRRCodec:
 
             # Determine shift
             shift = 0
-            while shift < 12 and (max_res > (7 << (shift - 1)) if shift > 0 else max_res > 7):
+            while shift < 12 and (max_res > (7 << (shift - 1)) if shift > 0 else max_res > 3):
                 shift += 1
 
             enc_nibbles: List[int] = []
@@ -215,3 +214,14 @@ class BRRCodec:
         """Decodes BRR data and wraps as a standard 16-bit PCM RIFF/WAVE file."""
         samples = cls.decode(brr_data)
         return ADPCMCodec.build_wav(samples, sample_rate=sample_rate, channels=1)
+
+    @classmethod
+    def from_wav(cls, wav_data: bytes, loop_point: Optional[int] = None) -> bytes:
+        """
+        Decodes a RIFF/WAVE audio file and encodes it into SNES BRR bitstream.
+        Automatically converts stereo to mono.
+        """
+        from miorom.audio.wav_codec import WavCodec
+
+        sound = WavCodec.decode(wav_data).to_mono()
+        return cls.encode(sound.samples, loop_point=loop_point)

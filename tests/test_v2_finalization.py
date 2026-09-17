@@ -5,9 +5,9 @@ from pathlib import Path
 from miorom.diff.bindiff import BinDiffEngine, FunctionMatch
 from miorom.diff.porter import CrossRegionPorter
 from miorom.patch.ips import IpsPatcher
-from miorom.script.lifter import BinaryLifter
-from miorom.script.ir import IRBlock, IRFunction, IRInstruction, IROp
 from miorom.scanner.xref import XRefAnalyzer, XRefType
+from miorom.script.ir import IRBlock, IRFunction, IRInstruction, IROp
+from miorom.script.lifter import BinaryLifter
 
 
 def _code_function(address):
@@ -32,6 +32,22 @@ def test_xref_mermaid_ir_groups_blocks():
     assert "0x00000120" in mermaid
     assert "CALL" in mermaid
     assert "-. CFG .->" in mermaid
+
+
+def test_xref_analyze_ir_records_conditional_branch_target():
+    # ARM: cmp r0,#0; beq 0x100C; mov r1,#1; bx lr
+    code = struct.pack("<IIII", 0xE3500000, 0x0A000000, 0xE3A01001, 0xE12FFF1E)
+    ir_func = BinaryLifter.lift(code, 0x1000, arch="arm")
+    graph = XRefAnalyzer.analyze_ir([ir_func])
+
+    refs_from_branch = graph.forward_refs[0x1004]
+
+    assert len(refs_from_branch) == 1
+    assert refs_from_branch[0].source == 0x1004
+    assert refs_from_branch[0].target == 0x100C
+    assert refs_from_branch[0].xref_type == XRefType.CODE_JUMP
+    assert refs_from_branch[0].context == f"{ir_func.name}:BRANCH_COND"
+    assert graph.backward_refs[0x100C][0] == refs_from_branch[0]
 
 
 def test_lifter_disk_cache_roundtrip():

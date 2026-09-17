@@ -6,12 +6,12 @@ Detects anti-tamper routines, checksum verification loops, and hardware sanity c
 and generates surgical patches to bypass integrity barriers on modified ROMs.
 """
 
-from miorom.result import MioRomResult
-import re
-import struct
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
+
+from miorom.core import schema
+from miorom.result import MioRomResult
 
 
 class APVectorType(str, Enum):
@@ -105,7 +105,7 @@ class AntiPiracyBypasser:
                 # Detect ARM conditional branches (0x0A, 0x1A, etc.)
                 for c_off in range(start_window, end_window, 4):
                     if c_off + 4 <= n:
-                        instr = struct.unpack("<I", arm9_code[c_off:c_off+4])[0]
+                        instr = schema.unpack("<I", arm9_code[c_off:c_off+4])[0]
                         cond = (instr >> 28) & 0xF
                         # If conditional branch (NE: 0x1, EQ: 0x0)
                         if cond in (0x0, 0x1) and ((instr >> 24) & 0xF) == 0xA:
@@ -125,8 +125,8 @@ class AntiPiracyBypasser:
         # Checksum verification loops
         # ARM pattern: cmp rX, rY; bne loc
         for i in range(0, n - 8, 4):
-            instr1 = struct.unpack("<I", arm9_code[i:i+4])[0]
-            instr2 = struct.unpack("<I", arm9_code[i+4:i+8])[0]
+            instr1 = schema.unpack("<I", arm9_code[i:i+4])[0]
+            instr2 = schema.unpack("<I", arm9_code[i+4:i+8])[0]
             # CMP instruction match
             if (instr1 & 0x0DE00000) == 0x01500000:
                 # instr2 is BNE (cond 0x1, opcode 0xA)
@@ -159,8 +159,8 @@ class AntiPiracyBypasser:
         n = len(data)
 
         for i in range(0, n - 8, 4):
-            w1 = struct.unpack(">I", data[i:i+4])[0]
-            w2 = struct.unpack(">I", data[i+4:i+8])[0]
+            w1 = schema.unpack(">I", data[i:i+4])[0]
+            w2 = schema.unpack(">I", data[i+4:i+8])[0]
 
             # PPC cmpwi / cmpw: opcode 10 (0x28) or opcode 31 xo 0 (0x7C000000)
             is_cmp = (w1 >> 26) in (10, 11) or ((w1 >> 26) == 31 and ((w1 >> 1) & 0x3FF) == 0)

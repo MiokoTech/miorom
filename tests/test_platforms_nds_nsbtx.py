@@ -1,14 +1,11 @@
 import pytest
-from PIL import Image
 
+from miorom.errors import ParseError
 from miorom.platforms.nds.nsbtx import (
     NSBTXFile,
-    NSBTXTexture,
     NSBTXPalette,
-    BTX0HeaderStruct,
-    encode_bgr555_color,
+    NSBTXTexture,
 )
-from miorom.errors import ParseError
 
 
 def test_nsbtx_direct_color_roundtrip():

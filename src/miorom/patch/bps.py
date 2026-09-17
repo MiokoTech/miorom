@@ -1,7 +1,8 @@
-import struct
 import zlib
 from io import BytesIO
-from typing import Dict, List
+from typing import Any, Dict, List
+
+from miorom.core import schema
 from miorom.errors import PatchError
 from miorom.patch.hunks import PatchHunk, merge_patches
 
@@ -50,13 +51,13 @@ class BpsPatcher:
             raise PatchError("Invalid BPS patch: missing 'BPS1' header")
 
         # Verify patch CRC32 (last 4 bytes)
-        expected_patch_crc = struct.unpack("<I", patch[-4:])[0]
+        expected_patch_crc = schema.unpack("<I", patch[-4:])[0]
         actual_patch_crc = zlib.crc32(patch[:-4]) & 0xFFFFFFFF
         if actual_patch_crc != expected_patch_crc:
             raise PatchError("Corrupted BPS patch: patch CRC32 mismatch")
 
-        expected_source_crc = struct.unpack("<I", patch[-12:-8])[0]
-        expected_target_crc = struct.unpack("<I", patch[-8:-4])[0]
+        expected_source_crc = schema.unpack("<I", patch[-12:-8])[0]
+        expected_target_crc = schema.unpack("<I", patch[-8:-4])[0]
 
         actual_source_crc = zlib.crc32(source) & 0xFFFFFFFF
         if actual_source_crc != expected_source_crc:
@@ -65,7 +66,7 @@ class BpsPatcher:
             )
 
         stream = BytesIO(patch[4:-12])
-        source_size = _decode_vlq(stream)
+        _source_size = _decode_vlq(stream)
         target_size = _decode_vlq(stream)
         meta_size = _decode_vlq(stream)
         _ = stream.read(meta_size)  # skip metadata
@@ -86,7 +87,7 @@ class BpsPatcher:
             if action == 0:
                 # SourceRead
                 if output_offset + length > len(source):
-                    raise PatchError(f"BPS SourceRead out of bounds of source data")
+                    raise PatchError("BPS SourceRead out of bounds of source data")
                 target[output_offset:output_offset+length] = source[output_offset:output_offset+length]
                 output_offset += length
             elif action == 1:
@@ -140,10 +141,7 @@ class BpsPatcher:
             if source_byte != output_byte:
                 hunks.append(PatchHunk(index, bytes([output_byte])))
         if len(output) > source_len:
-            start = source_len
-            for index, byte in enumerate(output[source_len:]):
-                if byte:
-                    hunks.append(PatchHunk(start + index, bytes([byte])))
+            hunks.append(PatchHunk(source_len, bytes(output[source_len:])))
         return merge_patches(hunks)
 
     @classmethod
@@ -201,9 +199,9 @@ class BpsPatcher:
         # Checksums
         source_crc = zlib.crc32(source) & 0xFFFFFFFF
         target_crc = zlib.crc32(target) & 0xFFFFFFFF
-        out.extend(struct.pack("<II", source_crc, target_crc))
+        out.extend(schema.pack("<II", source_crc, target_crc))
         patch_crc = zlib.crc32(out) & 0xFFFFFFFF
-        out.extend(struct.pack("<I", patch_crc))
+        out.extend(schema.pack("<I", patch_crc))
 
         return bytes(out)
 
@@ -226,3 +224,30 @@ class BpsPatcher:
         patch = cls.create(src, target, metadata=metadata)
         with open(patch_path, "wb") as f:
             f.write(patch)
+
+    @classmethod
+    def inspect(cls, patch: bytes) -> Dict[str, Any]:
+        """Inspects BPS patch metadata without applying it."""
+        if len(patch) < 16 or not patch.startswith(cls.MAGIC):
+            raise PatchError("Invalid BPS patch: missing 'BPS1' header")
+
+        expected_patch_crc = schema.unpack("<I", patch[-4:])[0]
+        actual_patch_crc = zlib.crc32(patch[:-4]) & 0xFFFFFFFF
+        source_crc = schema.unpack("<I", patch[-12:-8])[0]
+        target_crc = schema.unpack("<I", patch[-8:-4])[0]
+
+        stream = BytesIO(patch[4:-12])
+        source_size = _decode_vlq(stream)
+        target_size = _decode_vlq(stream)
+        metadata_len = _decode_vlq(stream)
+        metadata = stream.read(metadata_len).decode("utf-8", errors="replace") if metadata_len > 0 else ""
+
+        return {
+            "source_size": source_size,
+            "target_size": target_size,
+            "metadata": metadata,
+            "source_crc32": source_crc,
+            "target_crc32": target_crc,
+            "patch_crc32": expected_patch_crc,
+            "is_patch_valid": actual_patch_crc == expected_patch_crc,
+        }

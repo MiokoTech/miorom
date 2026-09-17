@@ -1,8 +1,8 @@
 import os
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from miorom.rom.base import BaseRomHandler
 from miorom.platforms.iso.iso9660 import ISO9660
+from miorom.rom.base import BaseRomHandler
 from miorom.security import sanitize_extract_path
 
 

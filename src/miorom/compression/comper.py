@@ -19,9 +19,9 @@ Format Specification:
 
 from __future__ import annotations
 
-import struct
-from typing import List, Optional, Tuple
+from typing import List
 
+from miorom.core import schema
 from miorom.errors import CompressionError
 
 
@@ -49,7 +49,7 @@ class ComperCodec:
             if bits_left == 0:
                 if pos + 2 > total_len:
                     break
-                desc_word = struct.unpack_from(">H", data, pos)[0]
+                desc_word = schema.unpack_from(">H", data, pos)[0]
                 pos += 2
                 bits_left = 16
 
@@ -99,7 +99,7 @@ class ComperCodec:
         """
         if not data:
             # Output empty terminator
-            return struct.pack(">HBB", 0x8000, 0, 0)
+            return schema.pack(">HBB", 0x8000, 0, 0)
 
         # Pad to even length if necessary
         padded_data = data if (len(data) % 2 == 0) else (data + b"\x00")
@@ -163,7 +163,7 @@ class ComperCodec:
                 desc_word = 0
                 for i, bit in enumerate(desc_bits):
                     desc_word |= (bit << (15 - i))
-                out.extend(struct.pack(">H", desc_word))
+                out.extend(schema.pack(">H", desc_word))
                 out.extend(payload_chunk)
                 desc_bits.clear()
                 payload_chunk.clear()
@@ -176,7 +176,7 @@ class ComperCodec:
         desc_word = 0
         for i, bit in enumerate(desc_bits):
             desc_word |= (bit << (15 - i))
-        out.extend(struct.pack(">H", desc_word))
+        out.extend(schema.pack(">H", desc_word))
         out.extend(payload_chunk)
 
         return bytes(out)

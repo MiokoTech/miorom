@@ -13,12 +13,13 @@ Supports:
    - Array of (offset, size) pairs, big-endian uint32
 """
 
-from miorom.result import MioRomResult
 import os
 import shutil
-import struct
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional
+
+from miorom.core import schema
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -64,14 +65,14 @@ class TocPair:
 
     @classmethod
     def _parse_nlcm(cls, bin_data: bytes) -> List[TocEntry]:
-        num_entries = struct.unpack_from(">I", bin_data, 0x0C)[0]
+        num_entries = schema.unpack_from(">I", bin_data, 0x0C)[0]
         entries: List[TocEntry] = []
         for i in range(num_entries):
             e_off = 0x38 + (i * 0x10)
             if e_off + 0x10 > len(bin_data):
                 break
-            size = struct.unpack_from(">I", bin_data, e_off)[0]
-            offset = struct.unpack_from(">I", bin_data, e_off + 0x08)[0]
+            size = schema.unpack_from(">I", bin_data, e_off)[0]
+            offset = schema.unpack_from(">I", bin_data, e_off + 0x08)[0]
             entries.append(TocEntry(index=i, offset=offset, size=size))
         return entries
 
@@ -81,7 +82,7 @@ class TocPair:
         n = len(bin_data) // 8
         for i in range(n):
             off = i * 8
-            raw_offset, raw_size = struct.unpack_from(">II", bin_data, off)
+            raw_offset, raw_size = schema.unpack_from(">II", bin_data, off)
             if raw_offset == 0 and raw_size == 0 and i > 0:
                 break
             entries.append(TocEntry(index=i, offset=raw_offset, size=raw_size))
@@ -207,11 +208,11 @@ class TocPair:
         # Update bin_data
         if self.format_type == "nlcm":
             e_off = 0x38 + (index * 0x10)
-            struct.pack_into(">I", self.bin_data, e_off, new_size)
-            struct.pack_into(">I", self.bin_data, e_off + 0x08, final_offset)
+            schema.pack_into(">I", self.bin_data, e_off, new_size)
+            schema.pack_into(">I", self.bin_data, e_off + 0x08, final_offset)
         else:
             e_off = index * 8
-            struct.pack_into(">II", self.bin_data, e_off, final_offset, new_size)
+            schema.pack_into(">II", self.bin_data, e_off, final_offset, new_size)
 
         with open(target_bin, "wb") as f_bin:
             f_bin.write(self.bin_data)

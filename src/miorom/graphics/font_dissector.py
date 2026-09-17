@@ -11,17 +11,17 @@ export and injection for ROM hacking and fan translation workflows.
 
 from __future__ import annotations
 
-from collections import Counter
-from dataclasses import dataclass, field
 import json
 import math
-import struct
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from collections import Counter
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple, Union
 
+from miorom.core import schema
 from miorom.errors import ParseError
 from miorom.graphics.planar import PlanarTileCodec
 from miorom.result import MioRomResult
-
 
 # ============================================================================
 # Data Models
@@ -216,7 +216,7 @@ class FontDissector:
         """
         Decodes raw bytes of a single glyph into row-major indexed pixels.
         """
-        w, h, bpp, fmt = geometry.width, geometry.height, geometry.bpp, geometry.format_name
+        w, h, fmt = geometry.width, geometry.height, geometry.format_name
 
         if fmt == "1bpp_linear":
             pixels = [0] * (w * h)
@@ -268,7 +268,7 @@ class FontDissector:
         """
         Encodes row-major indexed pixels into raw binary bytes for this geometry.
         """
-        w, h, bpp, fmt = geometry.width, geometry.height, geometry.bpp, geometry.format_name
+        w, h, fmt = geometry.width, geometry.height, geometry.format_name
 
         if fmt == "1bpp_linear":
             out = bytearray()
@@ -713,7 +713,7 @@ class FontDissector:
             if entry_size == 1:
                 buf[pos] = min(255, max(0, w))
             elif entry_size == 2:
-                buf[pos : pos + 2] = struct.pack("<H", min(65535, max(0, w)))
+                buf[pos : pos + 2] = schema.pack("<H", min(65535, max(0, w)))
             else:
                 raise ParseError("entry_size must be 1 or 2 bytes")
 

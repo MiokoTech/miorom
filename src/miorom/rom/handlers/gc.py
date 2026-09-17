@@ -1,11 +1,26 @@
 import os
-from miorom.core.binary import BinaryReader
-from miorom.errors import ParseError
-from miorom.security import sanitize_extract_path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from miorom.rom.base import BaseRomHandler
+from miorom.core.binary import BinaryReader
 from miorom.platforms.gc.disc import GameCubeDisc, GCHeader
+from miorom.rom.base import BaseRomHandler
+from miorom.security import sanitize_extract_path
+
+
+def _extract_main_dol(dol_data: bytes, fst_offset: int, dol_offset: int) -> bytes:
+    """Helper to extract main.dol with exact size calculation if valid DOL header."""
+    from miorom.link.dol import DolBinary
+
+    if len(dol_data) >= 0x100 and DolBinary.is_dol(dol_data):
+        try:
+            dol = DolBinary(dol_data)
+            dol_len = max([sec.end_offset for sec in dol.text_sections + dol.data_sections], default=0x100)
+            return dol_data[:dol_len]
+        except Exception:
+            pass
+    if fst_offset > dol_offset:
+        return dol_data[: fst_offset - dol_offset]
+    return dol_data
 
 
 class GameCubeRomHandler(BaseRomHandler):
@@ -16,21 +31,50 @@ class GameCubeRomHandler(BaseRomHandler):
 
     name = "gamecube"
     description = "GameCube / Wii Disc Image"
-    extensions = [".iso", ".gcm"]
+    extensions = [".iso", ".gcm", ".rvz"]
 
     def can_handle(self, data: bytes, filepath: Optional[str] = None) -> bool:
+        # Check RVZ / WIA container
+        if len(data) >= 4 and data[:4] in (b"RVZ\x01", b"WIA\x01"):
+            if len(data) >= 0x48 + 144:
+                disc_type = BinaryReader.unpack_u32(data, 0x48, endian=">")
+                dhead = data[0x48 + 16 : 0x48 + 16 + 128]
+                gc_magic = BinaryReader.unpack_u32(dhead, 0x1C, endian=">")
+                if disc_type == 1 or gc_magic == GameCubeDisc.GC_MAGIC:
+                    return True
+                if disc_type == 2:
+                    return False
+            return True
+
         if len(data) >= 0x20:
             magic = BinaryReader.unpack_u32(data, 0x1C, endian=">")
             if magic == GameCubeDisc.GC_MAGIC:
+                # If it has Wii magic at 0x18, let WiiRomHandler handle it
+                wii_magic = BinaryReader.unpack_u32(data, 0x18, endian=">")
+                if wii_magic == 0x5D1C9EA3:
+                    return False
                 return True
 
         if filepath and os.path.isfile(filepath):
             try:
                 with open(filepath, "rb") as f:
-                    hdr = f.read(0x20)
+                    hdr = f.read(0x48 + 144)
+                    if len(hdr) >= 4 and hdr[:4] in (b"RVZ\x01", b"WIA\x01"):
+                        if len(hdr) >= 0x48 + 144:
+                            disc_type = BinaryReader.unpack_u32(hdr, 0x48, endian=">")
+                            dhead = hdr[0x48 + 16 : 0x48 + 16 + 128]
+                            gc_magic = BinaryReader.unpack_u32(dhead, 0x1C, endian=">")
+                            if disc_type == 1 or gc_magic == GameCubeDisc.GC_MAGIC:
+                                return True
+                            if disc_type == 2:
+                                return False
+                        return True
                     if len(hdr) >= 0x20:
-                        magic = BinaryReader.unpack_u32(hdr, 0x1C, endian=">")
-                        return magic == GameCubeDisc.GC_MAGIC
+                        wii_magic = BinaryReader.unpack_u32(hdr, 0x18, endian=">")
+                        gc_magic = BinaryReader.unpack_u32(hdr, 0x1C, endian=">")
+                        if wii_magic == 0x5D1C9EA3:
+                            return False
+                        return gc_magic == GameCubeDisc.GC_MAGIC
             except OSError:
                 return False
 
@@ -38,6 +82,9 @@ class GameCubeRomHandler(BaseRomHandler):
 
     def unpack(self, data: bytes, output_dir: str, **kwargs) -> Dict[str, Any]:
         filepath = kwargs.pop("filepath", None)
+        if (filepath and filepath.lower().endswith(".rvz")) or (len(data) >= 4 and data[:4] in (b"RVZ\x01", b"WIA\x01")):
+            return self.unpack_rvz(data, filepath, output_dir, **kwargs)
+
         if filepath and os.path.isfile(filepath):
             return self.unpack_file(filepath, output_dir, **kwargs)
 
@@ -55,6 +102,16 @@ class GameCubeRomHandler(BaseRomHandler):
         base_size = min(len(data), disc.header.fst_offset if disc.header.fst_offset > 0 else 0x450000)
         with open(os.path.join(sys_dir, "disc_base.bin"), "wb") as f:
             f.write(data[:base_size])
+
+        # Extract main.dol if present
+        if disc.header.dol_offset > 0 and disc.header.dol_offset < len(data):
+            main_dol = _extract_main_dol(
+                data[disc.header.dol_offset :],
+                disc.header.fst_offset,
+                disc.header.dol_offset,
+            )
+            with open(os.path.join(sys_dir, "main.dol"), "wb") as f:
+                f.write(main_dol)
 
         # Extract all files from FST
         extracted_count = 0
@@ -106,6 +163,32 @@ class GameCubeRomHandler(BaseRomHandler):
                     f_out.write(chunk)
                     rem -= len(chunk)
 
+            # Extract main.dol if present
+            if header.dol_offset > 0 and header.dol_offset < file_size:
+                f_in.seek(header.dol_offset)
+                hdr_100 = f_in.read(0x100)
+                from miorom.link.dol import DolBinary
+                if len(hdr_100) == 0x100 and DolBinary.is_dol(hdr_100):
+                    try:
+                        dol = DolBinary(hdr_100)
+                        dol_len = max([sec.end_offset for sec in dol.text_sections + dol.data_sections], default=0x100)
+                    except Exception:
+                        dol_len = (header.fst_offset - header.dol_offset) if header.fst_offset > header.dol_offset else 0x400000
+                elif header.fst_offset > header.dol_offset:
+                    dol_len = header.fst_offset - header.dol_offset
+                else:
+                    dol_len = min(file_size - header.dol_offset, 0x800000)
+
+                f_in.seek(header.dol_offset)
+                with open(os.path.join(sys_dir, "main.dol"), "wb") as f_dol:
+                    rem = dol_len
+                    while rem > 0:
+                        chunk = f_in.read(min(rem, 65536))
+                        if not chunk:
+                            break
+                        f_dol.write(chunk)
+                        rem -= len(chunk)
+
             f_in.seek(header.fst_offset)
             fst_data = f_in.read(header.fst_size)
             entries = GameCubeDisc.parse_fst_entries(fst_data)
@@ -137,6 +220,68 @@ class GameCubeRomHandler(BaseRomHandler):
             "version": header.version,
             "audio_streaming": header.audio_streaming,
             "stream_buf_size": header.stream_buf_size,
+            "file_count": extracted_count,
+            "dol_offset": f"0x{header.dol_offset:08X}",
+            "fst_offset": f"0x{header.fst_offset:08X}",
+            "streaming": True,
+        }
+
+    def unpack_rvz(self, data: bytes, filepath: Optional[str], output_dir: str, **kwargs) -> Dict[str, Any]:
+        """Streaming GameCube disc unpack directly from RVZ container."""
+        from miorom.platforms.iso.rvz import RVZDisc
+
+        if filepath and os.path.isfile(filepath):
+            rvz = RVZDisc.from_file(filepath)
+        else:
+            rvz = RVZDisc.from_bytes(data)
+
+        sys_dir = os.path.join(output_dir, "sys")
+        root_dir = os.path.join(output_dir, "root")
+        os.makedirs(sys_dir, exist_ok=True)
+        os.makedirs(root_dir, exist_ok=True)
+
+        hdr_bytes = rvz.read_at(0, 0x440)
+        header = GCHeader.parse(hdr_bytes)
+
+        with open(os.path.join(sys_dir, "header.bin"), "wb") as f:
+            f.write(header.pack())
+
+        # Save disc base for repacking (CRITICAL FIX!)
+        base_size = min(rvz.iso_file_size, header.fst_offset if header.fst_offset > 0 else 0x450000)
+        base_data = rvz.read_at(0, base_size)
+        with open(os.path.join(sys_dir, "disc_base.bin"), "wb") as f:
+            f.write(base_data)
+
+        # Extract main.dol if present
+        if header.dol_offset > 0 and header.dol_offset < rvz.iso_file_size:
+            max_read = min(0x1000000, rvz.iso_file_size - header.dol_offset)
+            dol_slice = rvz.read_at(header.dol_offset, max_read)
+            main_dol = _extract_main_dol(dol_slice, header.fst_offset, header.dol_offset)
+            with open(os.path.join(sys_dir, "main.dol"), "wb") as f:
+                f.write(main_dol)
+
+        fst_data = rvz.read_at(header.fst_offset, header.fst_size)
+        entries = GameCubeDisc.parse_fst_entries(fst_data)
+
+        extracted_count = 0
+        for entry in entries:
+            if entry.is_directory:
+                continue
+            dest = sanitize_extract_path(root_dir, entry.path)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            content = rvz.read_at(entry.file_offset, entry.file_size)
+            with open(dest, "wb") as f:
+                f.write(content)
+            extracted_count += 1
+
+        return {
+            "format": self.name,
+            "platform": "GameCube",
+            "game_id": header.game_id,
+            "maker_code": header.maker_code,
+            "game_title": header.game_title,
+            "disc_number": header.disc_number,
+            "version": header.version,
             "file_count": extracted_count,
             "dol_offset": f"0x{header.dol_offset:08X}",
             "fst_offset": f"0x{header.fst_offset:08X}",
@@ -184,6 +329,33 @@ class GameCubeRomHandler(BaseRomHandler):
                 synth[:0x440] = default_hdr.pack()
             disc = GameCubeDisc(bytes(synth))
 
+        # Check for modified sys/header.bin
+        header_path = os.path.join(sys_dir, "header.bin")
+        if os.path.isfile(header_path):
+            with open(header_path, "rb") as f:
+                hdr_bytes = f.read()
+            if len(hdr_bytes) >= 0x440:
+                disc.header = GCHeader.parse(hdr_bytes)
+                if len(disc.raw_data) >= 0x440:
+                    disc.raw_data[:0x440] = hdr_bytes[:0x440]
+
+        # Check for modified sys/main.dol
+        dol_path = os.path.join(sys_dir, "main.dol")
+        if os.path.isfile(dol_path):
+            with open(dol_path, "rb") as f:
+                new_dol = f.read()
+            if new_dol:
+                dol_offset = disc.header.dol_offset
+                if dol_offset == 0:
+                    dol_offset = 0x10000
+                    disc.header.dol_offset = dol_offset
+                needed_len = dol_offset + len(new_dol)
+                if len(disc.raw_data) < needed_len:
+                    disc.raw_data.extend(b"\x00" * (needed_len - len(disc.raw_data)))
+                disc.raw_data[dol_offset : dol_offset + len(new_dol)] = new_dol
+                if disc.header.fst_offset < dol_offset + len(new_dol):
+                    disc.header.fst_offset = (dol_offset + len(new_dol) + 0x7FFF) & ~0x7FFF
+
         # Clear existing files and load all files from root_dir
         disc.files.clear()
         for root, _, files in os.walk(root_dir):
@@ -194,4 +366,17 @@ class GameCubeRomHandler(BaseRomHandler):
                     disc.files[rel] = f.read()
 
         alignment = kwargs.get("alignment", 32)
-        return disc.to_bytes(alignment=alignment)
+        iso_bytes = disc.to_bytes(alignment=alignment)
+
+        out_fmt = str(kwargs.get("format", "iso")).lower().strip()
+        if out_fmt == "rvz":
+            from miorom.platforms.iso.rvz import RVZDisc
+            from miorom.platforms.wii.disc import DiscStream
+
+            return RVZDisc.create_from_stream(
+                disc_stream=DiscStream.from_bytes(iso_bytes),
+                total_size=len(iso_bytes),
+                disc_type=1,
+            )
+
+        return iso_bytes

@@ -1,7 +1,9 @@
 import struct
+
 import pytest
-from miorom.platforms.gba import GBASwiResolver, GBAMultiboot
+
 from miorom.errors import ParseError
+from miorom.platforms.gba import GBAMultiboot, GBASwiResolver
 
 
 def test_gba_swi_resolver_lookup():

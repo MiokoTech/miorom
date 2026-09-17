@@ -5,8 +5,9 @@ Helper for binary section relocation, buffer splicing, and pointer/size fixups.
 Helps repacker scripts expand internal sections without breaking subsequent offsets.
 """
 
-import struct
 from typing import List, Optional, Union
+
+from miorom.core import schema
 
 
 class BinaryRelocator:
@@ -69,10 +70,10 @@ class BinaryRelocator:
         return delta
 
     def read_u32(self, offset: int) -> int:
-        return struct.unpack_from(f"{self.endian}I", self._buf, offset)[0]
+        return schema.unpack_from(f"{self.endian}I", self._buf, offset)[0]
 
     def set_u32(self, offset: int, value: int) -> "BinaryRelocator":
-        struct.pack_into(f"{self.endian}I", self._buf, offset, value)
+        schema.pack_into(f"{self.endian}I", self._buf, offset, value)
         return self
 
     def shift_u32(self, offset: int, delta: int) -> int:
@@ -88,10 +89,10 @@ class BinaryRelocator:
             self.shift_u32(off, delta)
 
     def read_u16(self, offset: int) -> int:
-        return struct.unpack_from(f"{self.endian}H", self._buf, offset)[0]
+        return schema.unpack_from(f"{self.endian}H", self._buf, offset)[0]
 
     def set_u16(self, offset: int, value: int) -> "BinaryRelocator":
-        struct.pack_into(f"{self.endian}H", self._buf, offset, value)
+        schema.pack_into(f"{self.endian}H", self._buf, offset, value)
         return self
 
     def shift_u16(self, offset: int, delta: int) -> int:

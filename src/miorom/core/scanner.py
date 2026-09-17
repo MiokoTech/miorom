@@ -1,12 +1,12 @@
 import re
-import string
-import struct
 from collections import Counter
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
-from typing import Iterator, List, Optional, Tuple, Dict, Any, Set, Sequence, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
-from miorom.text.charmap import CharMap
+from miorom.core import schema
 from miorom.result import MioRomResult
+from miorom.text.charmap import CharMap
 
 
 @dataclass
@@ -500,7 +500,7 @@ class PointerScanner:
                 else:
                     read_bytes = 2 if stride == 2 else 4
                     raw = data[curr_pos : curr_pos + read_bytes]
-                    val = struct.unpack(f"{endian}{'H' if stride == 2 else 'I'}", raw)[0]
+                    val = schema.unpack(f"{endian}{'H' if stride == 2 else 'I'}", raw)[0]
                 target = val + base
 
                 if target in target_set:
@@ -623,7 +623,7 @@ class PointerScanner:
                         raw = data[curr_pos:curr_pos + read_bytes]
                         if len(raw) < read_bytes:
                             break
-                        val = struct.unpack(fmt, raw)[0]
+                        val = schema.unpack(fmt, raw)[0]
                         if val in target_set:
                             run_entries.append((curr_pos, val))
                             curr_pos += strd
@@ -678,7 +678,7 @@ class PointerScanner:
         for endian in endians:
             fmt = f"{endian}I"
             for pos in range(0, limit, step):
-                val = struct.unpack(fmt, data[pos:pos+4])[0]
+                val = schema.unpack(fmt, data[pos:pos+4])[0]
                 for target in first_few:
                     delta = val - target
                     if delta >= 0 and (delta % 0x1000 == 0 or delta < 0x10000):

@@ -5,6 +5,7 @@ Declarative rules and constraints for game localization and ROM hacking.
 """
 
 from typing import Dict, List, Optional, Tuple
+
 from miorom.text.line_wrapper import WordWrapper
 
 

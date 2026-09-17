@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-from dataclasses import dataclass
 import io
 import os
 from typing import Dict, List, Optional, Tuple, Union
@@ -22,9 +21,8 @@ try:
 except ImportError:
     HAS_PIL = False
 
-from miorom.graphics.glyph_bank import Glyph, GlyphBank
+from miorom.graphics.glyph_bank import GlyphBank
 from miorom.platforms.wii.tpl import TPLFile
-
 
 # Pre-harvested, cleaned master glyph atlas metadata (char -> (x0, y0, x1, y1))
 MASTER_ATLAS_META: Dict[str, Tuple[int, int, int, int]] = {'1': (0, 0, 12, 20), '2': (12, 0, 25, 20), 'A': (25, 0, 38, 20), 'B': (38, 0, 50, 20), 'C': (50, 0, 61, 20), 'E': (61, 0, 73, 20), 'F': (73, 0, 84, 20), 'G': (84, 0, 97, 20), 'H': (97, 0, 110, 20), 'I': (110, 0, 114, 20), 'J': (114, 0, 125, 20), 'K': (125, 0, 138, 20), 'L': (138, 0, 149, 20), 'M': (150, 0, 166, 20), 'N': (166, 0, 178, 20), 'O': (178, 0, 191, 20), 'P': (191, 0, 203, 20), 'R': (203, 0, 215, 20), 'S': (215, 0, 227, 20), 'T': (227, 0, 241, 20), 'U': (241, 0, 254, 20), 'V': (254, 0, 267, 20), 'W': (267, 0, 283, 20), 'Y': (283, 0, 293, 20)}
@@ -93,17 +91,23 @@ class GFontCGenerator:
 
     def __init__(
         self,
-        atlas_image: Optional["Image.Image"] = None,
+        atlas_image: Optional[Image.Image] = None,
         atlas_meta: Optional[Dict[str, Tuple[int, int, int, int]]] = None,
     ):
-        if not HAS_PIL:
-            raise ImportError("Pillow is required for GFontCGenerator.")
-
         if atlas_image is None:
             png_bytes = base64.b64decode(MASTER_ATLAS_PNG_B64)
-            self.atlas_image = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+            if HAS_PIL:
+                self.atlas_image = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+            else:
+                from miorom.graphics.glyph_bank import _RGBAImageProxy
+                from miorom.graphics.png_codec import PNGCodec
+                w, h, rgba = PNGCodec.png_to_rgba(png_bytes)
+                self.atlas_image = _RGBAImageProxy(w, h, rgba)
         else:
-            self.atlas_image = atlas_image.convert("RGBA")
+            if HAS_PIL and isinstance(atlas_image, Image.Image):
+                self.atlas_image = atlas_image.convert("RGBA")
+            else:
+                self.atlas_image = atlas_image
 
         self.atlas_meta = atlas_meta if atlas_meta is not None else MASTER_ATLAS_META
         self.bank = GlyphBank()
@@ -118,7 +122,7 @@ class GFontCGenerator:
         """Returns sorted list of registered characters in the master bank."""
         return sorted(list(self.bank.glyphs.keys()))
 
-    def add_glyph(self, char: str, image_or_path: Union[str, "Image.Image"]) -> "GFontCGenerator":
+    def add_glyph(self, char: str, image_or_path: Union[str, Image.Image]) -> GFontCGenerator:
         """Adds or overrides a specific glyph in the generator's bank."""
         self.bank.add_glyph(char.upper(), image_or_path)
         return self
@@ -150,7 +154,7 @@ class GFontCGenerator:
         border_overlap: int = 1,
         start_x: Optional[int] = None,
         auto_scale: bool = True,
-    ) -> "Image.Image":
+    ) -> Image.Image:
         """
         Renders the given text into an RGBA PIL Image.
 
@@ -299,7 +303,7 @@ class GFontCGenerator:
         start_x: Optional[int] = None,
         auto_scale: bool = True,
         palette: Optional[Union[str, List[Tuple[int, int, int, int]]]] = None,
-    ) -> Tuple["Image.Image", Optional[TPLFile]]:
+    ) -> Tuple[Image.Image, Optional[TPLFile]]:
         """Renders text and saves PNG and/or TPL to disk."""
         im = self.render_image(
             text=text,
@@ -330,7 +334,13 @@ class GFontCGenerator:
 
         if out_png:
             os.makedirs(os.path.dirname(os.path.abspath(out_png)), exist_ok=True)
-            im.save(out_png, format="PNG")
+            if hasattr(im, "save"):
+                im.save(out_png, format="PNG")
+            else:
+                from miorom.graphics.png_codec import PNGCodec
+                png_bytes = PNGCodec.encode_rgba(im.width, im.height, im.to_rgba_bytes())
+                with open(out_png, "wb") as f:
+                    f.write(png_bytes)
 
         return im, tpl
 

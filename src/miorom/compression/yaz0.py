@@ -1,5 +1,5 @@
+from miorom.core.schema import U32, BinaryStruct, RawBytes
 from miorom.errors import CompressionError
-from miorom.core.schema import BinaryStruct, RawBytes, U32
 
 
 class Yaz0CompressionHeaderStruct(BinaryStruct):
@@ -7,7 +7,6 @@ class Yaz0CompressionHeaderStruct(BinaryStruct):
     magic = RawBytes(4)
     uncompressed_size = U32()
     _reserved = RawBytes(8)
-from typing import Optional
 
 
 class Yaz0:
@@ -113,8 +112,8 @@ class Yaz0:
                     break
 
                 # Search best match
-                max_back = min(src_pos, MAX_DIST)
-                start_window = max(0, src_pos - search_depth)
+                max_back = min(src_pos, min(search_depth, MAX_DIST))
+                start_window = src_pos - max_back
                 best_len = 0
                 best_dist = 0
 
@@ -127,14 +126,14 @@ class Yaz0:
                     cand_idx = window_bytes.find(sub)
                     while cand_idx != -1:
                         match_pos = start_window + cand_idx
-                        l = 3
+                        match_len = 3
                         while (
-                            l < cur_max_len
-                            and data[match_pos + l] == data[src_pos + l]
+                            match_len < cur_max_len
+                            and data[match_pos + match_len] == data[src_pos + match_len]
                         ):
-                            l += 1
-                        if l > best_len:
-                            best_len = l
+                            match_len += 1
+                        if match_len > best_len:
+                            best_len = match_len
                             best_dist = src_pos - match_pos
                             if best_len == cur_max_len:
                                 break

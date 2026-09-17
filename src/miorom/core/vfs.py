@@ -9,13 +9,12 @@ Zero external tools, zero temporary disk files.
 
 from __future__ import annotations
 
-import io
 import os
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from miorom.compression.yaz0 import Yaz0
 from miorom.errors import ParseError
 from miorom.platforms.wii.u8 import U8Archive
-from miorom.compression.yaz0 import Yaz0
 
 
 class ContainerCodec:
@@ -74,7 +73,7 @@ class ContainerCodec:
 class NestedArchiveVFS:
     """
     Virtual File System capable of resolving and mutating nested container archives.
-    
+
     URI Syntax:
         'outer.arc::inner.arc::timg/gfontC29.tpl'
     """

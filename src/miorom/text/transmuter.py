@@ -7,11 +7,7 @@ Enables doubling text capacity in Japanese ROMs by transmuting 2-byte wide encod
 ASM narrowing patches (LDRH -> LDRB) so game engines natively read 1 byte per character.
 """
 
-from dataclasses import dataclass
-import struct
-from typing import Dict, List, Optional, Tuple, Union
-
-from miorom.text.charmap import CharMap
+from miorom.core import schema
 
 
 class EncodingTransmuter:
@@ -29,7 +25,7 @@ class EncodingTransmuter:
         n_chars = len(data) // 2
         out = bytearray()
         for i in range(n_chars):
-            val = struct.unpack_from(fmt, data, i * 2)[0]
+            val = schema.unpack_from(fmt, data, i * 2)[0]
             out.append(val & 0xFF)
         return bytes(out)
 
@@ -42,7 +38,7 @@ class EncodingTransmuter:
         out = bytearray()
         for char in text:
             val = ord(char) & 0xFFFF
-            out.extend(struct.pack(fmt, val))
+            out.extend(schema.pack(fmt, val))
         return bytes(out)
 
     @classmethod
@@ -59,7 +55,7 @@ class EncodingTransmuter:
         if instruction_offset + 4 > len(code):
             return False
 
-        word = struct.unpack_from(f"{endian}I", code, instruction_offset)[0]
+        word = schema.unpack_from(f"{endian}I", code, instruction_offset)[0]
 
         # ARM LDRH instruction check
         is_ldrh = ((word >> 25) & 0x7) == 0 and ((word >> 4) & 0xF) == 0xB
@@ -76,7 +72,7 @@ class EncodingTransmuter:
             # ARM LDRB immediate: cond 0101 U 1 0 1 Rn Rd offset_imm12
             u_flag = 0x00800000 if u_bit else 0
             new_opcode = (cond << 28) | 0x05500000 | u_flag | (rn << 16) | (rd << 12) | (offset_imm & 0xFFF)
-            struct.pack_into(f"{endian}I", code, instruction_offset, new_opcode)
+            schema.pack_into(f"{endian}I", code, instruction_offset, new_opcode)
             return True
 
         return False

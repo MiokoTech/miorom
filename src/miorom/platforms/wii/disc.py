@@ -573,6 +573,13 @@ class WiiPartition(MioRomResult):
         norm = path.replace("\\", "/").lstrip("/")
         return norm in self.list_files()
 
+    def get(self, path: str, default: Optional[bytes] = None) -> Optional[bytes]:
+        """Safely retrieves in-partition file bytes by virtual path, returning default if absent."""
+        try:
+            return self[path]
+        except KeyError:
+            return default
+
     def replace_file(self, vpath: str, data_or_path: Union[str, bytes]) -> None:
         """Replaces an in-partition file directly with bytes or a file path from disk."""
         if isinstance(data_or_path, str):
@@ -629,6 +636,37 @@ class WiiDisc(MioRomResult):
                 return p
         return self.partitions[0] if self.partitions else None
 
+    def get_banner(self) -> Optional[Any]:
+        """
+        Retrieves and parses opening.bnr from the primary data partition.
+        Returns a WiiBanner or GCBanner instance, or None if opening.bnr is not present.
+        """
+        from miorom.platforms.wii.banner import BannerFile
+
+        part = self.data_partition
+        if part is None:
+            return None
+
+        for bnr_path in ("opening.bnr", "files/opening.bnr", "sys/opening.bnr"):
+            try:
+                data = part[bnr_path]
+                if data:
+                    return BannerFile.from_bytes(data)
+            except (KeyError, Exception):
+                pass
+        return None
+
+    def set_banner(self, banner: Union[Any, bytes]) -> None:
+        """
+        Injects or replaces opening.bnr in the primary data partition.
+        """
+        part = self.data_partition
+        if part is None:
+            raise ValueError("Cannot set banner: no partition available on disc.")
+
+        raw_bytes = banner.to_bytes() if hasattr(banner, "to_bytes") else bytes(banner)
+        part.files["files/opening.bnr"] = raw_bytes
+
     @classmethod
     def from_file(
         cls,
@@ -656,10 +694,13 @@ class WiiDisc(MioRomResult):
         common_key: Optional[bytes] = None,
     ) -> "WiiDisc":
         """Internal constructor that resolves WBFS or ISO streams."""
-        # 1. Detect WBFS container
+        # 1. Detect WBFS or RVZ container
         magic = raw_stream.read_at(0, 4)
         if magic == WBFS_MAGIC:
             stream: Any = WBFSDisc.from_stream(raw_stream)
+        elif magic in (b"RVZ\x01", b"WIA\x01"):
+            from miorom.platforms.iso.rvz import RVZDisc
+            stream = RVZDisc.from_stream(raw_stream._stream if hasattr(raw_stream, "_stream") else raw_stream)
         else:
             stream = raw_stream
 
@@ -1166,9 +1207,9 @@ class WiiDisc(MioRomResult):
 
         return out.tell() - part_byte_off
 
-    def save_wbfs(self, path: str, fake_sign: bool = True) -> None:
+    def to_wbfs(self, fake_sign: bool = True) -> bytes:
         """
-        Saves this disc as a compressed sparse WBFS (.wbfs) container.
+        Serializes this disc as an in-memory compressed sparse WBFS (.wbfs) byte buffer.
         Allocates blocks only for populated sectors, stripping empty 0x00 padding.
         """
         iso_bytes = self.to_bytes(fake_sign=fake_sign)
@@ -1183,31 +1224,59 @@ class WiiDisc(MioRomResult):
         phys_block_idx = 1  # Block 0 is WBFS header and block table
         for v_idx in range(num_virtual_blocks):
             v_chunk = iso_bytes[v_idx * wbfs_sec_size : (v_idx + 1) * wbfs_sec_size]
-            # Check if block is entirely zeros
             if any(b != 0 for b in v_chunk):
                 wbl_table[v_idx] = phys_block_idx
                 populated_blocks.append((phys_block_idx, v_chunk))
                 phys_block_idx += 1
 
+        bio = io.BytesIO()
+        hdr = WBFSHeaderStruct(
+            magic=WBFS_MAGIC,
+            n_hd_sec=phys_block_idx * (wbfs_sec_size // hd_sec_size),
+            hd_sec_sz_s=9,    # 512 bytes
+            wbfs_sec_sz_s=21,  # 2 MB
+        )
+        bio.write(hdr.to_bytes())
+
+        bio.seek(0x100)
+        for val in wbl_table:
+            bio.write(schema.pack(">H", val))
+
+        bio.seek(wbfs_sec_size)
+        for p_idx, chunk in populated_blocks:
+            bio.seek(p_idx * wbfs_sec_size)
+            bio.write(chunk)
+
+        return bio.getvalue()
+
+    def save_wbfs(self, path: str, fake_sign: bool = True) -> None:
+        """
+        Saves this disc as a compressed sparse WBFS (.wbfs) container.
+        Allocates blocks only for populated sectors, stripping empty 0x00 padding.
+        """
+        data = self.to_wbfs(fake_sign=fake_sign)
         with open(path, "wb") as f:
-            # Write WBFS header
-            hdr = WBFSHeaderStruct(
-                magic=WBFS_MAGIC,
-                n_hd_sec=phys_block_idx * (wbfs_sec_size // hd_sec_size),
-                hd_sec_sz_s=9,   # 512 bytes
-                wbfs_sec_sz_s=21, # 2 MB
-            )
-            f.write(hdr.to_bytes())
+            f.write(data)
 
-            # Write Disc info & WBL table
-            f.seek(0x100)
-            for val in wbl_table:
-                f.write(schema.pack(">H", val))
+    def to_rvz(self, fake_sign: bool = True, chunk_size: int = 131072) -> bytes:
+        """
+        Serializes this disc as an in-memory Dolphin RVZ compressed disc image container.
+        """
+        from miorom.platforms.iso.rvz import RVZDisc
+        bio = io.BytesIO()
+        self.save_stream(bio, fake_sign=fake_sign)
+        iso_bytes = bio.getvalue()
+        return RVZDisc.create_from_stream(
+            disc_stream=DiscStream.from_bytes(iso_bytes),
+            total_size=len(iso_bytes),
+            disc_type=2,
+            chunk_size=chunk_size,
+        )
 
-            # Pad header block to wbfs_sec_size
-            f.seek(wbfs_sec_size)
-
-            # Write populated blocks
-            for p_idx, chunk in populated_blocks:
-                f.seek(p_idx * wbfs_sec_size)
-                f.write(chunk)
+    def save_rvz(self, path: str, fake_sign: bool = True, chunk_size: int = 131072) -> None:
+        """
+        Saves this disc as an RVZ (.rvz) compressed container on disk.
+        """
+        data = self.to_rvz(fake_sign=fake_sign, chunk_size=chunk_size)
+        with open(path, "wb") as f:
+            f.write(data)

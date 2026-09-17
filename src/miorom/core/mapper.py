@@ -1,9 +1,11 @@
 import difflib
-import struct
-from typing import List, Tuple, Dict, Callable, Optional, Sequence
+from collections.abc import Sequence
+from typing import Dict, List, Optional, Tuple
 
-
+from miorom.core import schema
 from miorom.errors import RelocationError
+
+
 class ByteOffsetMapper:
     """
     Computes exact byte-level offset relocation between original and modified data
@@ -86,12 +88,12 @@ class ByteOffsetMapper:
         for old_pos in pointer_positions:
             if old_pos + 2 > len(old_data):
                 continue
-            old_target = struct.unpack_from(fmt, old_data, old_pos)[0]
+            old_target = schema.unpack_from(fmt, old_data, old_pos)[0]
             new_target = mapper.map_offset(old_target - base) + base
             new_pos = mapper.map_offset(old_pos)
 
             if new_pos + 2 <= len(new_data) and 0 <= new_target <= 0xFFFF:
-                struct.pack_into(fmt, new_data, new_pos, new_target)
+                schema.pack_into(fmt, new_data, new_pos, new_target)
                 results[old_pos] = (new_pos, new_target)
 
         return results
@@ -116,12 +118,12 @@ class ByteOffsetMapper:
         for old_pos in pointer_positions:
             if old_pos + 4 > len(old_data):
                 continue
-            old_target = struct.unpack_from(fmt, old_data, old_pos)[0]
+            old_target = schema.unpack_from(fmt, old_data, old_pos)[0]
             new_target = mapper.map_offset(old_target - base) + base
             new_pos = mapper.map_offset(old_pos)
 
             if new_pos + 4 <= len(new_data) and 0 <= new_target <= 0xFFFFFFFF:
-                struct.pack_into(fmt, new_data, new_pos, new_target)
+                schema.pack_into(fmt, new_data, new_pos, new_target)
                 results[old_pos] = (new_pos, new_target)
 
         return results
@@ -149,13 +151,13 @@ class ByteOffsetMapper:
         for off in offsets:
             if off + field_size > len(old_data):
                 continue
-            val = struct.unpack_from(fmt, old_data, off)[0]
+            val = schema.unpack_from(fmt, old_data, off)[0]
             if unused_sentinel is not None and val == unused_sentinel:
                 continue
             new_val = val + delta
             if not (0 <= new_val <= max_val):
                 raise RelocationError(f"Value {new_val} overflows field size {field_size} at offset 0x{off:X}")
-            struct.pack_into(fmt, new_data, off, new_val)
+            schema.pack_into(fmt, new_data, off, new_val)
             results[off] = new_val
 
         return results

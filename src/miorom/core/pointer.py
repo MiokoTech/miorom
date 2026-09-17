@@ -1,7 +1,8 @@
-from miorom.result import MioRomResult
 from dataclasses import dataclass
-from typing import List, Optional, Union
-import struct
+from typing import List, Optional
+
+from miorom.core import schema
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -57,8 +58,8 @@ class PointerTable:
         pos = table_offset
         for i in range(count):
             if has_flags and stride == 8:
-                target_off = struct.unpack_from(f"{endian}I", data, pos)[0]
-                flag = struct.unpack_from(f"{endian}I", data, pos + 4)[0]
+                target_off = schema.unpack_from(f"{endian}I", data, pos)[0]
+                flag = schema.unpack_from(f"{endian}I", data, pos + 4)[0]
                 entries.append(PointerEntry(
                     index=i,
                     table_offset=pos,
@@ -67,7 +68,7 @@ class PointerTable:
                     base_offset=base_offset
                 ))
             elif stride == 4:
-                target_off = struct.unpack_from(f"{endian}I", data, pos)[0]
+                target_off = schema.unpack_from(f"{endian}I", data, pos)[0]
                 entries.append(PointerEntry(
                     index=i,
                     table_offset=pos,
@@ -75,7 +76,7 @@ class PointerTable:
                     base_offset=base_offset
                 ))
             elif stride == 2:
-                target_off = struct.unpack_from(f"{endian}H", data, pos)[0]
+                target_off = schema.unpack_from(f"{endian}H", data, pos)[0]
                 entries.append(PointerEntry(
                     index=i,
                     table_offset=pos,
@@ -109,11 +110,11 @@ class PointerTable:
         for entry in self.entries:
             if self.has_flags and self.stride == 8:
                 flag = entry.flags if entry.flags is not None else 0
-                out.extend(struct.pack(f"{self.endian}II", entry.target_offset, flag))
+                out.extend(schema.pack(f"{self.endian}II", entry.target_offset, flag))
             elif self.stride == 4:
-                out.extend(struct.pack(f"{self.endian}I", entry.target_offset))
+                out.extend(schema.pack(f"{self.endian}I", entry.target_offset))
             elif self.stride == 2:
-                out.extend(struct.pack(f"{self.endian}H", entry.target_offset))
+                out.extend(schema.pack(f"{self.endian}H", entry.target_offset))
         return bytes(out)
 
     def __len__(self) -> int:

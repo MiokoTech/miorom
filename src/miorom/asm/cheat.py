@@ -6,10 +6,11 @@ Generates Gecko Codes (Wii / GameCube), Action Replay (NDS / GBA),
 and CWCheat / GameShark (PSX / PSP) from memory edits and binary diffs.
 """
 
+from dataclasses import dataclass
+from typing import List, Optional
+
+from miorom.core import schema
 from miorom.result import MioRomResult
-import struct
-from dataclasses import dataclass, field
-from typing import List, Optional, Tuple, Union
 
 
 @dataclass
@@ -71,8 +72,8 @@ class GeckoCode:
         lines = [f"C2{off:06X} {lines_count:08X}"]
 
         for i in range(lines_count):
-            w1 = struct.unpack_from(">I", padded, i * 8)[0]
-            w2 = struct.unpack_from(">I", padded, i * 8 + 4)[0]
+            w1 = schema.unpack_from(">I", padded, i * 8)[0]
+            w2 = schema.unpack_from(">I", padded, i * 8 + 4)[0]
             lines.append(f"{w1:08X} {w2:08X}")
 
         return lines
@@ -96,7 +97,7 @@ class GeckoCode:
             if len(parts) == 2 and len(parts[0]) == 8 and len(parts[1]) == 8:
                 w1 = int(parts[0], 16)
                 w2 = int(parts[1], 16)
-                out.extend(struct.pack(">II", w1, w2))
+                out.extend(schema.pack(">II", w1, w2))
 
         # Footer
         out.extend(b"\xF0\x00\x00\x00\x00\x00\x00\x00")
@@ -193,11 +194,11 @@ class CheatCodeGenerator:
         p = 0
         n = len(data)
         while p + 4 <= n:
-            val = struct.unpack(">I", data[p:p+4])[0]
+            val = schema.unpack(">I", data[p:p+4])[0]
             self.add_write_u32(address + p, val, comment=comment if p == 0 else None)
             p += 4
         if p + 2 <= n:
-            val = struct.unpack(">H", data[p:p+2])[0]
+            val = schema.unpack(">H", data[p:p+2])[0]
             self.add_write_u16(address + p, val)
             p += 2
         if p < n:

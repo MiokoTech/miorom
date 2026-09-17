@@ -6,15 +6,12 @@ Eliminates character limits on fixed-width item names, menus, and spell tables
 by converting inline fixed slots into dynamic heap pointers, allowing arbitrary
 text expansion without corrupting adjacent record attributes.
 """
-from miorom.result import MioRomResult
-from miorom.errors import PatchError
-
 from dataclasses import dataclass, field
-import struct
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
-from miorom.patch.relocator import AutoRelocationManager
-from miorom.patch.slack import SlackSpaceManager
+from miorom.core import schema
+from miorom.errors import PatchError
+from miorom.result import MioRomResult
 from miorom.text.charmap import CharMap
 
 
@@ -129,7 +126,7 @@ class SlotToHeapPointerizer:
 
             # Write pointer into record slot
             calc_ptr = (base_address + target_heap_addr)
-            struct.pack_into(ptr_fmt, buffer, slot_off, calc_ptr)
+            schema.pack_into(ptr_fmt, buffer, slot_off, calc_ptr)
 
             # Zero-pad remaining slot bytes
             if slot_size > pointer_size:
@@ -175,7 +172,7 @@ class PascalStringManager:
         if length_size == 1:
             length = buffer[offset]
         else:
-            length = struct.unpack_from(f"{endian}H", buffer, offset)[0]
+            length = schema.unpack_from(f"{endian}H", buffer, offset)[0]
 
         data = buffer[offset + length_size : offset + length_size + length]
         return data.decode(encoding, errors="replace"), length_size + length
@@ -199,7 +196,7 @@ class PascalStringManager:
                 raise PatchError(f"String exceeds 1-byte Pascal length limit ({str_len} > 255)")
             buffer[offset] = str_len
         else:
-            struct.pack_into(f"{endian}H", buffer, offset, str_len)
+            schema.pack_into(f"{endian}H", buffer, offset, str_len)
 
         buffer[offset + length_size : offset + length_size + str_len] = encoded
         return length_size + str_len

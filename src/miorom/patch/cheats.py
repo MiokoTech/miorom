@@ -6,8 +6,9 @@ Decodes and encodes cheat cipher strings for NES, SNES, Genesis/MD, Game Boy,
 and applies permanent ROM modifications via hard-patching.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from miorom.result import MioRomResult
 

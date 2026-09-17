@@ -1,7 +1,7 @@
 # MioROM
 
 <div class="retro-hero">
-  <div class="title">&gt; MIOROM // RE_FRAMEWORK_v1.0.2</div>
+  <div class="title">&gt; MIOROM // RE_FRAMEWORK_v1.0.4</div>
   <div class="subtitle">Modular Low-Level Binary &amp; Assembly Primitives for Console ROM Hacking</div>
   <div>
     <span class="chip-badge nds">NDS ARM9/ARM7/THUMB</span>
@@ -15,7 +15,7 @@
     <span class="chip-badge nds">GB SM83</span>
   </div>
   <div class="stats">
-    <span>TESTS: <strong>1140+ PASSED</strong></span>
+    <span>TESTS: <strong>1520+ PASSED</strong></span>
     <span>RUNTIME DEPS: <strong>ZERO (STDLIB ONLY)</strong></span>
     <span>DISASSEMBLER: <strong>8 ARCHITECTURES</strong></span>
     <span>LICENSE: <strong>MIT</strong></span>
@@ -32,11 +32,12 @@ Rather than imposing a monolithic graphical interface or rigid one-click workflo
 
 | Architecture / Platform | Binary Formats | Primary Primitives |
 |---|---|---|
-| <span class="chip-badge nds">Nintendo DS</span> | `.nds`, `.srl`, `.narc`, `.nftr`, `.ncgr`, `.nclr`, `.nscr` | `NDSRom`, `NARCArchive`, `NFTRFont`, `NCLRFile`, `NCGRFile`, `NSCRFile`, `ThumbSnippet`, FAT/FNT mapper |
+| <span class="chip-badge nds">Nintendo DS</span> | `.nds`, `.srl`, `.narc`, `.nftr`, `.ncgr`, `.nclr`, `.nscr`, `.ncer`, `.nanr`, `.nsbmd` | `NDSRom`, `NARCArchive`, `NFTRFont`, `NCLRFile`, `NCGRFile`, `NSCRFile`, `NCERFile`, `NANRFile`, `NSBMDFile`, `STRMFile`, `SWARFile`, `BLZ`, `NDSBanner` |
 | <span class="chip-badge n64">Nintendo 64</span> | `.z64`, `.n64`, `.v64`, `.m64` | `N64Rom`, `DmaTableArchive`, `Fast3DParser`, `Fast3DBuilder`, `N64TextureDecoder`, `Yay0`, IPL3 CIC verification |
-| <span class="chip-badge gba">Game Boy Advance</span> | `.gba`, `.agb`, `.bin` | `GBARom`, `LZ10`, `LZ11`, `ArmSnippet`, `ThumbSnippet`, `APLib`, complement check validation |
-| <span class="chip-badge wii">Wii / GameCube</span> | `.iso`, `.gcm`, `.u8`, `.arc`, `.tpl`, `.dol` | `GameCubeDisc`, `U8Archive`, `TPLFile`, `DolBinary`, `PpcSnippet`, `DSPADPCMCodec`, `Yay0`, `Yaz0`, 32-byte alignment |
-| <span class="chip-badge ps1">PlayStation 1</span> | `.bin/.cue`, `.iso`, `.exe`, `.tim`, `.vag` | `ISO9660`, `CueBinDisc`, `TIMImage`, `PSXExe`, `VAGFile`, `VAGCodec` (SPU-ADPCM), `CdXaDecoder` |
+| <span class="chip-badge gba">Game Boy Advance</span> | `.gba`, `.agb`, `.bin`, `.mb` | `GBARom`, `GBARomHandler`, `GBAMultiboot`, `GBASwiResolver`, `LZ10`, pointer relinker, RTC, Sappy audio |
+| <span class="chip-badge wii">Wii / GameCube</span> | `.iso`, `.gcm`, `.wii`, `.wbfs`, `.u8`, `.arc`, `.tpl`, `.bti`, `.brres`, `.dol`, `.rel`, `.wad` | `WiiDisc`, `WBFSDisc`, `GameCubeDisc`, `U8Archive`, `RARCArchive`, `TPLFile`, `BTIImage`, `BRRESFile`, `DolFile`, `RelFile`, `BRFNTFont`, `BRLANFile`, `BRLYTFile`, `BRSARArchive`, `BRSTMStream`, `THPVideo`, `WADPackage`, `MSBTFile`, `BMGFile` |
+| <span class="chip-badge ps1">PlayStation 1</span> | `.bin/.cue`, `.iso`, `.exe`, `.tim`, `.vag`, `.mcr`, `.mcs` | `PSXRom`, `PSXRomHandler`, `PSXMemoryCard`, `PSXExe`, `ISO9660`, `CueBinDisc`, `TIMImage`, `VAGFile`, `StrDemuxer`, `CdXaDecoder`, 32-bit EDC |
+| <span class="chip-badge ps1">Sony PSP</span> | `.iso`, `.cso`, `.pbp`, `.prx`, `.at3`, `.gim` | `PSPRom`, `PSPRomHandler`, `PRXModule`, `AT3Audio`, `SFOFile`, `GIMImage`, `psp_swizzle`, MIPS NID resolver, VFS |
 | <span class="chip-badge snes">Super Nintendo</span> | `.sfc`, `.smc`, `.brr` | `SNESRom`, `BRRCodec` (SPC700 audio), `SnesSnippet`, W65C816 disasm with dynamic REP/SEP tracking |
 | <span class="chip-badge nes">NES / Famicom</span> | `.nes`, `.unf` | `NESRom`, `NESHeaderStruct` (iNES / NES 2.0), mapper identification, PRG/CHR separation, MOS 6502 disasm |
 | <span class="chip-badge gba">Sega Genesis / MD</span> | `.md`, `.gen`, `.smd` | `MDRom`, SMD deinterleaving, Motorola 68000 disasm &amp; lifter |
@@ -216,6 +217,6 @@ pip install git+https://github.com/MiokoTech/miorom
 
 -   :material-history: **[Release Changelog](CHANGELOG.md)**
     ---
-    Detailed version history, migration notes, and v1.0.2 release summary.
+    Detailed version history, migration notes, and v1.0.4 release summary.
 
 </div>

@@ -5,8 +5,8 @@ Translation memory with fuzzy string matching for ROM dialogue workflows.
 """
 
 import json
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
 from miorom.result import MioRomResult
 from miorom.text.po_handler import PoEntry

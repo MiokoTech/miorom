@@ -1,7 +1,8 @@
-from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Set, Union
+from typing import Dict, List, Optional, Union
+
+from miorom.result import MioRomResult
 
 
 class IROp(Enum):
@@ -21,6 +22,7 @@ class IROp(Enum):
     RETURN = "RETURN"
     BRANCH = "BRANCH"
     BRANCH_COND = "BRANCH_COND"
+    CMP = "CMP"
     PHI = "PHI"
     NOP = "NOP"
 

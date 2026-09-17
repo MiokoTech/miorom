@@ -1,4 +1,5 @@
 from miorom.pipeline.engine import (
+    STEP_REGISTRY,
     CompressStep,
     CreatePatchStep,
     DecompressStep,
@@ -6,10 +7,9 @@ from miorom.pipeline.engine import (
     FixChecksumStep,
     PackArchiveStep,
     PipelineContext,
+    PipelineHook,
     PipelineRecipe,
     PipelineStep,
-    PipelineHook,
-    STEP_REGISTRY,
 )
 
 __all__ = [

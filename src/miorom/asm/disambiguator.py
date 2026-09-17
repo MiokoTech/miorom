@@ -1,11 +1,11 @@
-from miorom.result import MioRomResult
-import struct
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Union
 
 from miorom.asm.disasm import UniversalDisassembler
+from miorom.core import schema
+from miorom.result import MioRomResult
 
 
 class ByteClassification(Enum):
@@ -167,12 +167,12 @@ class CodeDataDisambiguator:
         while pos + 4 <= end_align:
             if byte_labels[pos] == ByteClassification.UNKNOWN:
                 # Check 4-byte address
-                val = struct.unpack(f"{endian or '>'}I" if arch == "ppc" else f"{endian or '<'}I", data[pos : pos + 4])[0]
+                val = schema.unpack(f"{endian or '>'}I" if arch == "ppc" else f"{endian or '<'}I", data[pos : pos + 4])[0]
                 if val in code_ranges_set:
                     run_start = pos
                     count = 0
                     while pos + 4 <= end_align:
-                        cand = struct.unpack(
+                        cand = schema.unpack(
                             f"{endian or '>'}I" if arch == "ppc" else f"{endian or '<'}I",
                             data[pos : pos + 4]
                         )[0]

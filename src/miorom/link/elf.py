@@ -1,9 +1,10 @@
-from miorom.result import MioRomResult
-import struct
-from miorom.errors import ParseError
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
+from miorom.core import schema
+from miorom.core.schema import I32, U32, BinaryStruct
+from miorom.errors import ParseError
+from miorom.result import MioRomResult
 
 # Section types
 SHT_NULL = 0
@@ -19,6 +20,18 @@ EM_386 = 3
 EM_MIPS = 8
 EM_PPC = 20
 EM_ARM = 40
+
+
+class Elf32RelStruct(BinaryStruct):
+    r_offset = U32()
+    r_info = U32()
+
+
+class Elf32RelaStruct(BinaryStruct):
+    r_offset = U32()
+    r_info = U32()
+    r_addend = I32()
+
 
 
 @dataclass
@@ -94,7 +107,7 @@ class Elf32File:
             self.e_shentsize,
             self.e_shnum,
             self.e_shstrndx,
-        ) = struct.unpack_from(f"{self.endian}HHIIIIIHHHHHH", data, 16)
+        ) = schema.unpack_from(f"{self.endian}HHIIIIIHHHHHH", data, 16)
 
         self.sections: List[ElfSection] = []
         self.section_map: Dict[str, ElfSection] = {}
@@ -129,7 +142,7 @@ class Elf32File:
                 sh_info,
                 sh_addralign,
                 sh_entsize,
-            ) = struct.unpack_from(f"{self.endian}IIIIIIIIII", self.raw_data, sh_offset)
+            ) = schema.unpack_from(f"{self.endian}IIIIIIIIII", self.raw_data, sh_offset)
 
             sec_data = b""
             if sh_type != SHT_NOBITS and sh_offset_val + sh_size <= len(self.raw_data):
@@ -187,7 +200,7 @@ class Elf32File:
         num_symbols = len(symtab_sec.data) // 16
         for i in range(num_symbols):
             offset = i * 16
-            st_name, st_value, st_size, st_info, st_other, st_shndx = struct.unpack_from(
+            st_name, st_value, st_size, st_info, st_other, st_shndx = schema.unpack_from(
                 f"{self.endian}IIIBBH", symtab_sec.data, offset
             )
             name = self._get_string(strtab_data, st_name)
@@ -225,13 +238,11 @@ class Elf32File:
                 for i in range(count):
                     offset = i * ent_size
                     if is_rela:
-                        r_offset, r_info, r_addend = struct.unpack_from(
-                            f"{self.endian}III", sec.data, offset
-                        )
+                        rel = Elf32RelaStruct.from_bytes(sec.data, offset=offset, endian=self.endian)
+                        r_offset, r_info, r_addend = rel.r_offset, rel.r_info, rel.r_addend
                     else:
-                        r_offset, r_info = struct.unpack_from(
-                            f"{self.endian}II", sec.data, offset
-                        )
+                        rel = Elf32RelStruct.from_bytes(sec.data, offset=offset, endian=self.endian)
+                        r_offset, r_info = rel.r_offset, rel.r_info
                         r_addend = 0
 
                     rel_type = r_info & 0xFF

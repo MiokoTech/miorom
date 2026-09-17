@@ -7,14 +7,14 @@ argument lengths and operand byte sizes, and synthesizes structured opcode schem
 for BytecodeEngine and ScriptDecompiler.
 """
 
-from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from enum import Enum
-from miorom.core.binary import BinaryReader
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List
 
-from miorom.asm.disasm import UniversalDisassembler, DisasmInstruction
+from miorom.asm.disasm import DisasmInstruction, UniversalDisassembler
 from miorom.asm.slicer import JumpTable
+from miorom.core.binary import BinaryReader
+from miorom.result import MioRomResult
 
 
 class OpcodeCategory(Enum):
@@ -93,7 +93,7 @@ class VMBytecodeSynthesizer:
         cur_pc = handler_addr
 
         arg_bytes = 0
-        has_branch = False
+        _has_branch = False
         has_call = False
         has_return = False
 

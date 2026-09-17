@@ -1,8 +1,8 @@
-from miorom.result import MioRomResult
 import os
 from dataclasses import dataclass
-from typing import List, Optional, Dict, BinaryIO
+from typing import BinaryIO, List, Optional
 
+from miorom.result import MioRomResult
 from miorom.security import sanitize_extract_path
 
 

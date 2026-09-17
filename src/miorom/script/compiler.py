@@ -1,6 +1,5 @@
 import re
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional
 
 from miorom.script.vm import ScriptVM
 

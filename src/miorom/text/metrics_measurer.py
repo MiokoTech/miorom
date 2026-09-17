@@ -7,7 +7,7 @@ and partitioning multi-line dialogue boxes without hardcoded assumptions.
 """
 
 import re
-from typing import Dict, List, Optional, Sequence, Union
+from typing import Dict, List, Optional, Union
 
 from miorom.text.vwf import GlyphWidthTable
 

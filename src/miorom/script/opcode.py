@@ -1,4 +1,5 @@
-from typing import Any, Tuple, Optional, List
+from typing import Any, List, Optional, Tuple
+
 from miorom.core.binary import BinaryReader, BinaryWriter
 
 

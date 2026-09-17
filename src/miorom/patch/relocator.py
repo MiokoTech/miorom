@@ -8,13 +8,13 @@ or expands EOF and rewrites all pointing references (PointerTables, literal pool
 and custom pointer arrays).
 """
 
-from miorom.result import MioRomResult
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
-import struct
+from typing import Any, List, Optional, Union
 
-from miorom.patch.slack import SlackSpaceManager, SlackBlock
-from miorom.core.pointer import PointerTable, PointerEntry
+from miorom.core import schema
+from miorom.patch.slack import SlackSpaceManager
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -81,12 +81,12 @@ class AutoRelocationManager:
             raw_val = int.from_bytes(raw_bytes, "little" if ptr_def.endian == "<" else "big")
         else:
             fmt = f"{ptr_def.endian}{'I' if ptr_def.pointer_size == 4 else 'H'}"
-            raw_val = struct.unpack_from(fmt, self.buffer, ptr_def.pointer_offset)[0]
+            raw_val = schema.unpack_from(fmt, self.buffer, ptr_def.pointer_offset)[0]
 
         if ptr_def.shift:
             raw_val <<= ptr_def.shift
         if ptr_def.is_relative:
-            target_offset = ptr_def.base_address + raw_val
+            target_offset = ptr_def.pointer_offset + raw_val
         else:
             target_offset = raw_val - ptr_def.base_address
         return target_offset
@@ -94,14 +94,21 @@ class AutoRelocationManager:
     def write_pointer_value(self, ptr_def: RelocatablePointer, new_target_offset: int) -> None:
         """Encodes and writes updated pointer value into the buffer."""
         if ptr_def.is_relative:
-            val_to_write = new_target_offset - ptr_def.base_address
+            val_to_write = new_target_offset - ptr_def.pointer_offset
         else:
             val_to_write = new_target_offset + ptr_def.base_address
         if ptr_def.shift:
             val_to_write >>= ptr_def.shift
 
         max_val = (1 << (ptr_def.pointer_size * 8)) - 1
-        if not (0 <= val_to_write <= max_val):
+        if ptr_def.is_relative and val_to_write < 0:
+            min_val = -(1 << (ptr_def.pointer_size * 8 - 1))
+            if val_to_write < min_val:
+                raise OverflowError(
+                    f"Pointer value 0x{val_to_write:X} exceeds capacity for {ptr_def.pointer_size}-byte pointer at 0x{ptr_def.pointer_offset:X}"
+                )
+            val_to_write &= max_val
+        elif not (0 <= val_to_write <= max_val):
             raise OverflowError(
                 f"Pointer value 0x{val_to_write:X} exceeds capacity for {ptr_def.pointer_size}-byte pointer at 0x{ptr_def.pointer_offset:X}"
             )
@@ -111,7 +118,7 @@ class AutoRelocationManager:
             self.buffer[ptr_def.pointer_offset : ptr_def.pointer_offset + 3] = val_to_write.to_bytes(3, endian_str)
         else:
             fmt = f"{ptr_def.endian}{'I' if ptr_def.pointer_size == 4 else 'H'}"
-            struct.pack_into(fmt, self.buffer, ptr_def.pointer_offset, val_to_write)
+            schema.pack_into(fmt, self.buffer, ptr_def.pointer_offset, val_to_write)
 
     def relocate_item(
         self,

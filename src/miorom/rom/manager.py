@@ -1,22 +1,26 @@
+import importlib.metadata
+import json
 import mmap
 import os
-from miorom.errors import ParseError
-import json
-import importlib.metadata
-from typing import Dict, Any, Optional, List, Union
+from typing import Any, Dict, Optional, Union
 
 from miorom import __version__
 from miorom.core.binary import BinaryReader
+from miorom.errors import ParseError
 from miorom.rom.base import BaseRomHandler
-from miorom.rom.protocols import RomHandlerProtocol
 from miorom.rom.handlers import (
-    NDSRomHandler,
-    GameCubeRomHandler,
-    U8RomHandler,
-    NarcRomHandler,
-    Iso9660RomHandler,
     CartridgeRomHandler,
+    GameCubeRomHandler,
+    GBARomHandler,
+    Iso9660RomHandler,
+    NarcRomHandler,
+    NDSRomHandler,
+    PSPRomHandler,
+    PSXRomHandler,
+    U8RomHandler,
+    WiiRomHandler,
 )
+from miorom.rom.protocols import RomHandlerProtocol
 
 
 class RomManager:
@@ -30,8 +34,12 @@ class RomManager:
         self._register_default_handlers()
 
     def _register_default_handlers(self):
+        self.register(WiiRomHandler())
         self.register(NDSRomHandler())
+        self.register(GBARomHandler())
         self.register(GameCubeRomHandler())
+        self.register(PSPRomHandler())
+        self.register(PSXRomHandler())
         self.register(U8RomHandler())
         self.register(NarcRomHandler())
         self.register(Iso9660RomHandler())
@@ -54,7 +62,7 @@ class RomManager:
     def detect_format(self, data: bytes, filepath: Optional[str] = None) -> Optional[str]:
         """Auto-detects the container or ROM format from binary data or file path."""
         # Check handlers by precedence order
-        order = ["nds", "gamecube", "u8", "narc", "iso9660", "cartridge"]
+        order = ["wii", "nds", "gba", "gamecube", "psp", "psx", "u8", "narc", "iso9660", "cartridge"]
         for name in order:
             handler = self.handlers.get(name)
             if handler and handler.can_handle(data, filepath):
@@ -66,6 +74,14 @@ class RomManager:
                 return name
 
         return None
+
+    def get_metadata(self, data: bytes, filepath: Optional[str] = None) -> Dict[str, Any]:
+        """Auto-detects the ROM format and extracts metadata dictionary."""
+        fmt = self.detect_format(data, filepath=filepath)
+        if not fmt:
+            raise ParseError("Unrecognized ROM format.")
+        handler = self.get_handler(fmt)
+        return handler.get_metadata(data)
 
     def unpack(
         self,
@@ -155,7 +171,7 @@ class RomManager:
             meta_path = os.path.join(input_dir, "miorom.meta.json")
             if os.path.isfile(meta_path):
                 try:
-                    with open(meta_path, "r", encoding="utf-8") as f_meta:
+                    with open(meta_path, encoding="utf-8") as f_meta:
                         meta = json.load(f_meta)
                     fmt = meta.get("format")
                 except Exception:
@@ -166,16 +182,24 @@ class RomManager:
             sys_dir = os.path.join(input_dir, "sys")
             if os.path.isfile(os.path.join(sys_dir, "arm9.bin")):
                 fmt = "nds"
+            elif os.path.isfile(os.path.join(sys_dir, "ticket.bin")) or os.path.isfile(os.path.join(sys_dir, "tmd.bin")):
+                fmt = "wii"
             elif os.path.isfile(os.path.join(sys_dir, "disc_base.bin")):
                 fmt = "gamecube"
             elif os.path.isfile(os.path.join(sys_dir, "iso_base.bin")):
                 fmt = "iso9660"
             elif os.path.isfile(os.path.join(input_dir, "rom.bin")):
                 fmt = "cartridge"
+            elif os.path.isdir(os.path.join(input_dir, "PSP_GAME")):
+                fmt = "psp"
+            elif os.path.isfile(os.path.join(input_dir, "SYSTEM.CNF")):
+                fmt = "psx"
             else:
                 fmt = "u8"
 
         handler = self.get_handler(fmt)
+        if output_path and "output_path" not in kwargs:
+            kwargs["output_path"] = output_path
         repacked_data = handler.repack(input_dir, **kwargs)
 
         if output_path:

@@ -6,16 +6,16 @@ Combines format fingerprinting, entropy profiling, multi-encoding probing,
 pointer array detection, and actionable heuristic suggestions into a single report.
 """
 
-from miorom.result import MioRomResult
-import math
-import os
 import re
-from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional
 
-from miorom.core.scanner import StringScanner, PointerScanner, FoundString, CandidatePointerTable
-from miorom.scanner.deep import DeepScanner, BinaryFingerprint, calculate_entropy, calculate_block_entropy
+from miorom.core.scanner import CandidatePointerTable, FoundString, PointerScanner, StringScanner
+from miorom.result import MioRomResult
+from miorom.scanner.deep import (
+    BinaryFingerprint,
+    DeepScanner,
+)
 
 
 @dataclass
@@ -44,7 +44,7 @@ class InspectionReport(MioRomResult):
     def summary(self) -> str:
         lines = [
             "=" * 78,
-            f"MIOROM SMART BINARY INSPECTION REPORT",
+            "MIOROM SMART BINARY INSPECTION REPORT",
             f"Target:   {self.filepath or '<in-memory buffer>'}",
             f"Size:     {self.size:,} bytes (0x{self.size:X})",
             f"Entropy:  {self.overall_entropy:.2f} / 8.00  [{self.entropy_profile.upper()}]",

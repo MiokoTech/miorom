@@ -6,10 +6,12 @@ Enables inserting or replacing bytes in a binary VM bytecode stream
 while automatically recalculating absolute and relative branch jump targets.
 """
 
-from miorom.result import MioRomResult
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Tuple
+
 from miorom.core.binary import BinaryReader, BinaryWriter
-from typing import List, Sequence, Tuple
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -55,7 +57,7 @@ class BytecodeStreamSplicer:
         for bt in branch_targets:
             # Adjust operand offset if it was after the splice point
             eff_op_pos = bt.operand_offset if bt.operand_offset < splice_offset else bt.operand_offset + delta
-            eff_insn_pos = bt.instruction_offset if bt.instruction_offset < splice_offset else bt.instruction_offset + delta
+            _eff_insn_pos = bt.instruction_offset if bt.instruction_offset < splice_offset else bt.instruction_offset + delta
 
             fmt = f"{bt.endian}{'I' if bt.operand_size == 4 else 'H'}"
             # Read original target value from original bytecode
@@ -75,15 +77,14 @@ class BytecodeStreamSplicer:
                 # Adjust relative delta when crossing splice boundary
                 if bt.instruction_offset < splice_offset and target_abs >= splice_offset:
                     new_rel = signed_val + delta
+                    mask = 0xFFFFFFFF if bt.operand_size == 4 else 0xFFFF
+                    BinaryWriter.pack_into(fmt, buf, eff_op_pos, new_rel & mask)
+                    adjusted_count += 1
                 elif bt.instruction_offset >= splice_offset and target_abs < splice_offset:
                     new_rel = signed_val - delta
-                else:
-                    new_rel = signed_val
-
-                # Mask to unsigned representation for packing
-                mask = 0xFFFFFFFF if bt.operand_size == 4 else 0xFFFF
-                BinaryWriter.pack_into(fmt, buf, eff_op_pos, new_rel & mask)
-                adjusted_count += 1
+                    mask = 0xFFFFFFFF if bt.operand_size == 4 else 0xFFFF
+                    BinaryWriter.pack_into(fmt, buf, eff_op_pos, new_rel & mask)
+                    adjusted_count += 1
             else:
                 # Absolute jump: target_abs = raw_val
                 # If target is at or after splice_offset, increase by delta

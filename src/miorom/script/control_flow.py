@@ -1,6 +1,7 @@
-from miorom.result import MioRomResult
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple, Any
+from typing import Dict, List, Optional, Set
+
+from miorom.result import MioRomResult
 from miorom.script.engine import DisassembledScript, Instruction
 
 

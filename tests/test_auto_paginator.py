@@ -66,3 +66,18 @@ def test_smart_auto_paginator_po_batch():
     count = paginator.paginate_po(po)
     assert count == 1
     assert "[PAGE]" in po.entries[0].msgstr
+
+
+def test_smart_auto_paginator_preserves_manual_newlines():
+    cfg = PaginationConfig(
+        max_width_px=200,
+        max_lines_per_page=3,
+        line_break_tag="\n",
+        page_break_tag="[PAGE]",
+    )
+    paginator = SmartAutoPaginator(cfg)
+
+    input_text = "Baris pertama\nBaris kedua\nBaris ketiga"
+    out = paginator.paginate_text(input_text)
+    assert out == "Baris pertama\nBaris kedua\nBaris ketiga"
+

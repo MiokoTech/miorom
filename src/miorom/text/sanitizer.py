@@ -7,12 +7,12 @@ Ensures translated dialogue lines preserve essential game variables ([NAME],
 text engine crashes or garbage character rendering at runtime.
 """
 
-from miorom.result import MioRomResult
-from dataclasses import dataclass, field
 import re
-from typing import Any, Dict, List, Optional, Set, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, List
 
-from miorom.text.po_handler import PoHandler, PoEntry
+from miorom.result import MioRomResult
+from miorom.text.po_handler import PoHandler
 
 
 @dataclass

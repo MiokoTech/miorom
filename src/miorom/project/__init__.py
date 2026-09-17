@@ -2,16 +2,16 @@
 miorom.project - Game Project and Localization Framework.
 """
 
-from miorom.project.assets import Asset, TocArchive, DualTableDialogue, ScriptModule
-from miorom.project.protocols import AssetProtocol
+from miorom.project.assets import Asset, DualTableDialogue, ScriptModule, TocArchive
 from miorom.project.game import Game
-from miorom.project.rules import Rule
-from miorom.project.scaffold import ProjectScaffold
 from miorom.project.manager import (
-    ProjectManifest,
     BuildResult,
+    ProjectManifest,
     ProjectWorkflowManager,
 )
+from miorom.project.protocols import AssetProtocol
+from miorom.project.rules import Rule
+from miorom.project.scaffold import ProjectScaffold
 
 __all__ = [
     "Asset",

@@ -7,11 +7,12 @@ function labels, and table locations, with export support for No$GBA (.sym),
 Dolphin (.map), and Ghidra CSV labels.
 """
 
-from miorom.result import MioRomResult
-from dataclasses import dataclass, field
-from typing import Dict, Iterator, List, Optional, Union
-
 import csv as _csv
+from collections.abc import Iterator
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Union
+
+from miorom.result import MioRomResult
 
 
 @dataclass

@@ -6,26 +6,27 @@ Detects console platforms (NDS, GBA, GB/GBC, N64, Mega Drive, SNES) and provides
 automated verification and header checksum repair for modified and translated ROMs.
 """
 
-from miorom.result import MioRomResult
-import struct
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple
 
-from miorom.platforms.gba.rom import GBARom
+from miorom.core import schema
 from miorom.platforms.gb.rom import GBRom
+from miorom.platforms.gba.rom import GBARom
+from miorom.platforms.md.rom import (
+    calculate_md_checksum,
+    deinterleave_smd,
+    fix_md_checksum,
+    interleave_smd,
+    is_smd,
+    verify_md_checksum,
+)
 from miorom.platforms.n64.checksum import (
     calculate_n64_checksum,
     fix_n64_checksum,
     verify_n64_checksum,
 )
-from miorom.platforms.md.rom import (
-    calculate_md_checksum,
-    deinterleave_smd,
-    fix_md_checksum,
-    is_smd,
-    verify_md_checksum,
-)
 from miorom.platforms.snes.rom import SNESRom
+from miorom.result import MioRomResult
 from miorom.rom.handlers.nds import calculate_nds_crc16
 
 
@@ -164,7 +165,7 @@ class RomIntegrityManager:
     def _verify_nds(cls, data: bytes) -> IntegrityReport:
         if len(data) < 0x160:
             return IntegrityReport("NDS", False, details="Data too small for NDS header")
-        expected_crc = struct.unpack_from("<H", data, 0x15E)[0]
+        expected_crc = schema.unpack_from("<H", data, 0x15E)[0]
         actual_crc = calculate_nds_crc16(data[:0x15E])
         valid = (expected_crc == actual_crc)
         return IntegrityReport(
@@ -181,7 +182,7 @@ class RomIntegrityManager:
         if len(ba) < 0x160:
             return bytes(ba), IntegrityReport("NDS", False, details="Data too small")
         actual_crc = calculate_nds_crc16(bytes(ba[:0x15E]))
-        struct.pack_into("<H", ba, 0x15E, actual_crc)
+        schema.pack_into("<H", ba, 0x15E, actual_crc)
         return bytes(ba), IntegrityReport(
             platform="NDS",
             is_valid=True,
@@ -261,7 +262,7 @@ class RomIntegrityManager:
         if len(data) < 0x1000:
             return IntegrityReport("N64", False, details="Data too small for N64 bootcode")
         valid = verify_n64_checksum(data)
-        exp1, exp2 = struct.unpack_from(">II", data, 0x10)
+        exp1, exp2 = schema.unpack_from(">II", data, 0x10)
         act1, act2 = calculate_n64_checksum(data)
         return IntegrityReport(
             platform="N64",
@@ -274,7 +275,7 @@ class RomIntegrityManager:
     @classmethod
     def _fix_n64(cls, data: bytes) -> Tuple[bytes, IntegrityReport]:
         fixed_bytes = fix_n64_checksum(data)
-        c1, c2 = struct.unpack_from(">II", fixed_bytes, 0x10)
+        c1, c2 = schema.unpack_from(">II", fixed_bytes, 0x10)
         return fixed_bytes, IntegrityReport(
             platform="N64",
             is_valid=True,
@@ -288,7 +289,7 @@ class RomIntegrityManager:
     def _verify_md(cls, data: bytes) -> IntegrityReport:
         raw = deinterleave_smd(data) if is_smd(data) else data
         valid = verify_md_checksum(raw)
-        exp = struct.unpack_from(">H", raw, 0x018E)[0] if len(raw) >= 0x0190 else 0
+        exp = schema.unpack_from(">H", raw, 0x018E)[0] if len(raw) >= 0x0190 else 0
         act = calculate_md_checksum(raw)
         return IntegrityReport(
             platform="MD",
@@ -304,7 +305,8 @@ class RomIntegrityManager:
         raw = deinterleave_smd(data) if was_smd else data
         fixed_raw = fix_md_checksum(raw)
         chk = calculate_md_checksum(fixed_raw)
-        return fixed_raw, IntegrityReport(
+        out_data = interleave_smd(fixed_raw) if was_smd else fixed_raw
+        return out_data, IntegrityReport(
             platform="MD",
             is_valid=True,
             expected_checksums={"checksum": f"0x{chk:04X}"},

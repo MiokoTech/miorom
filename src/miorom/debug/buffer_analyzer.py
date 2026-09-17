@@ -7,12 +7,12 @@ and validates whether translated, lengthened strings will overflow local buffers
 causing stack corruption or crashes during gameplay.
 """
 
-from miorom.result import MioRomResult
-from dataclasses import dataclass, field
-import struct
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Union
 
-from miorom.asm.disasm import UniversalDisassembler, DisasmInstruction
+from miorom.core import schema
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -50,7 +50,7 @@ class RuntimeBufferAnalyzer:
         for _ in range(max_instructions):
             if cur_off + step > len(code):
                 break
-            word = struct.unpack_from(f"{endian}I", code, cur_off)[0]
+            word = schema.unpack_from(f"{endian}I", code, cur_off)[0]
 
             # Check SUB SP, SP, #imm:
             # Opcode: 0xE24DDxxx (cond=0xE, op=0010010, Rn=13(SP), Rd=13(SP))
@@ -120,5 +120,5 @@ class BufferPatcher:
             return False
         # Emit SUB SP, SP, #new_frame_size (0xE24DD000 | new_frame_size)
         opcode = 0xE24DD000 | new_frame_size
-        struct.pack_into(f"{endian}I", code, instr_offset, opcode)
+        schema.pack_into(f"{endian}I", code, instr_offset, opcode)
         return True

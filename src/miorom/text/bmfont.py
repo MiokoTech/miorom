@@ -3,152 +3,20 @@ miorom.text.bmfont
 ~~~~~~~~~~~~~~~~~~
 BMFont (AngelCode) Font Exporter and Importer.
 Supports Text and XML .fnt formats, automated glyph atlas shelf packing,
-bidirectional conversion with BitmapFont, and built-in pure Python PNG encoding/decoding.
+bidirectional conversion with BitmapFont, and zero-dependency PNG I/O via
+:mod:`miorom.graphics.png_codec`.
 """
 
 from __future__ import annotations
 
 import re
-import struct
 import xml.etree.ElementTree as ET
-import zlib
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
+from miorom.graphics.png_codec import PNGCodec  # noqa: F401 (re-exported for back-compat)
 from miorom.result import MioRomResult
-from miorom.errors import ParseError
-from miorom.text.font_builder import BitmapFont, Glyph
-
-
-# ---------------------------------------------------------------------------
-# Pure Python Minimal PNG Codec (Stdlib zlib & struct only)
-# ---------------------------------------------------------------------------
-
-class PNGCodec:
-    """Pure Python minimal PNG encoder and decoder using only standard library."""
-
-    PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-
-    @classmethod
-    def _make_chunk(cls, chunk_type: bytes, data: bytes) -> bytes:
-        length = len(data)
-        crc = zlib.crc32(chunk_type + data) & 0xFFFFFFFF
-        return struct.pack(">I", length) + chunk_type + data + struct.pack(">I", crc)
-
-    @classmethod
-    def encode_grayscale(cls, width: int, height: int, pixels: bytes) -> bytes:
-        """Encodes an 8-bit grayscale pixel buffer (row-major) into valid PNG bytes."""
-        if len(pixels) != width * height:
-            raise ValueError(f"Pixel buffer size ({len(pixels)}) does not match {width}x{height}")
-
-        ihdr = struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)
-        chunks = [cls.PNG_SIGNATURE, cls._make_chunk(b"IHDR", ihdr)]
-
-        raw_scanlines = bytearray()
-        for y in range(height):
-            raw_scanlines.append(0)  # Filter type 0 (None)
-            row = pixels[y * width : (y + 1) * width]
-            raw_scanlines.extend(row)
-
-        compressed = zlib.compress(bytes(raw_scanlines), level=6)
-        chunks.append(cls._make_chunk(b"IDAT", compressed))
-        chunks.append(cls._make_chunk(b"IEND", b""))
-        return b"".join(chunks)
-
-    @classmethod
-    def encode_rgba(cls, width: int, height: int, pixels: bytes) -> bytes:
-        """Encodes an 8-bit RGBA pixel buffer (row-major, 4 bytes/pixel) into valid PNG bytes."""
-        if len(pixels) != width * height * 4:
-            raise ValueError(f"Pixel buffer size ({len(pixels)}) does not match {width}x{height}x4")
-
-        ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
-        chunks = [cls.PNG_SIGNATURE, cls._make_chunk(b"IHDR", ihdr)]
-
-        raw_scanlines = bytearray()
-        row_len = width * 4
-        for y in range(height):
-            raw_scanlines.append(0)  # Filter type 0 (None)
-            row = pixels[y * row_len : (y + 1) * row_len]
-            raw_scanlines.extend(row)
-
-        compressed = zlib.compress(bytes(raw_scanlines), level=6)
-        chunks.append(cls._make_chunk(b"IDAT", compressed))
-        chunks.append(cls._make_chunk(b"IEND", b""))
-        return b"".join(chunks)
-
-    @classmethod
-    def decode(cls, png_data: bytes) -> Tuple[int, int, bytes, int]:
-        """
-        Decodes a basic PNG stream.
-        Returns (width, height, uncompressed_pixel_bytes, color_type).
-        """
-        if not png_data.startswith(cls.PNG_SIGNATURE):
-            raise ParseError("Invalid PNG signature")
-
-        offset = 8
-        width = 0
-        height = 0
-        bit_depth = 8
-        color_type = 0
-        idat_parts = []
-
-        while offset < len(png_data):
-            length = struct.unpack_from(">I", png_data, offset)[0]
-            chunk_type = png_data[offset + 4 : offset + 8]
-            data = png_data[offset + 8 : offset + 8 + length]
-            offset += 12 + length
-
-            if chunk_type == b"IHDR":
-                width, height, bit_depth, color_type = struct.unpack(">IIBB", data[:10])
-            elif chunk_type == b"IDAT":
-                idat_parts.append(data)
-            elif chunk_type == b"IEND":
-                break
-
-        if not idat_parts or width == 0 or height == 0:
-            raise ParseError("PNG contains no valid image data")
-
-        decompressed = zlib.decompress(b"".join(idat_parts))
-        bpp = 1 if color_type == 0 else (4 if color_type == 6 else (3 if color_type == 2 else 1))
-        row_bytes = width * bpp
-        stride = 1 + row_bytes
-
-        out_pixels = bytearray(height * row_bytes)
-        prev_row = bytearray(row_bytes)
-
-        for y in range(height):
-            line = decompressed[y * stride : (y + 1) * stride]
-            filter_type = line[0]
-            curr_row = bytearray(line[1:])
-
-            if filter_type == 1:  # Sub
-                for x in range(bpp, row_bytes):
-                    curr_row[x] = (curr_row[x] + curr_row[x - bpp]) & 0xFF
-            elif filter_type == 2:  # Up
-                for x in range(row_bytes):
-                    curr_row[x] = (curr_row[x] + prev_row[x]) & 0xFF
-            elif filter_type == 3:  # Average
-                for x in range(row_bytes):
-                    a = curr_row[x - bpp] if x >= bpp else 0
-                    b = prev_row[x]
-                    curr_row[x] = (curr_row[x] + ((a + b) // 2)) & 0xFF
-            elif filter_type == 4:  # Paeth
-                for x in range(row_bytes):
-                    a = curr_row[x - bpp] if x >= bpp else 0
-                    b = prev_row[x]
-                    c = prev_row[x - bpp] if x >= bpp else 0
-                    p = a + b - c
-                    pa = abs(p - a)
-                    pb = abs(p - b)
-                    pc = abs(p - c)
-                    pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
-                    curr_row[x] = (curr_row[x] + pr) & 0xFF
-
-            out_pixels[y * row_bytes : (y + 1) * row_bytes] = curr_row
-            prev_row = curr_row
-
-        return width, height, bytes(out_pixels), color_type
-
+from miorom.text.font_builder import BitmapFont
 
 # ---------------------------------------------------------------------------
 # BMFont Data Structures
@@ -237,7 +105,7 @@ class BMFont(MioRomResult):
     # -----------------------------------------------------------------------
 
     @classmethod
-    def from_text(cls, text: str) -> "BMFont":
+    def from_text(cls, text: str) -> BMFont:
         """Parses AngelCode BMFont text (.fnt) format."""
         font = cls()
         font.chars.clear()
@@ -357,7 +225,7 @@ class BMFont(MioRomResult):
     # -----------------------------------------------------------------------
 
     @classmethod
-    def from_xml(cls, xml_str: str) -> "BMFont":
+    def from_xml(cls, xml_str: str) -> BMFont:
         """Parses AngelCode BMFont XML (.fnt) format."""
         root = ET.fromstring(xml_str)
         font = cls()
@@ -519,7 +387,7 @@ class BMFont(MioRomResult):
         texture_width: int = 256,
         texture_height: int = 256,
         padding: int = 1,
-    ) -> Tuple["BMFont", bytes, bytes]:
+    ) -> Tuple[BMFont, bytes, bytes]:
         """
         Packs a BitmapFont into a 2D atlas texture sheet.
         Returns:
@@ -593,7 +461,13 @@ class BMFont(MioRomResult):
         aw = atlas_width or self.common.scale_w
 
         for ch in self.chars.values():
-            char_symbol = ch.letter if ch.letter else chr(ch.id)
+            if ch.letter:
+                char_symbol = ch.letter
+            else:
+                try:
+                    char_symbol = chr(ch.id)
+                except (ValueError, OverflowError):
+                    char_symbol = f"\\u{ch.id:04x}"
             bitmap: List[int] = []
 
             if atlas_pixels is not None and ch.width > 0 and ch.height > 0:

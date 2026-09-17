@@ -1,6 +1,6 @@
 # MioROM API Reference & Architecture Guide
 
-MioROM v1.0.2 is an all-in-one modular Python framework for ROM hacking, fan translation engineering, and game reverse engineering.
+MioROM v1.0.4 is an all-in-one modular Python framework for ROM hacking, fan translation engineering, and game reverse engineering.
 
 ### Companion Guides
 - [Binary & Assembly Primitives Guide](BINARY_PRIMITIVES.md) - Low-level patching, micro-assembly, and struct serialization.
@@ -251,13 +251,20 @@ MioROM v1.0.2 is an all-in-one modular Python framework for ROM hacking, fan tra
 | `FloydSteinbergDitherer` | Pure-Python error-diffusion dithering for palette reduction without external dependencies. |
 | `M64Sequence` / `N64Audiobank` | Parser for Nintendo 64 Compact MIDI sequences (`.m64`) and audio instrument banks. |
 | `SaveChecksumEngine` | Universal checksum validator and auto-repairer for SRAM (32KB), EEPROM, and FlashRAM save files. |
-| `GBARom`, `GBRom` | Game Boy Advance and Game Boy ROM checksum verification and repair. |
-| `GBHeader`, `GBRomBuilder` | Game Boy/GBC cartridge header parser and multi-bank ROM builder with power-of-two capacity expansion. |
+| `GBARom` | Game Boy Advance cartridge ROM engine: header parsing, hardware complement checksum, Nintendo logo repair, RTC detection, SRAM patching, 1-64MB expansion/trimming, 32-bit pointer relinking, and BIOS SWI scanning. |
+| `GBARomHandler` | ROM handler for Game Boy Advance (`.gba`) cartridges with unpack/repack and metadata manifest support. |
+| `fix_gba_checksum`, `resolve_gba_region` | Helper functions for GBA header complement checksum repair and territory code resolution. |
+| `create_synthetic_gba_rom` | Synthetic Game Boy Advance ROM fixture generator for isolated unit testing. |
+| `GBRom`, `GBHeader`, `GBRomBuilder` | Game Boy / GBC cartridge header parser, multi-bank ROM builder with power-of-two capacity expansion, and checksum repair. |
 | `calculate_header_checksum`, `calculate_global_checksum` | Pure-Python bitwise checksum recalculators for Game Boy ROM images. |
-
 | `MDRom` | Sega Mega Drive / Genesis ROM deinterleaver and checksum fixer. |
 | `SNESRom` | Super Nintendo LoROM/HiROM header parser and checksum recalculator. |
+| `PSXRom`, `PSXFormat` | PlayStation 1 optical disc engine supporting 2048-byte Mode 1 ISO and 2352-byte Mode 2 Form 1 BIN with bit-exact 32-bit EDC recalculation, `SYSTEM.CNF` editing, VFS operations, and CUE generation. |
+| `PSXRomHandler` | ROM handler for PlayStation 1 (`.iso`, `.bin`, `.cue`) disc images. |
 | `PSXExe`, `TIMImage` | PlayStation 1 executable and TIM texture parser. |
+| `PSPRom`, `PSPFormat`, `PSPRomHandler` | Unified PlayStation Portable disc and package ROM engine supporting ISO, CSO, and PBP with in-memory format conversion and VFS. |
+| `PRXModule`, `PSPNIDResolver` | Sony PSP relocatable MIPS executable inspector, stub hooker, and SDK NID function resolver. |
+| `AT3Audio`, `AT3Codec` | Sony PSP ATRAC3 and ATRAC3plus audio stream parser, BGM loop point editor, and WAV exporter. |
 | `ISO9660` | Standard CD-ROM ISO9660 filesystem parser and directory extractor. |
 | `Iso9660Builder` | Pure-Python ISO 9660 disc image synthesizer and directory tree builder. |
 | `CSOImage` | Compressed ISO (CSO/CISO) sector-based random-access reader and block compressor. |
@@ -270,6 +277,36 @@ MioROM v1.0.2 is an all-in-one modular Python framework for ROM hacking, fan tra
 | `DreamcastIpBin` | Sega Dreamcast 32KB IP.BIN bootstrap sector parser, CRC16 calculator, and region unlocker. |
 | `GDISheet`, `GDITrack` | Sega Dreamcast GD-ROM descriptor sheet parser and high-density track locator. |
 | `CueBinDisc` | Mixed-mode CD-ROM (BIN/CUE) disc image processor with EDC/ECC recalculation. |
+| `WiiDisc`, `WBFSDisc` | Comprehensive Nintendo Wii optical disc (.iso / .wii) and WBFS container engine; supports DVD-5 / DVD-9, lazy AES-128-CBC cluster decryption (<50MB RAM), H0-H3 hash verification, FST file injection, and Trucha bug fake-signing. |
+| `WiiRomHandler` | Automated `RomManager` handler for Nintendo Wii disc images (.iso, .wii, .wbfs) with partition unpacking and repacking. |
+| `BTIImage` | Nintendo Binary Texture Image (`.bti`) parser, builder, and GX texture converter (CMPR, RGB565, RGB5A3, RGBA8, I4/I8, IA4/IA8) with mipmaps and LOD control. |
+| `RARCArchive`, `RARCEntry` | Nintendo GameCube and Wii RARC resource archive (`.arc`, `.rarc`) parser, directory tree extractor, and builder with 16-bit filename hashing. |
+| `BRRESFile`, `TEX0Image`, `PLT0Palette` | Nintendo Wii Binary Revolution Resource container (`.brres`) parser and injector with Patricia trie directory index groups (`BresIndexGroup`) and raw texture/palette management. |
+| `RelFile`, `DolBinary` | Nintendo Wii / GC Relocatable Module (`.rel`) parser, linker, and runtime patcher resolving PowerPC relocation chains (`R_PPC_ADDR32`, `R_PPC_ADDR16_LO`, `R_PPC_ADDR16_HA`, `R_PPC_REL24`). |
+| `GameCubeRomHandler` | Automated `RomManager` handler for Nintendo GameCube optical disc images (.iso, .gcm). |
+| `RVZImage`, `RVZBuilder` | Dolphin RVZ compressed optical disc image container parser and decompressor with chunk hash validation. |
+| `WiiBanner`, `GCBanner` | GameCube and Wii channel banner (`opening.bnr`) title, description, and graphic icon editor across Japanese and Western languages. |
+| `BRLANFile`, `BRLYTFile` | Nintendo Wii Binary Revolution Layout screen (`.brlyt`) and animation (`.brlan`) editor for UI localization. |
+| `BRSARArchive`, `BRSTMFile` | Nintendo Wii sound archive (`.brsar`) extractor and multi-channel DSP-ADPCM streaming audio engine (`.brstm`). |
+| `THPVideo` | Nintendo GameCube and Wii cinematic movie demuxer extracting MJPEG frames and multi-channel DSP-ADPCM audio. |
+| `RiivolutionEngine` | Runtime XML patch generator and validator for SD/USB Nintendo Wii disc modding. |
+| `WADFile`, `WADTicket`, `WADTmd` | Nintendo Wii WAD installation package parser, unpacker, AES-128 cryptor, and TMD/ticket validator with Trucha bug fake-signing. |
+| `MSBFFile` | Nintendo Message Flowchart Binary (`.msbf` / `FLW2`) branch and dialogue decision graph editor. |
+| `MSBTFile` | Official Nintendo Message Studio Binary Text (`.msbt`) parser and builder with label hashing, ATR1 message attributes, and control code preservation. |
+| `BMGFile` | Nintendo Binary Message pool (`.bmg`) parser and serializer for GameCube and Wii titles. |
+| `NCERFile`, `NCERCell` | Nintendo DS Nitro Character Resource (`.ncer`) cell bank assembler and 2D sprite composite renderer. |
+| `NANRFile`, `NANRSequence` | Nintendo DS Nitro Animation Resource (`.nanr`) sprite keyframe sequencer and timeline editor. |
+| `STRMFile` | Nintendo DS Nitro Stream (`.strm`) streaming audio parser, encoder, and decoder (PCM8, PCM16, IMA-ADPCM) to standard WAV. |
+| `SWARFile`, `SWAVEntry` | Nintendo DS Sound Wave Archive (`.swar`) extractor and rebuilder with loop point and sample rate preservation. |
+| `NitroAssetCatalog`, `NitroSceneGraph` | High-level NDS 2D scene graph linking NCGR, NCLR, NSCR, NCER, and NANR files into animated scene previews. |
+| `NSBMDFile`, `NSBTXFile` | Official Nintendo DS 3D model container (`.nsbmd`) and texture archive (`.nsbtx`) parser and in-place texture replacer. |
+| `NDSBanner` | Nintendo DS cartridge banner parser and editor with multilingual titles and animated icon frames. |
+| `BLZ` | Pure-Python backward LZSS decompressor and compressor for Nintendo DS ARM9 payloads. |
+| `NDSRomHandler` | Automated `RomManager` handler for Nintendo DS (`.nds`) cartridge ROMs. |
+| `PSXMemoryCard`, `PSXSaveFile` | Sony PlayStation 1 Memory Card manager (128 KB `.mcr`, `.mcd`, `.sav`) and single save blocks (`.mcs`) with 16-frame directory management, XOR checksums, and animated 16x16 4bpp save icon export. |
+| `StrDemuxer` | PlayStation 1 raw CD sector stream (`.str`) demuxer for MDEC video bitstreams and CD-XA audio. |
+| `GIMImage` | Sony PlayStation Portable GIM (`.gim`) texture parser, serializer, and PNG converter. |
+| `psp_swizzle`, `psp_unswizzle` | Sony PSP Graphic Engine (GE) hardware VRAM swizzler/unswizzler organizing pixel scanlines into 16-byte blocks. |
 
 ---
 
@@ -305,6 +342,7 @@ MioROM v1.0.2 is an all-in-one modular Python framework for ROM hacking, fan tra
 | `SpcFile`, `SpcHeader` | SNES SPC700 sound file (`.spc`) parser and serializer; reads 64KB RAM, 128-byte S-DSP register block, and ID666 metadata. Provides `list_samples()`, `extract_brr_sample()`, `dump_samples_to_wav()`, and direct RAM read/write. |
 | `DSPADPCMCodec` | Nintendo GameCube & Wii DSP-ADPCM 8-byte frame audio decoder and WAV converter. |
 | `ADPCMCodec` | Standard IMA-ADPCM decoder and 16-bit PCM RIFF/WAVE file builder. |
+| `WavCodec`, `WavSound` | Pure-Python zero-dependency RIFF WAVE audio container parser and 16-bit signed PCM encoder. |
 | `CdXaDecoder` | PlayStation CD-XA ADPCM audio sector demuxer and WAV builder. |
 | `SDATContainer`, `SSEQSequence` | Nintendo DS Sound Data archive and sequence parser. |
 
@@ -319,7 +357,8 @@ MioROM v1.0.2 is an all-in-one modular Python framework for ROM hacking, fan tra
 | `RefPack` | Electronic Arts RefPack / QFS decompressor and compressor. |
 | `LZSS` | Standard Haruhiko Okumura 4096-byte sliding window LZSS decompressor and compressor. |
 | `LZ10`, `LZ11` | Nintendo BIOS LZ77 type 0x10 and 0x11 decompressors and compressors. |
-| `RLE` | Nintendo BIOS Run-Length Encoding (0x30) decompressor and compressor. |
+| `BLZ` | Pure-Python backward LZSS (BLZ) decompressor and in-place compressor for Nintendo DS ARM9 binaries and overlays. |
+| `RLE` | Nintendo BIOS Run-Length Encoding (0x30) decompressor and compressor; supports 3 to 130 byte compressed runs and extended 32-bit headers. |
 | `Huffman` | Nintendo BIOS Huffman 4-bit and 8-bit tree decompressor and compressor. |
 | `decompress()`, `compress()` | Unified auto-detecting compression dispatcher by magic bytes or codec name. |
 
@@ -363,3 +402,4 @@ implementations.
 | `TilemapDissector` | Menu layout dissector for fan translation tilemap work: scans horizontal/vertical text runs (`scan_text_runs()`), renders 2D ASCII grid for proofreading (`export_text_grid()`), injects translated labels with left/center/right alignment and boundary guards (`splice_label()`), extracts menu box text runs (`extract_menu_box()`), and provides full JSON layout round-trip (`export_layout_json()`, `import_layout_json()`) plus batch apply (`apply_layout_dict()`). |
 | `PaletteTable` | Multi-platform color palette conversion (BGR555, RGB565, NES color indices) to and from 24-bit RGB tuples. |
 | `MetaTileSystem` | Hierarchical 16x16 / 32x32 metatile compositor translating coarse level blocks into 8x8 hardware tile layouts. |
+| `PngCodec` | Pure-Python zero-dependency PNG image encoder and decoder with support for RGBA32, RGB24, and Grayscale modes. |

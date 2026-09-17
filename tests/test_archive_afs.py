@@ -58,3 +58,16 @@ def test_afs_extract_all(tmp_path):
 def test_afs_invalid_data():
     with pytest.raises(ParseError):
         AFSArchive.from_bytes(b"INVALID")
+
+
+def test_afs_japanese_filenames_cp932():
+    # Japanese Shift-JIS / CP932 filenames common in Dreamcast/Saturn/PS2 AFS archives
+    jp_name = "タイトル.adx"
+    e1 = AFSEntry(name=jp_name, data=b"AUDIO_DATA")
+    afs = AFSArchive(entries=[e1], has_toc=True, encoding="cp932")
+
+    raw = afs.to_bytes()
+    reloaded = AFSArchive.from_bytes(raw, encoding="cp932")
+    assert len(reloaded) == 1
+    assert reloaded.filenames == [jp_name]
+    assert reloaded.get_file(jp_name) == b"AUDIO_DATA"

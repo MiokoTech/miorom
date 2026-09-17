@@ -1,4 +1,5 @@
-from typing import Generator, List, Optional, Tuple, Union
+from collections.abc import Generator
+from typing import List, Optional, Tuple, Union
 
 
 def align_up(val: int, alignment: int) -> int:

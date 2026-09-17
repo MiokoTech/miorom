@@ -1,10 +1,11 @@
-from miorom.result import MioRomResult
-import struct
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional
 
-
+from miorom.core import schema
 from miorom.errors import UnsupportedFormatError
+from miorom.result import MioRomResult
+
+
 @dataclass
 class DisasmInstruction(MioRomResult):
     address: int
@@ -139,7 +140,7 @@ class UniversalDisassembler:
         if len(data) < 4:
             return DisasmInstruction(address, data, ".byte", [f"0x{b:02X}" for b in data])
 
-        instr = struct.unpack(">I", data[:4])[0]
+        instr = schema.unpack(">I", data[:4])[0]
         raw = data[:4]
         opcode = (instr >> 26) & 0x3F
 
@@ -168,7 +169,7 @@ class UniversalDisassembler:
         # cmpi / cmpwi (opcode 11)
         if opcode == 11:
             ra = (instr >> 16) & 0x1F
-            simm = struct.unpack(">h", struct.pack(">H", instr & 0xFFFF))[0]
+            simm = schema.unpack(">h", schema.pack(">H", instr & 0xFFFF))[0]
             return DisasmInstruction(address, raw, "cmpwi", [f"r{ra}", str(simm)])
 
         # Branch unconditional (opcode 18: b, bl, ba, bla)
@@ -234,7 +235,7 @@ class UniversalDisassembler:
         if opcode in (14, 15):
             rt = (instr >> 21) & 0x1F
             ra = (instr >> 16) & 0x1F
-            simm = struct.unpack(">h", struct.pack(">H", instr & 0xFFFF))[0]
+            simm = schema.unpack(">h", schema.pack(">H", instr & 0xFFFF))[0]
 
             if opcode == 15 and ra == 0:
                 return DisasmInstruction(address, raw, "lis", [f"r{rt}", f"0x{simm & 0xFFFF:04X}"])
@@ -255,7 +256,7 @@ class UniversalDisassembler:
         if opcode in (32, 33, 36, 37):
             rt = (instr >> 21) & 0x1F
             ra = (instr >> 16) & 0x1F
-            d = struct.unpack(">h", struct.pack(">H", instr & 0xFFFF))[0]
+            d = schema.unpack(">h", schema.pack(">H", instr & 0xFFFF))[0]
             mnem_map = {32: "lwz", 33: "lwzu", 36: "stw", 37: "stwu"}
             mnem = mnem_map[opcode]
             return DisasmInstruction(address, raw, mnem, [f"r{rt}", f"{d}(r{ra})"])
@@ -300,7 +301,7 @@ class UniversalDisassembler:
         if len(data) < 4:
             return DisasmInstruction(address, data, ".byte", [f"0x{b:02X}" for b in data])
 
-        instr = struct.unpack(f"{endian}I", data[:4])[0]
+        instr = schema.unpack(f"{endian}I", data[:4])[0]
         raw = data[:4]
 
         cond = (instr >> 28) & 0xF
@@ -318,7 +319,9 @@ class UniversalDisassembler:
             else:
                 offset = imm24 << 2
             target = (address + 8 + offset) & 0xFFFFFFFF
-            mnem = "bl" if is_link else "b"
+            arm_cond_suffixes = ["eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le"]
+            base_mnem = "bl" if is_link else "b"
+            mnem = f"{base_mnem}{arm_cond_suffixes[cond]}" if cond < len(arm_cond_suffixes) else base_mnem
             return DisasmInstruction(
                 address=address,
                 raw_bytes=raw,
@@ -345,7 +348,7 @@ class UniversalDisassembler:
 
         # Halfword & Signed Data Transfer (LDRH, STRH, LDRSH, LDRSB)
         if ((instr >> 25) & 0x7) == 0 and (instr & 0x90) == 0x90 and ((instr >> 4) & 0xF) != 0x9:
-            l = bool((instr >> 20) & 1)
+            is_load = bool((instr >> 20) & 1)
             s = bool((instr >> 6) & 1)
             h = bool((instr >> 5) & 1)
             rn = (instr >> 16) & 0xF
@@ -369,7 +372,7 @@ class UniversalDisassembler:
             elif s and not h:
                 mnem = "ldrsb"
             elif not s and h:
-                mnem = "ldrh" if l else "strh"
+                mnem = "ldrh" if is_load else "strh"
             else:
                 mnem = ".word"
 
@@ -379,13 +382,13 @@ class UniversalDisassembler:
         # Single Data Transfer (LDR / STR / LDRB / STRB)
         if ((instr >> 26) & 0x3) == 0b01:
             is_imm_reg = bool((instr >> 25) & 1)
-            l = bool((instr >> 20) & 1)
+            is_load = bool((instr >> 20) & 1)
             b = bool((instr >> 22) & 1)
             u = bool((instr >> 23) & 1)
             rn = (instr >> 16) & 0xF
             rd = (instr >> 12) & 0xF
 
-            mnem = ("ldrb" if b else "ldr") if l else ("strb" if b else "str")
+            mnem = ("ldrb" if b else "ldr") if is_load else ("strb" if b else "str")
             if not is_imm_reg:
                 imm12 = instr & 0xFFF
                 off_str = f"#{imm12 if u else -imm12}" if imm12 != 0 else ""
@@ -433,7 +436,7 @@ class UniversalDisassembler:
         if len(data) < 2:
             return DisasmInstruction(address, data, ".byte", [f"0x{b:02X}" for b in data])
 
-        instr = struct.unpack(f"{endian}H", data[:2])[0]
+        instr = schema.unpack(f"{endian}H", data[:2])[0]
         raw = data[:2]
 
         def _t_reg(r: int) -> str:
@@ -451,7 +454,7 @@ class UniversalDisassembler:
         # Second halfword: 11111_Offset11 (0xF800..0xFFFF)
         # ------------------------------------------------------------------
         if (instr >> 11) == 0b11110 and len(data) >= 4:
-            instr2 = struct.unpack(f"{endian}H", data[2:4])[0]
+            instr2 = schema.unpack(f"{endian}H", data[2:4])[0]
             if (instr2 >> 11) == 0b11111:
                 raw4 = data[:4]
                 off_h = instr & 0x7FF
@@ -801,7 +804,7 @@ class UniversalDisassembler:
         if len(data) < 4:
             return DisasmInstruction(address, data, ".byte", [f"0x{b:02X}" for b in data])
 
-        instr = struct.unpack(f"{endian}I", data[:4])[0]
+        instr = schema.unpack(f"{endian}I", data[:4])[0]
         raw = data[:4]
 
         # NOP
@@ -822,7 +825,7 @@ class UniversalDisassembler:
         sa = (instr >> 6) & 0x1F
         funct = instr & 0x3F
         imm16 = instr & 0xFFFF
-        simm16 = struct.unpack(">h", struct.pack(">H", imm16))[0]
+        simm16 = schema.unpack(">h", schema.pack(">H", imm16))[0]
 
         r_rs = MIPS_REGS[rs]
         r_rt = MIPS_REGS[rt]
@@ -831,7 +834,7 @@ class UniversalDisassembler:
         # J / JAL
         if opcode in (2, 3):
             is_jal = (opcode == 3)
-            target = ((address & 0xF0000000) | ((instr & 0x03FFFFFF) << 2))
+            target = (((address + 4) & 0xF0000000) | ((instr & 0x03FFFFFF) << 2))
             return DisasmInstruction(
                 address=address,
                 raw_bytes=raw,
@@ -1037,7 +1040,7 @@ class UniversalDisassembler:
             target = data[1] | (data[2] << 8)
             return DisasmInstruction(address, data[:3], "call", [f"0x{target:04X}"], target_address=target, is_branch=True, is_call=True)
         elif b0 == 0x18 and len(data) >= 2:
-            rel = struct.unpack("b", bytes([data[1]]))[0]
+            rel = schema.unpack("b", bytes([data[1]]))[0]
             target = (address + 2 + rel) & 0xFFFF
             return DisasmInstruction(address, data[:2], "jr", [f"0x{target:04X}"], target_address=target, is_branch=True)
         elif 0x40 <= b0 <= 0x7F:
@@ -1059,26 +1062,35 @@ class UniversalDisassembler:
     def _disasm_m68k(cls, address: int, data: bytes) -> DisasmInstruction:
         if len(data) < 2:
             return DisasmInstruction(address, data, ".byte", [f"0x{b:02X}" for b in data])
-        w0 = struct.unpack(">H", data[:2])[0]
+        w0 = schema.unpack(">H", data[:2])[0]
         if w0 == 0x4E71:
             return DisasmInstruction(address, data[:2], "nop")
         elif w0 == 0x4E75:
             return DisasmInstruction(address, data[:2], "rts", is_return=True, is_branch=True)
         elif (w0 >> 12) == 0x06 and len(data) >= 2:
             cond = (w0 >> 8) & 0x0F
-            disp = struct.unpack("b", bytes([w0 & 0xFF]))[0]
+            disp8 = w0 & 0xFF
+            if disp8 == 0x00 and len(data) >= 4:
+                disp = schema.unpack(">h", data[2:4])[0]
+                raw_len = 4
+            elif disp8 == 0xFF and len(data) >= 6:
+                disp = schema.unpack(">i", data[2:6])[0]
+                raw_len = 6
+            else:
+                disp = schema.unpack("b", bytes([disp8]))[0]
+                raw_len = 2
             target = address + 2 + disp
             if cond == 0:
-                return DisasmInstruction(address, data[:2], "bra", [f"0x{target:08X}"], target_address=target, is_branch=True)
+                return DisasmInstruction(address, data[:raw_len], "bra", [f"0x{target:08X}"], target_address=target, is_branch=True)
             elif cond == 1:
-                return DisasmInstruction(address, data[:2], "bsr", [f"0x{target:08X}"], target_address=target, is_branch=True, is_call=True)
+                return DisasmInstruction(address, data[:raw_len], "bsr", [f"0x{target:08X}"], target_address=target, is_branch=True, is_call=True)
             else:
                 cond_names = {2: "bhi", 3: "bls", 4: "bcc", 5: "bcs", 6: "bne", 7: "beq", 12: "bge", 13: "blt", 14: "bgt", 15: "ble"}
                 mn = cond_names.get(cond, f"b{cond:X}")
-                return DisasmInstruction(address, data[:2], mn, [f"0x{target:08X}"], target_address=target, is_branch=True, is_conditional=True)
+                return DisasmInstruction(address, data[:raw_len], mn, [f"0x{target:08X}"], target_address=target, is_branch=True, is_conditional=True)
         elif (w0 >> 12) == 0x07:
             reg = (w0 >> 9) & 0x07
-            data_val = struct.unpack("b", bytes([w0 & 0xFF]))[0]
+            data_val = schema.unpack("b", bytes([w0 & 0xFF]))[0]
             return DisasmInstruction(address, data[:2], "moveq", [f"#{data_val}", f"d{reg}"])
         return DisasmInstruction(address, data[:2], ".word", [f"0x{w0:04X}"])
 
@@ -1306,14 +1318,14 @@ class UniversalDisassembler:
             if mnem == "jml":
                 is_branch = True
         elif mode == "rel":
-            disp = struct.unpack("b", bytes([raw[1]]))[0]
+            disp = schema.unpack("b", bytes([raw[1]]))[0]
             target = (address + 2 + disp) & (0xFFFF if is_6502 else 0xFFFFFF)
             operands = [f"0x{target:04X}"]
             target_addr = target
             is_branch = True
             is_conditional = (mnem != "bra")
         elif mode == "rell":
-            disp16 = struct.unpack("<h", raw[1:3])[0]
+            disp16 = schema.unpack("<h", raw[1:3])[0]
             target = (address + 3 + disp16) & 0xFFFFFF
             operands = [f"0x{target:04X}"]
             target_addr = target

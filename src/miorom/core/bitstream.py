@@ -1,5 +1,4 @@
-from typing import Union, BinaryIO
-from io import BytesIO
+from typing import Union
 
 
 class BitReader:

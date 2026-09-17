@@ -1,5 +1,4 @@
 """
-from miorom.errors import ParseError
 miorom.graphics.tilesheet
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 Palette-Aware Tile Sheet Visualizer & Pure-Python BMP Transcoder.
@@ -8,10 +7,10 @@ and lossless export/import of retro ROM graphics without external GUI dependenci
 """
 
 import math
-import struct
-from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Union
 
+from miorom.core import schema
+from miorom.errors import ParseError
 from miorom.graphics.palette import Color, Palette
 from miorom.graphics.tiles import Tile, decode_tileset, encode_tileset
 
@@ -119,7 +118,7 @@ class TileSheet:
         file_size = 54 + image_data_size
 
         # BMP 14-byte File Header
-        file_header = struct.pack(
+        file_header = schema.pack(
             "<2sIHHI",
             b"BM",
             file_size,
@@ -129,7 +128,7 @@ class TileSheet:
         )
 
         # BITMAPINFOHEADER 40 bytes
-        info_header = struct.pack(
+        info_header = schema.pack(
             "<IIIHHIIIIII",
             40,          # biSize
             w,           # biWidth
@@ -193,12 +192,12 @@ class TileSheet:
         if len(data) < 54 or data[:2] != b"BM":
             raise ParseError("Invalid BMP header: magic 'BM' not found")
 
-        offset_bits = struct.unpack_from("<I", data, 10)[0]
-        bi_size = struct.unpack_from("<I", data, 14)[0]
-        w = struct.unpack_from("<i", data, 18)[0]
-        h_signed = struct.unpack_from("<i", data, 22)[0]
-        bit_count = struct.unpack_from("<H", data, 28)[0]
-        compression = struct.unpack_from("<I", data, 30)[0]
+        offset_bits = schema.unpack_from("<I", data, 10)[0]
+        _bi_size = schema.unpack_from("<I", data, 14)[0]
+        w = schema.unpack_from("<i", data, 18)[0]
+        h_signed = schema.unpack_from("<i", data, 22)[0]
+        bit_count = schema.unpack_from("<H", data, 28)[0]
+        compression = schema.unpack_from("<I", data, 30)[0]
 
         if compression != 0:
             raise ParseError(f"Compressed BMP (compression={compression}) is not supported")
@@ -281,8 +280,8 @@ class TileSheetRenderer:
         image_data_size = stride * h
         file_size = 54 + image_data_size
 
-        file_header = struct.pack("<2sIHHI", b"BM", file_size, 0, 0, 54)
-        info_header = struct.pack("<IIIHHIIIIII", 40, w, h, 1, 24, 0, image_data_size, 2835, 2835, 0, 0)
+        file_header = schema.pack("<2sIHHI", b"BM", file_size, 0, 0, 54)
+        info_header = schema.pack("<IIIHHIIIIII", 40, w, h, 1, 24, 0, image_data_size, 2835, 2835, 0, 0)
 
         pixel_bytes = bytearray(image_data_size)
         pad = b"\x00" * padding_len

@@ -1,7 +1,8 @@
-from miorom.errors import CompressionError
 import heapq
-import struct
 from typing import Any, Dict, List, Optional, Tuple
+
+from miorom.core import schema
+from miorom.errors import CompressionError
 
 
 class _HuffmanNode:
@@ -36,11 +37,18 @@ class Huffman:
 
         bit_depth = 4 if type_byte == 0x24 else 8
         uncompressed_size = data[1] | (data[2] << 8) | (data[3] << 16)
-        if uncompressed_size == 0 and len(data) >= 8:
-            uncompressed_size = struct.unpack("<I", data[4:8])[0]
+        if uncompressed_size == 0:
+            if len(data) < 8:
+                return b""
+            uncompressed_size = schema.unpack("<I", data[4:8])[0]
+            if uncompressed_size == 0:
+                return b""
             tree_pos = 8
         else:
             tree_pos = 4
+
+        if tree_pos >= len(data):
+            raise CompressionError("Data too short for Nintendo Huffman header.")
 
         tree_size_code = data[tree_pos]
         tree_bytes_len = (tree_size_code + 1) * 2
@@ -68,7 +76,7 @@ class Huffman:
         while len(output) < uncompressed_size:
             if bits_left == 0:
                 if stream_pos + 4 <= len(data):
-                    cur_word = struct.unpack("<I", data[stream_pos : stream_pos + 4])[0]
+                    cur_word = schema.unpack("<I", data[stream_pos : stream_pos + 4])[0]
                     stream_pos += 4
                     bits_left = 32
                 elif stream_pos < len(data):
@@ -145,8 +153,8 @@ class Huffman:
                 symbols.append((b >> 4) & 0x0F)
 
         if not symbols:
-            header = bytes([0x20 | bit_depth, 0, 0, 0, 0, 0])
-            return header
+            # Empty input produces valid header: magic (1B) + uncomp_size=0 (3B) + tree_size_code=0 (1B) + tree placeholder (2B)
+            return bytes([0x20 | bit_depth, 0, 0, 0, 0, 0, 0])
 
         # Count frequencies
         freq_map: Dict[int, int] = {}
@@ -187,21 +195,6 @@ class Huffman:
         traverse(root, "")
 
         # Serialize tree into Nintendo format
-        # Flatten tree BFS/DFS:
-        tree_bytes = bytearray()
-
-        # Build serialized array
-        # Layout: root is at index 0. Internal nodes and leaves are stored.
-        # Let's allocate nodes:
-        nodes_list = []
-        queue = [root]
-        while queue:
-            curr = queue.pop(0)
-            if not curr.is_leaf:
-                nodes_list.append(curr)
-                queue.append(curr.left)
-                queue.append(curr.right)
-
         # Internal node layout (1 byte per node, 2 bytes per child pair)
         tree_array: List[Optional[Tuple[bool, Any]]] = [None] * 512
         node_pos_map: Dict[int, int] = {}
@@ -277,7 +270,7 @@ class Huffman:
             if len(chunk) < 32:
                 chunk = chunk.ljust(32, "0")
             word_val = int(chunk, 2)
-            stream_bytes.extend(struct.pack("<I", word_val))
+            stream_bytes.extend(schema.pack("<I", word_val))
 
         # Header
         magic = 0x24 if bit_depth == 4 else 0x28

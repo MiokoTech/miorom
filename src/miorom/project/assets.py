@@ -5,14 +5,12 @@ Declarative asset descriptors for ROM hacking projects.
 Encapsulates archives, dual-table containers, bytecode scripts, and files.
 """
 
-import os
-import struct
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional
 
 from miorom.archive.toc_pair import TocPair
-from miorom.core.scanner import StringScanner, PointerScanner, FoundString
-from miorom.formats.csv_handler import CsvHandler, TranslationRow
+from miorom.core.scanner import StringScanner
+from miorom.formats.csv_handler import TranslationRow
 
 
 class Asset(ABC):

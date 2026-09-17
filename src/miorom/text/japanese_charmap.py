@@ -11,13 +11,13 @@ character tables (.tbl / CharMap) with zero manual transcription.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-import struct
-from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
+from miorom.core import schema
 from miorom.result import MioRomResult
 from miorom.text.charmap import CharMap
-
 
 # ============================================================================
 # Japanese Kana Matrices & Standard Console Encodings
@@ -183,9 +183,9 @@ class JapaneseMiningCluster(MioRomResult):
             if self.mode == "1byte":
                 return bytes([v])
             elif self.mode == "2byte_le":
-                return struct.pack("<H", v)
+                return schema.pack("<H", v)
             else:  # 2byte_be
-                return struct.pack(">H", v)
+                return schema.pack(">H", v)
 
         # 1. Primary ordering (usually Hiragana)
         if "hiragana" in self.ordering_name:
@@ -238,7 +238,7 @@ class JapaneseMiningCluster(MioRomResult):
 
         # Generate sorted .tbl lines
         lines: List[str] = [
-            f"# MioROM Auto-Synthesized Japanese CharMap",
+            "# MioROM Auto-Synthesized Japanese CharMap",
             f"# Ordering: {self.ordering_name}, Base Delta: 0x{self.base_delta:04X}, Mode: {self.mode}",
             f"# Confidence: {self.confidence:.2%}, Consensus Words: {self.unique_word_count}",
         ]
@@ -372,14 +372,14 @@ class JapaneseCharMapMiner:
             q_len = len(indices)
             deltas = [(indices[i + 1] - indices[i]) & 0xFFFF for i in range(q_len - 1)]
 
-            # Step by 2 (16-bit word alignment)
-            for i in range(0, data_len - (q_len * 2) + 1, 2):
-                first_val = struct.unpack_from(fmt, data, i)[0]
+            # Step by 1 byte to discover 16-bit sequences at unaligned byte offsets
+            for i in range(0, data_len - (q_len * 2) + 1):
+                first_val = schema.unpack_from(fmt, data, i)[0]
                 cur_val = first_val
                 match = True
 
                 for idx in range(q_len - 1):
-                    next_val = struct.unpack_from(fmt, data, i + (idx + 1) * 2)[0]
+                    next_val = schema.unpack_from(fmt, data, i + (idx + 1) * 2)[0]
                     diff = (next_val - cur_val) & 0xFFFF
                     if diff != deltas[idx]:
                         match = False

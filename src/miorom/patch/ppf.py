@@ -10,12 +10,11 @@ PlayStation 2, and PlayStation Portable optical disc images.
 from __future__ import annotations
 
 import io
-import struct
 from typing import BinaryIO, Dict, List, Optional, Tuple, Union
 
+from miorom.core import schema
 from miorom.errors import PatchError
 from miorom.result import MioRomResult
-
 
 PPF1_MAGIC = b"PPF10"
 PPF2_MAGIC = b"PPF20"
@@ -162,7 +161,7 @@ class PPFPatcher(MioRomResult):
                     break
                 if len(pos_data) < 8:
                     raise PatchError("Truncated offset in PPF3 record.")
-                offset = struct.unpack("<Q", pos_data)[0]
+                offset = schema.unpack("<Q", pos_data)[0]
 
                 len_byte = patch_stream.read(1)
                 if not len_byte:
@@ -187,8 +186,8 @@ class PPFPatcher(MioRomResult):
             meta = patch_stream.read(51)
             if len(meta) < 51:
                 raise PatchError("Truncated PPF2 header.")
-            img_size_bytes = patch_stream.read(4)
-            blk_size_bytes = patch_stream.read(4)
+            _img_size_bytes = patch_stream.read(4)
+            _blk_size_bytes = patch_stream.read(4)
             val_block = patch_stream.read(1024)
             if len(val_block) < 1024:
                 raise PatchError("Truncated PPF2 validation block.")
@@ -196,7 +195,9 @@ class PPFPatcher(MioRomResult):
             if validate_block:
                 target_stream.seek(0x9320)
                 actual_val = target_stream.read(1024)
-                if len(actual_val) == 1024 and actual_val != val_block:
+                if (val_block != b"\x00" * 1024 and actual_val != val_block) or (
+                    len(actual_val) == 1024 and actual_val != val_block
+                ):
                     raise PatchError("Target image validation block does not match PPF2 patch.")
 
             while True:
@@ -205,7 +206,7 @@ class PPFPatcher(MioRomResult):
                     break
                 if len(pos_data) < 4:
                     break
-                offset = struct.unpack("<I", pos_data)[0]
+                offset = schema.unpack("<I", pos_data)[0]
 
                 len_byte = patch_stream.read(1)
                 if not len_byte:
@@ -228,7 +229,7 @@ class PPFPatcher(MioRomResult):
                     break
                 if len(pos_data) < 4:
                     break
-                offset = struct.unpack("<I", pos_data)[0]
+                offset = schema.unpack("<I", pos_data)[0]
 
                 len_byte = patch_stream.read(1)
                 if not len_byte:
@@ -316,7 +317,7 @@ class PPFPatcher(MioRomResult):
                     out.extend(b"\x00" * 1024)
 
             for offset, orig_data, mod_data in diff_chunks:
-                out.extend(struct.pack("<Q", offset))
+                out.extend(schema.pack("<Q", offset))
                 out.append(len(mod_data))
                 if include_undo:
                     out.extend(orig_data)
@@ -326,15 +327,15 @@ class PPFPatcher(MioRomResult):
             out.extend(PPF2_MAGIC)
             out.append(0x00)
             out.extend(desc_padded)
-            out.extend(struct.pack("<I", len(source)))
-            out.extend(struct.pack("<I", 1024))
+            out.extend(schema.pack("<I", len(source)))
+            out.extend(schema.pack("<I", 1024))
             if block_check and len(source) >= 0x9320 + 1024:
                 out.extend(source[0x9320 : 0x9320 + 1024])
             else:
                 out.extend(b"\x00" * 1024)
 
             for offset, _, mod_data in diff_chunks:
-                out.extend(struct.pack("<I", offset & 0xFFFFFFFF))
+                out.extend(schema.pack("<I", offset & 0xFFFFFFFF))
                 out.append(len(mod_data))
                 out.extend(mod_data)
 
@@ -345,7 +346,7 @@ class PPFPatcher(MioRomResult):
             out.extend(desc_padded)
 
             for offset, _, mod_data in diff_chunks:
-                out.extend(struct.pack("<I", offset & 0xFFFFFFFF))
+                out.extend(schema.pack("<I", offset & 0xFFFFFFFF))
                 out.append(len(mod_data))
                 out.extend(mod_data)
 

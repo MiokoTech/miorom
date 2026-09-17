@@ -1,9 +1,9 @@
-from miorom.result import MioRomResult
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional
 
-from miorom.audio.xa import CdXaDecoder, cdxa_to_wav
-from miorom.core.schema import BinaryStruct, U16, U32
+from miorom.audio.xa import cdxa_to_wav
+from miorom.core.schema import U16, U32, BinaryStruct
+from miorom.result import MioRomResult
 
 
 @dataclass

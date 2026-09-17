@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections import Counter
 from typing import Dict, List, Tuple
+
 from miorom.errors import CompressionError
 
 
@@ -136,7 +137,7 @@ class NemesisCodec:
 
         total_tiles = len(data) // 32
         if total_tiles > 0x7FFF:
-            raise CompressionError(f"Data exceeds maximum Nemesis tile limit (0x7FFF tiles).")
+            raise CompressionError("Data exceeds maximum Nemesis tile limit (0x7FFF tiles).")
 
         header_word = (0x8000 if xor_mode else 0) | (total_tiles & 0x7FFF)
 
@@ -170,11 +171,11 @@ class NemesisCodec:
         total_n = len(nybbles)
         while i < total_n:
             val = nybbles[i]
-            l = 1
-            while i + l < total_n and nybbles[i + l] == val and l < 8:
-                l += 1
-            runs.append((val, l))
-            i += l
+            run_len = 1
+            while i + run_len < total_n and nybbles[i + run_len] == val and run_len < 8:
+                run_len += 1
+            runs.append((val, run_len))
+            i += run_len
 
         # Assign prefix codes
         counts = Counter(runs)
@@ -220,14 +221,14 @@ class NemesisCodec:
             for bit_i in range(n - 1, -1, -1):
                 bits.append((val >> bit_i) & 1)
 
-        for val, l in runs:
-            if (val, l) in code_table:
-                code, code_len = code_table[(val, l)]
+        for val, run_len in runs:
+            if (val, run_len) in code_table:
+                code, code_len = code_table[(val, run_len)]
                 push_bits(code, code_len)
             else:
                 # Inline marker
                 push_bits(0x3F, 6)
-                push_bits(l - 1, 3)
+                push_bits(run_len - 1, 3)
                 push_bits(val, 4)
 
         # Pack bits to bytes (MSB first)

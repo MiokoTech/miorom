@@ -1,8 +1,9 @@
 import re
-from typing import List, Optional, Union, Tuple
-
+from typing import List, Optional
 
 from miorom.errors import ParseError
+
+
 class SignaturePattern:
     """
     Byte pattern matcher with wildcard support (similar to Ghidra / IDA Pro / YARA).

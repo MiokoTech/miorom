@@ -1,6 +1,7 @@
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from miorom.result import MioRomResult
 
@@ -38,11 +39,23 @@ class TagSyntaxValidator:
         errors: List[str] = []
         unknown: List[str] = []
 
-        open_cnt = text.count("[")
-        close_cnt = text.count("]")
+        stack = 0
+        bracket_error = False
+        for idx, char in enumerate(text):
+            if char == "[":
+                if stack > 0:
+                    errors.append(f"Nested opening bracket '[' found at index {idx}")
+                    bracket_error = True
+                stack += 1
+            elif char == "]":
+                if stack == 0:
+                    errors.append(f"Unmatched closing bracket ']' found at index {idx}")
+                    bracket_error = True
+                else:
+                    stack -= 1
 
-        if open_cnt != close_cnt:
-            errors.append(f"Mismatched brackets: {open_cnt} '[' vs {close_cnt} ']'")
+        if not bracket_error and stack > 0:
+            errors.append(f"Unclosed opening bracket '[' found ({stack} unclosed)")
 
         if "[]" in text:
             errors.append("Empty tag '[]' found")
@@ -112,14 +125,20 @@ class TagManager:
         self.tag_to_raw[tag_repr] = raw_repr
         return self
 
-    def decode_tags(self, text: str, newline_tag: str = "<ENTER>") -> str:
+    def decode_tags(
+        self,
+        text: str,
+        newline_tag: str = "<ENTER>",
+        convert_escaped_newlines: bool = False,
+    ) -> str:
         """Convert raw control codes and newlines to human-readable tags."""
         result = text
         for raw, tag in self.raw_to_tag.items():
             result = result.replace(raw, tag)
         if newline_tag:
             result = result.replace("\n", newline_tag)
-            result = result.replace("\\n", newline_tag)
+            if convert_escaped_newlines:
+                result = result.replace("\\n", newline_tag)
         return result
 
     def encode_tags(self, text: str, newline_tag: str = "<ENTER>") -> str:

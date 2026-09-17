@@ -7,18 +7,13 @@ formats (LZ10, LZ11, RLE, Yaz0, Huffman) and headerless Deflate/zlib streams.
 Tracks exact compressed byte consumption and validates output via Shannon entropy.
 """
 
-from miorom.result import MioRomResult
-from dataclasses import dataclass, field
 import math
-import struct
-from typing import Any, Dict, List, Optional, Sequence, Tuple
 import zlib
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
-from miorom.compression.carver import CompressionCarver, CarvedStream
-from miorom.compression.lz10 import LZ10
-from miorom.compression.lz11 import LZ11
-from miorom.compression.rle import RLE
-from miorom.compression.yaz0 import Yaz0
+from miorom.compression.carver import CompressionCarver
+from miorom.result import MioRomResult
 
 
 def calculate_entropy(data: bytes) -> float:

@@ -1,9 +1,10 @@
 import mmap
 import os
-import struct
 from contextlib import contextmanager
 from io import BytesIO
 from typing import Any, BinaryIO, Optional, Tuple, Type, Union
+
+from miorom.core import schema
 
 
 class BinaryReader:
@@ -107,13 +108,13 @@ class BinaryReader:
         return data
 
     def _unpack(self, fmt: str, size: int):
-        return struct.unpack(f"{self.endian}{fmt}", self.read_bytes(size))[0]
+        return schema.unpack(f"{self.endian}{fmt}", self.read_bytes(size))[0]
 
     def read_u8(self) -> int:
         return self.read_bytes(1)[0]
 
     def read_s8(self) -> int:
-        return struct.unpack("b", self.read_bytes(1))[0]
+        return schema.unpack("b", self.read_bytes(1))[0]
 
     def read_u16(self) -> int:
         return self._unpack("H", 2)
@@ -194,62 +195,62 @@ class BinaryReader:
     @staticmethod
     def unpack_s8(data: Union[bytes, bytearray, memoryview], offset: int = 0) -> int:
         """Unpack a signed 8-bit integer from buffer at offset."""
-        return struct.unpack_from("b", data, offset)[0]
+        return schema.unpack_from("b", data, offset)[0]
 
     @staticmethod
     def unpack_u16(data: Union[bytes, bytearray, memoryview], offset: int = 0, endian: str = ">") -> int:
         """Unpack an unsigned 16-bit integer from buffer at offset."""
-        return struct.unpack_from(f"{endian}H", data, offset)[0]
+        return schema.unpack_from(f"{endian}H", data, offset)[0]
 
     @staticmethod
     def unpack_s16(data: Union[bytes, bytearray, memoryview], offset: int = 0, endian: str = ">") -> int:
         """Unpack a signed 16-bit integer from buffer at offset."""
-        return struct.unpack_from(f"{endian}h", data, offset)[0]
+        return schema.unpack_from(f"{endian}h", data, offset)[0]
 
     @staticmethod
     def unpack_u32(data: Union[bytes, bytearray, memoryview], offset: int = 0, endian: str = ">") -> int:
         """Unpack an unsigned 32-bit integer from buffer at offset."""
-        return struct.unpack_from(f"{endian}I", data, offset)[0]
+        return schema.unpack_from(f"{endian}I", data, offset)[0]
 
     @staticmethod
     def unpack_s32(data: Union[bytes, bytearray, memoryview], offset: int = 0, endian: str = ">") -> int:
         """Unpack a signed 32-bit integer from buffer at offset."""
-        return struct.unpack_from(f"{endian}i", data, offset)[0]
+        return schema.unpack_from(f"{endian}i", data, offset)[0]
 
     @staticmethod
     def unpack_u64(data: Union[bytes, bytearray, memoryview], offset: int = 0, endian: str = ">") -> int:
         """Unpack an unsigned 64-bit integer from buffer at offset."""
-        return struct.unpack_from(f"{endian}Q", data, offset)[0]
+        return schema.unpack_from(f"{endian}Q", data, offset)[0]
 
     @staticmethod
     def unpack_s64(data: Union[bytes, bytearray, memoryview], offset: int = 0, endian: str = ">") -> int:
         """Unpack a signed 64-bit integer from buffer at offset."""
-        return struct.unpack_from(f"{endian}q", data, offset)[0]
+        return schema.unpack_from(f"{endian}q", data, offset)[0]
 
     @staticmethod
     def unpack_float(data: Union[bytes, bytearray, memoryview], offset: int = 0, endian: str = ">") -> float:
         """Unpack a 32-bit single-precision float from buffer at offset."""
-        return struct.unpack_from(f"{endian}f", data, offset)[0]
+        return schema.unpack_from(f"{endian}f", data, offset)[0]
 
     @staticmethod
     def unpack_double(data: Union[bytes, bytearray, memoryview], offset: int = 0, endian: str = ">") -> float:
         """Unpack a 64-bit double-precision float from buffer at offset."""
-        return struct.unpack_from(f"{endian}d", data, offset)[0]
+        return schema.unpack_from(f"{endian}d", data, offset)[0]
 
     @staticmethod
     def calcsize(fmt: str) -> int:
         """Calculate the size of struct format string."""
-        return struct.calcsize(fmt)
+        return schema.calcsize(fmt)
 
     @staticmethod
     def unpack(fmt: str, data: Union[bytes, bytearray, memoryview]) -> Tuple[Any, ...]:
         """Unpack binary data according to format string."""
-        return struct.unpack(fmt, data)
+        return schema.unpack(fmt, data)
 
     @staticmethod
     def unpack_from(fmt: str, buffer: Union[bytes, bytearray, memoryview], offset: int = 0) -> Tuple[Any, ...]:
         """Unpack binary data from buffer at offset according to format string."""
-        return struct.unpack_from(fmt, buffer, offset)
+        return schema.unpack_from(fmt, buffer, offset)
 
 
 class BinaryWriter:
@@ -297,7 +298,7 @@ class BinaryWriter:
         return self
 
     def _pack(self, fmt: str, val) -> "BinaryWriter":
-        self.stream.write(struct.pack(f"{self.endian}{fmt}", val))
+        self.stream.write(schema.pack(f"{self.endian}{fmt}", val))
         return self
 
     def write_u8(self, val: int) -> "BinaryWriter":
@@ -385,47 +386,47 @@ class BinaryWriter:
     @staticmethod
     def pack_s8(val: int) -> bytes:
         """Pack a signed 8-bit integer into bytes."""
-        return struct.pack("b", val)
+        return schema.pack("b", val)
 
     @staticmethod
     def pack_u16(val: int, endian: str = ">") -> bytes:
         """Pack an unsigned 16-bit integer into bytes."""
-        return struct.pack(f"{endian}H", val)
+        return schema.pack(f"{endian}H", val)
 
     @staticmethod
     def pack_s16(val: int, endian: str = ">") -> bytes:
         """Pack a signed 16-bit integer into bytes."""
-        return struct.pack(f"{endian}h", val)
+        return schema.pack(f"{endian}h", val)
 
     @staticmethod
     def pack_u32(val: int, endian: str = ">") -> bytes:
         """Pack an unsigned 32-bit integer into bytes."""
-        return struct.pack(f"{endian}I", val)
+        return schema.pack(f"{endian}I", val)
 
     @staticmethod
     def pack_s32(val: int, endian: str = ">") -> bytes:
         """Pack a signed 32-bit integer into bytes."""
-        return struct.pack(f"{endian}i", val)
+        return schema.pack(f"{endian}i", val)
 
     @staticmethod
     def pack_u64(val: int, endian: str = ">") -> bytes:
         """Pack an unsigned 64-bit integer into bytes."""
-        return struct.pack(f"{endian}Q", val)
+        return schema.pack(f"{endian}Q", val)
 
     @staticmethod
     def pack_s64(val: int, endian: str = ">") -> bytes:
         """Pack a signed 64-bit integer into bytes."""
-        return struct.pack(f"{endian}q", val)
+        return schema.pack(f"{endian}q", val)
 
     @staticmethod
     def pack_float(val: float, endian: str = ">") -> bytes:
         """Pack a 32-bit single-precision float into bytes."""
-        return struct.pack(f"{endian}f", val)
+        return schema.pack(f"{endian}f", val)
 
     @staticmethod
     def pack_double(val: float, endian: str = ">") -> bytes:
         """Pack a 64-bit double-precision float into bytes."""
-        return struct.pack(f"{endian}d", val)
+        return schema.pack(f"{endian}d", val)
 
     # ----------------------------------------------------------------------
     # Static buffer in-place packing helpers (pack_into)
@@ -439,44 +440,44 @@ class BinaryWriter:
     @staticmethod
     def pack_into_s8(buf: Union[bytearray, memoryview], offset: int, val: int) -> None:
         """Pack a signed 8-bit integer into a mutable buffer at offset."""
-        struct.pack_into("b", buf, offset, val)
+        schema.pack_into("b", buf, offset, val)
 
     @staticmethod
     def pack_into_u16(buf: Union[bytearray, memoryview], offset: int, val: int, endian: str = ">") -> None:
         """Pack an unsigned 16-bit integer into a mutable buffer at offset."""
-        struct.pack_into(f"{endian}H", buf, offset, val)
+        schema.pack_into(f"{endian}H", buf, offset, val)
 
     @staticmethod
     def pack_into_s16(buf: Union[bytearray, memoryview], offset: int, val: int, endian: str = ">") -> None:
         """Pack a signed 16-bit integer into a mutable buffer at offset."""
-        struct.pack_into(f"{endian}h", buf, offset, val)
+        schema.pack_into(f"{endian}h", buf, offset, val)
 
     @staticmethod
     def pack_into_u32(buf: Union[bytearray, memoryview], offset: int, val: int, endian: str = ">") -> None:
         """Pack an unsigned 32-bit integer into a mutable buffer at offset."""
-        struct.pack_into(f"{endian}I", buf, offset, val)
+        schema.pack_into(f"{endian}I", buf, offset, val)
 
     @staticmethod
     def pack_into_s32(buf: Union[bytearray, memoryview], offset: int, val: int, endian: str = ">") -> None:
         """Pack a signed 32-bit integer into a mutable buffer at offset."""
-        struct.pack_into(f"{endian}i", buf, offset, val)
+        schema.pack_into(f"{endian}i", buf, offset, val)
 
     @staticmethod
     def pack_into_u64(buf: Union[bytearray, memoryview], offset: int, val: int, endian: str = ">") -> None:
         """Pack an unsigned 64-bit integer into a mutable buffer at offset."""
-        struct.pack_into(f"{endian}Q", buf, offset, val)
+        schema.pack_into(f"{endian}Q", buf, offset, val)
 
     @staticmethod
     def pack_into_s64(buf: Union[bytearray, memoryview], offset: int, val: int, endian: str = ">") -> None:
         """Pack a signed 64-bit integer into a mutable buffer at offset."""
-        struct.pack_into(f"{endian}q", buf, offset, val)
+        schema.pack_into(f"{endian}q", buf, offset, val)
 
     @staticmethod
     def pack(fmt: str, *values: Any) -> bytes:
         """Pack values into bytes according to format string."""
-        return struct.pack(fmt, *values)
+        return schema.pack(fmt, *values)
 
     @staticmethod
     def pack_into(fmt: str, buffer: Union[bytearray, memoryview], offset: int, *values: Any) -> None:
         """Pack values into mutable buffer at offset according to format string."""
-        struct.pack_into(fmt, buffer, offset, *values)
+        schema.pack_into(fmt, buffer, offset, *values)

@@ -199,3 +199,191 @@ print(f"Found {len(matches)} AP vectors.")
 report = AntiPiracyBypasser.patch_all(code, matches)
 print(report.summary())
 ```
+
+---
+
+## Recipe 6: GBA ROM Expansion, Pointer Relinking & SRAM Flashcart Patching
+
+Translate text in a Game Boy Advance ROM by expanding cartridge capacity, relinking dialogue pointers to new memory space, converting Flash saves to SRAM for flashcarts, and repairing the complement checksum.
+
+```python
+from miorom.platforms.gba import GBARom
+
+# 1. Load pristine GBA ROM
+rom = GBARom.from_file("game.gba")
+print(f"Loaded: {rom.title} [{rom.game_code}] - Region: {rom.region}")
+
+# 2. Expand capacity from 8 MB to 16 MB with 0xFF padding
+if len(rom.data) < 16 * 1024 * 1024:
+    rom.expand(16)
+
+# 3. Relink dialogue table pointers
+old_script_offset = 0x00150000
+new_script_offset = 0x00900000  # in expanded free space
+
+# Write translated dialogue to new offset
+translated_script = b"WELCOME TO THE NEW ADVENTURE!\x00"
+rom.data[new_script_offset : new_script_offset + len(translated_script)] = translated_script
+
+# Automatically locate and relink all 32-bit pointers
+relinked_count = rom.relink_pointers(old_script_offset, new_script_offset)
+print(f"Relinked {relinked_count} pointers to 0x{new_script_offset:X}.")
+
+# 4. Patch save to SRAM for flashcart/emulator compatibility if needed
+if "FLASH" in rom.detect_save_type():
+    rom.patch_save_to_sram()
+    print("Converted Flash backup calls to SRAM.")
+
+# 5. Fix complement checksum and save
+rom.save("game_translated.gba", fix_checksum=True)
+print("Saved translated ROM with valid complement checksum.")
+```
+
+---
+
+## Recipe 7: PS1 Disc Asset Replacement, Executable Patching & EDC Recalculation
+
+Replace in-game assets and patch the MIPS boot executable inside a PlayStation 1 Mode 2 Form 1 BIN disc image with bit-exact 32-bit EDC checksum recalculation.
+
+```python
+from miorom.platforms.psx import PSXRom
+
+# 1. Open Mode 2 Form 1 CD-ROM BIN image (2352 bytes/sector)
+psx = PSXRom.from_file("game.bin")
+print(f"Boot Path: {psx.boot_path}, Region: {psx.region}")
+
+# 2. Replace localized dialogue script inside virtual filesystem
+with open("translated_script.dat", "rb") as f:
+    new_script = f.read()
+psx.replace_file("DATA/SCRIPT.DAT", new_script)
+
+# 3. Patch MIPS boot executable (e.g. font width lookup table)
+main_exe = psx.get_main_exe()
+if main_exe:
+    # Modify MIPS binary or text section in memory
+    main_exe.text_data[0x200:0x204] = b"\x00\x00\x00\x00"  # NOP check
+    psx.replace_main_exe(main_exe)
+
+# 4. Rebuild disc with bit-exact EDC calculation
+psx.save("game_mod.bin")
+
+# 5. Generate companion CUE sheet for emulators
+with open("game_mod.cue", "w") as f:
+    f.write(psx.generate_cue("game_mod.bin"))
+print("Saved game_mod.bin and game_mod.cue successfully.")
+```
+
+---
+
+## Recipe 8: Nintendo Wii Disc Decryption, FST File Replacement & Trucha Bug Signing
+
+Decrypt retail Nintendo Wii optical disc images on-the-fly, replace localized script files inside the encrypted partition FST filesystem, and repack with Trucha Bug fake-signing.
+
+```python
+from miorom.platforms.wii import WiiDisc
+
+# 1. Open raw retail ISO or WBFS disc image
+disc = WiiDisc.from_file("game.iso")
+print(f"Title: {disc.header.game_title} [{disc.header.game_id}]")
+
+# 2. Extract and modify in-game message binary
+partition = disc.get_data_partition()
+old_script = partition.read_file("DATA/files/message/dialogue.bin")
+
+with open("dialogue_en.bin", "rb") as f:
+    translated_script = f.read()
+
+# 3. Replace file inside encrypted partition FST (auto-reindexes cluster allocations)
+partition.replace_file("DATA/files/message/dialogue.bin", translated_script)
+
+# 4. Save modified disc with Trucha bug fake-signing
+disc.save("game_translated.iso", fake_sign=True)
+print("Saved game_translated.iso with valid Trucha signature.")
+```
+
+---
+
+## Recipe 9: Nintendo DS 2D Sprite Assembly & Animation Sequence Pipeline
+
+Load Nitro character graphics, palettes, cell definitions, and keyframe animations, modify animation frame delays, and render composite sprite frames to PNG.
+
+```python
+from miorom.platforms.nds import NCERFile, NCGRFile, NCLRFile, NANRFile
+
+# 1. Load Nitro 2D graphics suite components
+ncgr = NCGRFile.from_bytes(open("sprite.ncgr", "rb").read())
+nclr = NCLRFile.from_bytes(open("sprite.nclr", "rb").read())
+ncer = NCERFile.from_bytes(open("sprite.ncer", "rb").read())
+nanr = NANRFile.from_bytes(open("anim.nanr", "rb").read())
+
+# 2. Render first frame of walk animation
+first_seq = nanr.sequences[0]
+first_cell_idx = first_seq.frames[0].cell_index
+sprite_image = ncer.render_cell(bank_index=first_cell_idx, ncgr=ncgr, nclr=nclr)
+sprite_image.save("walk_frame0.png")
+
+# 3. Adjust animation speed for translated dialogue timing
+for frame in first_seq.frames:
+    frame.delay = 6  # 6/60th second per frame
+
+open("anim_mod.nanr", "wb").write(nanr.to_bytes())
+print("Exported rendered frame and updated animation timing.")
+```
+
+---
+
+## Recipe 10: Nintendo DS Streaming Audio & Sound Wave Archive Localization
+
+Extract voice clips from `.strm` containers, convert them to standard WAV for translation or subtitling, and repack modified WAV audio back into `.strm` and `.swar` archives.
+
+```python
+from miorom.platforms.nds.strm import STRMFile
+from miorom.platforms.nds.swar import SWARFile
+
+# 1. Decode cutscene STRM audio directly to WAV
+strm = STRMFile(open("cutscene_voice.strm", "rb").read())
+print(f"Sample Rate: {strm.sample_rate} Hz, Channels: {strm.channels}")
+open("cutscene_voice.wav", "wb").write(strm.to_wav())
+
+# 2. Encode localized WAV audio into standard IMA-ADPCM STRM
+with open("cutscene_voice_id.wav", "rb") as f:
+    localized_wav = f.read()
+new_strm = STRMFile.from_wav(localized_wav, wave_type=2)
+open("cutscene_voice_id.strm", "wb").write(new_strm.to_bytes())
+
+# 3. Extract and re-inject sound wave effects from SWAR
+swar = SWARFile(open("sfx.swar", "rb").read())
+swar.extract_all("extracted_sfx/")
+# ... replace any sfx in extracted_sfx/ ...
+swar.pack_from_directory("extracted_sfx/", "sfx_localized.swar")
+print("Successfully localized streaming and sound wave archives.")
+```
+
+---
+
+## Recipe 11: PlayStation 1 Memory Card Inspection & Animated Save Icon Extraction
+
+Inspect PS1 128KB memory card images (`.mcr`, `.mcd`, `.sav`), extract Shift-JIS game titles, and export 16x16 4bpp animated icon frames to PNG.
+
+```python
+from miorom.platforms.psx.memory_card import PSXMemoryCard
+
+# 1. Load 128 KB memory card
+card = PSXMemoryCard.from_file("memcard.mcr")
+print(f"Available free blocks: {card.free_blocks}/15")
+
+# 2. Iterate through all saves on card
+for save in card.saves:
+    print(f"[{save.product_code}] {save.title} - Size: {save.block_count} block(s)")
+    
+    # 3. Export animated icon frames
+    for frame_idx, icon_img in enumerate(save.icons):
+        icon_img.save(f"{save.product_code}_frame{frame_idx}.png")
+
+# 4. Update save game title
+if card.saves:
+    card.saves[0].title = "Final Fantasy VII (Terjemahan ID)"
+    card.save("memcard_updated.mcr")
+print("Memory card inspection and title update completed.")
+```
+

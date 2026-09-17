@@ -6,10 +6,10 @@ Calculates displacement adjustments when moving machine code routines across mem
 Supports MOS 6502, W65C816, Z80, SM83, Motorola 68000, ARM, Thumb, and MIPS.
 """
 
-import struct
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
+from miorom.core import schema
 from miorom.result import MioRomResult
 
 
@@ -153,6 +153,7 @@ class BranchRelocator:
         new_pc: int,
         target_addr: int,
         arch: str,
+        endian: Optional[str] = None,
     ) -> BranchRelocation:
         """
         Recalculates displacement and patches a single branch instruction bytes.
@@ -188,7 +189,7 @@ class BranchRelocator:
                 if len(inst_bytes) < 3:
                     raise ValueError("65816 BRL instruction requires 3 bytes")
                 disp, valid = self.calc_displacement_65816_long(new_pc, target_addr)
-                new_bytes = bytes([0x82]) + struct.pack("<h", disp if valid else 0)
+                new_bytes = bytes([0x82]) + schema.pack("<h", disp if valid else 0)
                 return BranchRelocation(
                     offset=0,
                     arch=arch_norm,
@@ -268,7 +269,7 @@ class BranchRelocator:
             if len(inst_bytes) < 4:
                 raise ValueError("M68K 16-bit branch requires 4 bytes")
             disp, valid = self.calc_displacement_m68k_16bit(new_pc, target_addr)
-            new_bytes = bytes([op_hi, 0x00]) + struct.pack(">h", disp if valid else 0)
+            new_bytes = bytes([op_hi, 0x00]) + schema.pack(">h", disp if valid else 0)
             return BranchRelocation(
                 offset=0,
                 arch=arch_norm,
@@ -286,13 +287,13 @@ class BranchRelocator:
         if arch_norm == "arm":
             if len(inst_bytes) < 4:
                 raise ValueError("ARM instruction requires 4 bytes")
-            raw_val = struct.unpack("<I", inst_bytes[:4])[0]
+            raw_val = schema.unpack("<I", inst_bytes[:4])[0]
             cond = (raw_val >> 28) & 0x0F
             is_bl = (raw_val >> 24) & 1
             mnemonic = "BL" if is_bl else "B"
             imm24, valid = self.calc_displacement_arm(new_pc, target_addr)
             new_val = (cond << 28) | (0b101 << 25) | (is_bl << 24) | (imm24 & 0x00FFFFFF)
-            new_bytes = struct.pack("<I", new_val)
+            new_bytes = schema.pack("<I", new_val)
             return BranchRelocation(
                 offset=0,
                 arch=arch_norm,
@@ -310,11 +311,11 @@ class BranchRelocator:
         if arch_norm == "thumb":
             if len(inst_bytes) < 2:
                 raise ValueError("Thumb instruction requires at least 2 bytes")
-            raw_val = struct.unpack("<H", inst_bytes[:2])[0]
+            raw_val = schema.unpack("<H", inst_bytes[:2])[0]
             if (raw_val & 0xF000) == 0xD000 and (raw_val & 0x0F00) != 0x0F00:
                 imm8, valid = self.calc_displacement_thumb_cond(new_pc, target_addr)
                 new_val = (raw_val & 0xFF00) | (imm8 & 0xFF)
-                new_bytes = struct.pack("<H", new_val)
+                new_bytes = schema.pack("<H", new_val)
                 return BranchRelocation(
                     offset=0,
                     arch=arch_norm,
@@ -331,7 +332,7 @@ class BranchRelocator:
             if (raw_val & 0xF800) == 0xE000:
                 imm11, valid = self.calc_displacement_thumb_uncond(new_pc, target_addr)
                 new_val = 0xE000 | (imm11 & 0x7FF)
-                new_bytes = struct.pack("<H", new_val)
+                new_bytes = schema.pack("<H", new_val)
                 return BranchRelocation(
                     offset=0,
                     arch=arch_norm,
@@ -346,35 +347,43 @@ class BranchRelocator:
                     description=f"B to 0x{target_addr:08X}",
                 )
             if (raw_val & 0xF800) == 0xF000 and len(inst_bytes) >= 4:
-                raw_val2 = struct.unpack("<H", inst_bytes[2:4])[0]
-                delta = target_addr - (new_pc + 4)
-                valid = -0x400000 <= delta <= 0x3FFFFE and (delta % 2 == 0)
-                inst1 = 0xF000 | ((delta >> 12) & 0x7FF)
-                inst2 = 0xF800 | ((delta >> 1) & 0x7FF)
-                new_bytes = struct.pack("<HH", inst1, inst2)
-                return BranchRelocation(
-                    offset=0,
-                    arch=arch_norm,
-                    mnemonic="BL",
-                    orig_pc=orig_pc,
-                    new_pc=new_pc,
-                    target_addr=target_addr,
-                    orig_bytes=inst_bytes[:4],
-                    new_bytes=new_bytes,
-                    displacement=delta,
-                    in_range=valid,
-                    description=f"BL to 0x{target_addr:08X}",
-                )
+                raw_val2 = schema.unpack("<H", inst_bytes[2:4])[0]
+                if (raw_val2 & 0xF800) == 0xF800:
+                    delta = target_addr - (new_pc + 4)
+                    valid = -0x400000 <= delta <= 0x3FFFFE and (delta % 2 == 0)
+                    inst1 = 0xF000 | ((delta >> 12) & 0x7FF)
+                    inst2 = 0xF800 | ((delta >> 1) & 0x7FF)
+                    new_bytes = schema.pack("<HH", inst1, inst2)
+                    return BranchRelocation(
+                        offset=0,
+                        arch=arch_norm,
+                        mnemonic="BL",
+                        orig_pc=orig_pc,
+                        new_pc=new_pc,
+                        target_addr=target_addr,
+                        orig_bytes=inst_bytes[:4],
+                        new_bytes=new_bytes,
+                        displacement=delta,
+                        in_range=valid,
+                        description=f"BL to 0x{target_addr:08X}",
+                    )
             raise ValueError(f"Unrecognized Thumb branch instruction: 0x{raw_val:04X}")
 
-        if arch_norm == "mips":
+        if arch_norm in ("mips", "mips_le", "mips_be", "mips32", "psx", "psp"):
             if len(inst_bytes) < 4:
                 raise ValueError("MIPS branch requires 4 bytes")
-            raw_val = struct.unpack(">I", inst_bytes[:4])[0]
+            is_be = False
+            if endian is not None:
+                is_be = endian in ("big", ">")
+            elif arch_norm in ("mips_be", "n64"):
+                is_be = True
+            fmt = ">I" if is_be else "<I"
+
+            raw_val = schema.unpack(fmt, inst_bytes[:4])[0]
             opcode = (raw_val >> 26) & 0x3F
             word_offset, valid = self.calc_displacement_mips_branch(new_pc, target_addr)
             new_val = (raw_val & 0xFFFF0000) | (word_offset & 0xFFFF)
-            new_bytes = struct.pack(">I", new_val)
+            new_bytes = schema.pack(fmt, new_val)
             return BranchRelocation(
                 offset=0,
                 arch=arch_norm,
@@ -398,6 +407,7 @@ class BranchRelocator:
         new_base: int,
         arch: str,
         external_targets: Optional[Dict[int, int]] = None,
+        endian: Optional[str] = None,
     ) -> Tuple[bytes, List[BranchRelocation]]:
         """
         Inspects and rebases all PC-relative branches within a code block relocated from
@@ -465,7 +475,7 @@ class BranchRelocator:
                         i += 2
                         continue
                     if i + 3 < block_len:
-                        disp_s16 = struct.unpack(">h", code[i + 2 : i + 4])[0]
+                        disp_s16 = schema.unpack(">h", code[i + 2 : i + 4])[0]
                         target = orig_pc + 2 + disp_s16
                         is_internal = orig_base <= target < orig_end
                         new_target = target + (new_base - orig_base) if is_internal else ext_map.get(target, target)
@@ -480,7 +490,7 @@ class BranchRelocator:
 
         elif arch_norm == "arm":
             while i <= block_len - 4:
-                raw_val = struct.unpack("<I", code[i : i + 4])[0]
+                raw_val = schema.unpack("<I", code[i : i + 4])[0]
                 if (raw_val & 0x0E000000) == 0x0A000000:
                     orig_pc = orig_base + i
                     new_pc = new_base + i
@@ -492,7 +502,44 @@ class BranchRelocator:
                     new_target = target + (new_base - orig_base) if is_internal else ext_map.get(target, target)
                     item = self.patch_single_branch(code[i : i + 4], orig_pc, new_pc, new_target, arch_norm)
                     if not is_internal:
-                        result_buf[i : i + 4] = item.new_bytes
+                        if not item.in_range:
+                            # Log warning but keep original bytes — don't corrupt with truncated displacement
+                            pass
+                        else:
+                            result_buf[i : i + 4] = item.new_bytes
+                    item.offset = i
+                    relocs.append(item)
+                    i += 4
+                    continue
+                i += 4
+
+        elif arch_norm in ("mips", "mips_le", "mips_be", "mips32", "psx", "psp"):
+            is_be = False
+            if endian is not None:
+                is_be = endian in ("big", ">")
+            elif arch_norm in ("mips_be", "n64"):
+                is_be = True
+            fmt = ">I" if is_be else "<I"
+
+            while i <= block_len - 4:
+                raw_val = schema.unpack(fmt, code[i : i + 4])[0]
+                opcode = (raw_val >> 26) & 0x3F
+                # MIPS conditional branch opcodes:
+                # 0x01: REGIMM (BLTZ, BGEZ, BLTZAL, BGEZAL)
+                # 0x04: BEQ, 0x05: BNE, 0x06: BLEZ, 0x07: BGTZ
+                # 0x14: BEQL, 0x15: BNEL, 0x16: BLEZL, 0x17: BGTZL
+                if opcode in (0x01, 0x04, 0x05, 0x06, 0x07, 0x14, 0x15, 0x16, 0x17):
+                    orig_pc = orig_base + i
+                    new_pc = new_base + i
+                    imm16 = raw_val & 0xFFFF
+                    disp_s16 = imm16 if imm16 < 0x8000 else imm16 - 0x10000
+                    target = orig_pc + 4 + (disp_s16 << 2)
+                    is_internal = orig_base <= target < orig_end
+                    new_target = target + (new_base - orig_base) if is_internal else ext_map.get(target, target)
+                    item = self.patch_single_branch(code[i : i + 4], orig_pc, new_pc, new_target, arch_norm, endian=endian)
+                    if not is_internal:
+                        if item.in_range:
+                            result_buf[i : i + 4] = item.new_bytes
                     item.offset = i
                     relocs.append(item)
                     i += 4

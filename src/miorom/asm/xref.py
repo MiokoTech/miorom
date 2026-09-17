@@ -7,13 +7,14 @@ direct branches, and pointer references to uncover which code routines access
 specific text lines, graphics, or script blocks.
 """
 
-from miorom.result import MioRomResult
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
-import struct
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Dict, List, Optional, Set
 
-from miorom.asm.disasm import UniversalDisassembler, DisasmInstruction
+from miorom.asm.disasm import DisasmInstruction, UniversalDisassembler
+from miorom.core import schema
+from miorom.result import MioRomResult
 
 
 class XRefType(Enum):
@@ -82,7 +83,7 @@ class GlobalXrefEngine:
         xrefs: List[XRef] = []
         n_words = len(data) // 4
         for i in range(n_words):
-            word = struct.unpack_from(f"{endian}I", data, i * 4)[0]
+            word = schema.unpack_from(f"{endian}I", data, i * 4)[0]
             # LDR Rd, [PC, #+/-imm12]
             cond = (word >> 28) & 0xF
             is_ldr_pc = ((word & 0x0E5F0000) == 0x041F0000) or ((word & 0x0E5F0000) == 0x059F0000)
@@ -95,7 +96,7 @@ class GlobalXrefEngine:
 
                 pool_off = pool_addr - base_address
                 if 0 <= pool_off <= len(data) - 4:
-                    target_addr = struct.unpack_from(f"{endian}I", data, pool_off)[0]
+                    target_addr = schema.unpack_from(f"{endian}I", data, pool_off)[0]
                     xrefs.append(
                         XRef(
                             source_address=base_address + i * 4,
@@ -119,8 +120,8 @@ class GlobalXrefEngine:
         xrefs: List[XRef] = []
         n_words = len(data) // 4
         for i in range(n_words - 1):
-            w1 = struct.unpack_from(f"{endian}I", data, i * 4)[0]
-            w2 = struct.unpack_from(f"{endian}I", data, (i + 1) * 4)[0]
+            w1 = schema.unpack_from(f"{endian}I", data, i * 4)[0]
+            w2 = schema.unpack_from(f"{endian}I", data, (i + 1) * 4)[0]
 
             # LUI Rt, imm16 (opcode 001111 = 0x0F)
             op1 = (w1 >> 26) & 0x3F
@@ -131,7 +132,6 @@ class GlobalXrefEngine:
                 # Next ADDIU or ORI instruction
                 op2 = (w2 >> 26) & 0x3F
                 rs2 = (w2 >> 21) & 0x1F
-                rt2 = (w2 >> 16) & 0x1F
                 imm_lo = w2 & 0xFFFF
 
                 if (op2 in (0x09, 0x0D)) and (rs2 == rt1):
@@ -173,7 +173,7 @@ class GlobalXrefEngine:
         fmt = f"{endian}I"
         data_len = len(data)
         for off in range(0, data_len - 3, 4):
-            val = struct.unpack_from(fmt, data, off)[0]
+            val = schema.unpack_from(fmt, data, off)[0]
             if base_address <= val < base_address + data_len:
                 all_xrefs.append(
                     XRef(
@@ -544,7 +544,7 @@ class SymbolicXrefEngine:
         n_words = len(data) // 4
         fmt = f"{endian}I"
         for i in range(n_words):
-            word = struct.unpack_from(fmt, data, i * 4)[0]
+            word = schema.unpack_from(fmt, data, i * 4)[0]
             curr_addr = base + i * 4
             cond = (word >> 28) & 0xF
 
@@ -557,7 +557,7 @@ class SymbolicXrefEngine:
                 pool_addr = (pc_val + imm12) if u_bit else (pc_val - imm12)
                 pool_off = pool_addr - base
                 if 0 <= pool_off <= len(data) - 4:
-                    target_val = struct.unpack_from(fmt, data, pool_off)[0]
+                    target_val = schema.unpack_from(fmt, data, pool_off)[0]
                     rd = (word >> 12) & 0xF
                     db.add_xref(
                         source_address=curr_addr,
@@ -588,7 +588,7 @@ class SymbolicXrefEngine:
         fmt = f"{endian}H"
         i = 0
         while i < n_halfwords:
-            hw = struct.unpack_from(fmt, data, i * 2)[0]
+            hw = schema.unpack_from(fmt, data, i * 2)[0]
             curr_addr = base + i * 2
 
             # Thumb literal pool load: LDR Rd, [PC, #imm8]
@@ -599,7 +599,7 @@ class SymbolicXrefEngine:
                 target_ptr = pc_val + imm8
                 off = target_ptr - base
                 if 0 <= off <= len(data) - 4:
-                    val = struct.unpack_from(f"{endian}I", data, off)[0]
+                    val = schema.unpack_from(f"{endian}I", data, off)[0]
                     db.add_xref(
                         source_address=curr_addr,
                         target_address=val,
@@ -611,7 +611,7 @@ class SymbolicXrefEngine:
             # High half: 11110xxxxxxxxxxx (0xF000)
             # Low half:  11111xxxxxxxxxxx (0xF800)
             if (hw & 0xF800) == 0xF000 and i + 1 < n_halfwords:
-                hw2 = struct.unpack_from(fmt, data, (i + 1) * 2)[0]
+                hw2 = schema.unpack_from(fmt, data, (i + 1) * 2)[0]
                 if (hw2 & 0xF800) == 0xF800:
                     imm11_h = hw & 0x7FF
                     if imm11_h & 0x400:
@@ -661,7 +661,7 @@ class SymbolicXrefEngine:
         n_words = len(data) // 4
         fmt = f"{endian}I"
         for i in range(n_words):
-            word = struct.unpack_from(fmt, data, i * 4)[0]
+            word = schema.unpack_from(fmt, data, i * 4)[0]
             curr_addr = base + i * 4
             op = (word >> 26) & 0x3F
 
@@ -686,9 +686,8 @@ class SymbolicXrefEngine:
                 rd = (word >> 21) & 0x1F
                 if ra == 0 and i + 1 < n_words:
                     imm_hi = word & 0xFFFF
-                    next_word = struct.unpack_from(fmt, data, (i + 1) * 4)[0]
+                    next_word = schema.unpack_from(fmt, data, (i + 1) * 4)[0]
                     next_op = (next_word >> 26) & 0x3F
-                    next_rd = (next_word >> 21) & 0x1F
                     next_ra = (next_word >> 16) & 0x1F
                     imm_lo = next_word & 0xFFFF
 
@@ -710,7 +709,7 @@ class SymbolicXrefEngine:
         n_words = len(data) // 4
         fmt = f"{endian}I"
         for i in range(n_words):
-            word = struct.unpack_from(fmt, data, i * 4)[0]
+            word = schema.unpack_from(fmt, data, i * 4)[0]
             curr_addr = base + i * 4
             op = (word >> 26) & 0x3F
 
@@ -731,7 +730,7 @@ class SymbolicXrefEngine:
             if op == 0x0F and i + 1 < n_words:
                 rt1 = (word >> 16) & 0x1F
                 imm_hi = word & 0xFFFF
-                w2 = struct.unpack_from(fmt, data, (i + 1) * 4)[0]
+                w2 = schema.unpack_from(fmt, data, (i + 1) * 4)[0]
                 op2 = (w2 >> 26) & 0x3F
                 rs2 = (w2 >> 21) & 0x1F
                 imm_lo = w2 & 0xFFFF
@@ -838,7 +837,7 @@ class SymbolicXrefEngine:
         data_len = len(data)
         limit = base + data_len
         for off in range(0, data_len - 3, 4):
-            val = struct.unpack_from(fmt, data, off)[0]
+            val = schema.unpack_from(fmt, data, off)[0]
             if base <= val < limit and val != 0:
                 curr_addr = base + off
                 # Avoid self-references

@@ -2,8 +2,13 @@ import os
 import tempfile
 import pytest
 
-from miorom.platforms.iso.builder import Iso9660Builder, normalize_iso_name
-from miorom.platforms.iso.iso9660 import ISO9660
+from miorom.platforms.iso.builder import (
+    Iso9660Builder,
+    normalize_iso_name,
+    pack_both_u16,
+    pack_both_u32,
+)
+from miorom.platforms.iso.iso9660 import ISO9660, ISODirectoryRecordStruct, ISOPvdStruct
 from miorom.rom.handlers.iso9660 import Iso9660RomHandler
 
 
@@ -89,3 +94,56 @@ def test_iso9660_builder_filesystem_roundtrip():
             assert f.read() == b"ROOT_FILE_DATA"
         with open(nested_bin, "rb") as f:
             assert f.read() == b"NESTED_PAYLOAD_BYTES" * 50
+
+
+def test_pack_both_endian_standards_compliance():
+    # ECMA-119 Section 7.2.3: 16-bit both-byte orders (LE then BE)
+    assert pack_both_u16(1) == b"\x01\x00\x00\x01"
+    assert pack_both_u16(2048) == b"\x00\x08\x08\x00"
+    assert pack_both_u16(0x1234) == b"\x34\x12\x12\x34"
+
+    # ECMA-119 Section 7.3.3: 32-bit both-byte orders (LE then BE)
+    assert pack_both_u32(1) == b"\x01\x00\x00\x00\x00\x00\x00\x01"
+    assert pack_both_u32(20) == b"\x14\x00\x00\x00\x00\x00\x00\x14"
+    assert pack_both_u32(0x12345678) == b"\x78\x56\x34\x12\x12\x34\x56\x78"
+
+
+def test_iso_pvd_and_directory_records_both_endian_symmetry():
+    builder = Iso9660Builder(volume_id="BOTH_ENDIAN_TEST")
+    builder.add_file("FILE_A.DAT", b"PAYLOAD_A" * 100)
+    builder.add_file("SUB/FILE_B.BIN", b"PAYLOAD_B" * 200)
+
+    iso_bytes = builder.build()
+    assert len(iso_bytes) % 2048 == 0
+
+    # Validate Primary Volume Descriptor (PVD at sector 16)
+    pvd = ISOPvdStruct.from_bytes(iso_bytes, offset=16 * 2048)
+    assert pvd.volume_space_size.little == pvd.volume_space_size.big
+    assert pvd.volume_space_size.little > 0
+    assert pvd.logical_block_size == pvd.logical_block_size_big == 2048
+
+    # Validate Root Directory Record in PVD
+    root_rec = ISODirectoryRecordStruct.from_bytes(pvd.root_directory, offset=0)
+    assert root_rec.lba.little == root_rec.lba.big
+    assert root_rec.size.little == root_rec.size.big
+    assert root_rec.volume_sequence_number == root_rec.volume_sequence_number_big == 1
+
+    # Traverse directory records in Root Directory sector
+    root_sector_offset = root_rec.lba.little * 2048
+    offset = root_sector_offset
+    sector_end = root_sector_offset + 2048
+
+    records_checked = 0
+    while offset < sector_end:
+        rec_len = iso_bytes[offset]
+        if rec_len == 0:
+            break
+        rec = ISODirectoryRecordStruct.from_bytes(iso_bytes, offset=offset)
+        assert rec.lba.little == rec.lba.big
+        assert rec.size.little == rec.size.big
+        assert rec.volume_sequence_number == rec.volume_sequence_number_big
+        records_checked += 1
+        offset += rec_len
+
+    assert records_checked >= 3  # ., .., FILE_A.DAT, SUB
+

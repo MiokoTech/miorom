@@ -6,19 +6,19 @@ Automates migrating translations, string pools, and pointer tables between
 different regional releases of a game (e.g. Japanese -> USA -> European PAL).
 """
 
-from miorom.errors import RelocationError
-from miorom.result import MioRomResult
-import os
+import difflib
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Union
 
-from miorom.core.scanner import StringScanner, PointerScanner
+from miorom.core.scanner import PointerScanner, StringScanner
 from miorom.diff.bindiff import FunctionMatch
-from miorom.diff.mapper import BinaryDiffMapper, MatchedBlock
+from miorom.diff.mapper import BinaryDiffMapper
+from miorom.errors import RelocationError
 from miorom.formats.csv_handler import CsvHandler, TranslationRow
-from miorom.helper.string_pool import StringPoolBuilder
 from miorom.helper.relocator import BinaryRelocator
+from miorom.helper.string_pool import StringPoolBuilder
 from miorom.patch.ips import IpsPatcher
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -95,6 +95,7 @@ class CrossRegionPorter:
         output_csv: Optional[str] = None,
         fallback_to_original: bool = True,
         tolerance_bytes: int = 64,
+        similarity_threshold: float = 0.8,
     ) -> Tuple[List[TranslationRow], PortReport]:
         """
         Migrate translations from source CSV into target CSV.
@@ -194,8 +195,60 @@ class CrossRegionPorter:
                         context=tgt_r.context,
                     ))
 
+        elif strategy.lower() == "fuzzy":
+            used_source_indices = set()
+
+            for tgt_r in tgt_rows:
+                best_src: Optional[TranslationRow] = None
+                best_score = 0.0
+                best_src_pos = -1
+
+                for src_pos, src_r in enumerate(src_rows):
+                    if src_pos in used_source_indices:
+                        continue
+                    if not src_r.original.strip() or not tgt_r.original.strip():
+                        continue
+
+                    score = difflib.SequenceMatcher(
+                        None,
+                        src_r.original,
+                        tgt_r.original,
+                    ).ratio()
+                    if score > best_score:
+                        best_src = src_r
+                        best_score = score
+                        best_src_pos = src_pos
+
+                if best_src is not None and best_score >= similarity_threshold:
+                    used_source_indices.add(best_src_pos)
+                    trans = best_src.translation if best_src.translation.strip() else best_src.original
+                    ported.append(TranslationRow(
+                        index=tgt_r.index,
+                        offset=tgt_r.offset,
+                        original=tgt_r.original,
+                        translation=trans,
+                        context=tgt_r.context,
+                    ))
+                    report.migrated_strings += 1
+                else:
+                    report.unmatched_strings += 1
+                    report.warnings.append(
+                        f"Target text '{tgt_r.original[:20]}' has no fuzzy source match "
+                        f"above {similarity_threshold:.2f}."
+                    )
+                    fallback = tgt_r.original if fallback_to_original else ""
+                    ported.append(TranslationRow(
+                        index=tgt_r.index,
+                        offset=tgt_r.offset,
+                        original=tgt_r.original,
+                        translation=fallback,
+                        context=tgt_r.context,
+                    ))
+
         else:
-            raise RelocationError(f"Unknown strategy: '{strategy}'. Choose from: 'index', 'offset'.")
+            raise RelocationError(
+                f"Unknown strategy: '{strategy}'. Choose from: 'index', 'offset', 'fuzzy'."
+            )
 
         if output_csv:
             CsvHandler.export_csv(output_csv, ported)
@@ -278,8 +331,6 @@ class CrossRegionPorter:
 
         # Relocate string pool
         reloc = BinaryRelocator(tgt_buf, endian=endian)
-        # Check old pool size if detectable, or replace range
-        old_pool_size = len(new_pool_bytes)  # safe default if expanding
         reloc.replace_range(target_pool_offset, len(new_pool_bytes), new_pool_bytes)
 
         return reloc.to_bytes(), report

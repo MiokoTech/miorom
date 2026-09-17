@@ -1,7 +1,8 @@
-from miorom.result import MioRomResult
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+
+from miorom.result import MioRomResult
 
 
 def _escape_po_string(s: str) -> str:
@@ -197,7 +198,7 @@ class PoHandler:
     @classmethod
     def from_file(cls, path: str) -> "PoHandler":
         """Load PO file from disk."""
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             return cls.from_string(f.read())
 
     def to_string(self) -> str:

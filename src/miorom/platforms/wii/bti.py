@@ -10,18 +10,17 @@ Pure Python, using MioROM declarative binary primitives.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
-from typing import Optional, Union
+from typing import Any, Union
 
-from miorom.core.binary import BinaryReader, BinaryWriter
-from miorom.core.schema import BinaryStruct, U8, U16, U32
-from miorom.errors import ParseError
 from miorom.compression.yaz0 import Yaz0
+from miorom.core.binary import BinaryWriter
+from miorom.core.schema import U8, U16, U32, BinaryStruct
+from miorom.errors import ParseError
 from miorom.platforms.wii.tpl import (
     TPL_FORMAT_NAMES,
+    calc_gx_texture_size,
     decode_gx_texture,
     encode_gx_texture,
-    calc_gx_texture_size,
 )
 
 try:
@@ -95,13 +94,13 @@ class BTIImage:
         )
 
     @classmethod
-    def from_file(cls, filepath: str) -> "BTIImage":
+    def from_file(cls, filepath: str) -> BTIImage:
         with open(filepath, "rb") as f:
             data = f.read()
         return cls.from_bytes(data)
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "BTIImage":
+    def from_bytes(cls, data: bytes) -> BTIImage:
         # Handle transparent Yaz0 decompression
         if data.startswith(b"Yaz0"):
             data = Yaz0.decompress(data)
@@ -156,33 +155,62 @@ class BTIImage:
         """Decodes the tiled texture into linear uncompressed RGBA8888 byte stream."""
         return decode_gx_texture(self.raw_data, self.width, self.height, self.format_id)
 
-    def to_image(self) -> "Image.Image":
-        """Renders the BTI image to a PIL Image."""
-        if not HAS_PIL:
-            raise ImportError("Pillow is required for BTIImage.to_image().")
+    def to_image(self) -> Any:
+        """Renders the BTI image to an RGBA image (PIL Image if installed, or PNGImage fallback)."""
         rgba = self.decode_rgba()
-        return Image.frombytes("RGBA", (self.width, self.height), rgba)
+        if HAS_PIL:
+            return Image.frombytes("RGBA", (self.width, self.height), rgba)
+        from miorom.graphics.png_codec import PNGColorType, PNGImage
+        return PNGImage(
+            width=self.width,
+            height=self.height,
+            color_type=PNGColorType.RGBA,
+            bit_depth=8,
+            pixels=rgba,
+        )
+
+    def to_png(self, output_path: str) -> str:
+        """Saves the BTI image to a PNG file. Zero-dependency (works without Pillow)."""
+        from miorom.graphics.png_codec import PNGCodec
+        rgba = self.decode_rgba()
+        png_bytes = PNGCodec.encode_rgba(self.width, self.height, rgba)
+        with open(output_path, "wb") as f:
+            f.write(png_bytes)
+        return output_path
 
     @classmethod
     def from_image(
         cls,
-        image_or_path: Union[str, "Image.Image"],
+        image_or_path: Union[str, Any],
         format_id: int = 5,
         wrap_s: int = 0,
         wrap_t: int = 0,
-    ) -> "BTIImage":
-        """Encodes an image (or file path) into a BTIImage."""
-        if not HAS_PIL:
-            raise ImportError("Pillow is required for BTIImage.from_image().")
-
+    ) -> BTIImage:
+        """Encodes an image (file path, PIL Image, or PNGImage) into a BTIImage. Works without Pillow."""
         if isinstance(image_or_path, str):
-            pil_img = Image.open(image_or_path)
+            if HAS_PIL:
+                pil_img = Image.open(image_or_path).convert("RGBA")
+                width, height = pil_img.size
+                rgba_bytes = pil_img.tobytes()
+            else:
+                from miorom.graphics.png_codec import PNGCodec
+                raw = open(image_or_path, "rb").read()
+                width, height, rgba_bytes = PNGCodec.png_to_rgba(raw)
+        elif HAS_PIL and isinstance(image_or_path, Image.Image):
+            pil_img = image_or_path.convert("RGBA")
+            width, height = pil_img.size
+            rgba_bytes = pil_img.tobytes()
         else:
-            pil_img = image_or_path
-
-        pil_img = pil_img.convert("RGBA")
-        width, height = pil_img.size
-        rgba_bytes = pil_img.tobytes()
+            from miorom.graphics.png_codec import PNGImage
+            if isinstance(image_or_path, PNGImage):
+                width, height = image_or_path.width, image_or_path.height
+                rgba_bytes = image_or_path.to_rgba_bytes()
+            elif hasattr(image_or_path, "convert"):
+                pil_img = image_or_path.convert("RGBA")
+                width, height = pil_img.size
+                rgba_bytes = pil_img.tobytes()
+            else:
+                raise TypeError(f"Expected file path, PIL Image, or PNGImage, got {type(image_or_path)}")
 
         raw_data = encode_gx_texture(rgba_bytes, width, height, format_id)
 

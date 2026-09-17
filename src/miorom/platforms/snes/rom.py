@@ -1,6 +1,5 @@
-from typing import Optional, Tuple
 
-from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U8, U16
+from miorom.core.schema import U8, U16, BinaryStruct, FixedString, RawBytes
 
 
 class SNESHeaderStruct(BinaryStruct):

@@ -8,13 +8,13 @@ automatically splits overflowed paragraphs into multi-page dialogue boxes
 with custom control tags ([PAGE], [WAIT], etc.).
 """
 
-from miorom.result import MioRomResult
 import re
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import List, Optional
 
+from miorom.result import MioRomResult
+from miorom.text.po_handler import PoHandler
 from miorom.text.vwf import GlyphWidthTable
-from miorom.text.po_handler import PoHandler, PoEntry
 
 
 @dataclass
@@ -68,34 +68,47 @@ class SmartAutoPaginator:
         paginated_pages: List[str] = []
 
         for para in raw_paragraphs:
-            words = para.replace("\r\n", "\n").split()
-            if not words:
+            raw_lines = para.replace("\r\n", "\n").split("\n")
+            if not any(line.strip() for line in raw_lines):
                 continue
 
             current_page_lines: List[str] = []
-            current_line_words: List[str] = []
-            current_line_px = 0
 
-            for word in words:
-                word_px = self.measure_word_width(word)
-                space_px = self.config.space_width_px if current_line_words else 0
-
-                if current_line_words and (current_line_px + space_px + word_px > self.config.max_width_px):
-                    # Line full -> advance to next line
-                    current_page_lines.append(" ".join(current_line_words))
-                    current_line_words = [word]
-                    current_line_px = word_px
-
-                    # Check if page is full
+            for line in raw_lines:
+                words = line.split()
+                if not words:
+                    current_page_lines.append("")
                     if len(current_page_lines) >= self.config.max_lines_per_page:
                         paginated_pages.append(self.config.line_break_tag.join(current_page_lines))
                         current_page_lines = []
-                else:
-                    current_line_words.append(word)
-                    current_line_px += space_px + word_px
+                    continue
 
-            if current_line_words:
-                current_page_lines.append(" ".join(current_line_words))
+                current_line_words: List[str] = []
+                current_line_px = 0
+
+                for word in words:
+                    word_px = self.measure_word_width(word)
+                    space_px = self.config.space_width_px if current_line_words else 0
+
+                    if current_line_words and (current_line_px + space_px + word_px > self.config.max_width_px):
+                        # Line full -> advance to next line
+                        current_page_lines.append(" ".join(current_line_words))
+                        current_line_words = [word]
+                        current_line_px = word_px
+
+                        # Check if page is full
+                        if len(current_page_lines) >= self.config.max_lines_per_page:
+                            paginated_pages.append(self.config.line_break_tag.join(current_page_lines))
+                            current_page_lines = []
+                    else:
+                        current_line_words.append(word)
+                        current_line_px += space_px + word_px
+
+                if current_line_words:
+                    current_page_lines.append(" ".join(current_line_words))
+                    if len(current_page_lines) >= self.config.max_lines_per_page:
+                        paginated_pages.append(self.config.line_break_tag.join(current_page_lines))
+                        current_page_lines = []
 
             if current_page_lines:
                 paginated_pages.append(self.config.line_break_tag.join(current_page_lines))

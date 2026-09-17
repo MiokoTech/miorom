@@ -1,18 +1,16 @@
-from miorom.result import MioRomResult
-import re
-from miorom.errors import ParseError
 import shlex
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+from miorom.errors import ParseError
+from miorom.result import MioRomResult
 from miorom.script.opcode import (
-    OpcodeArg,
-    OpcodeDef,
+    ArgString,
     ArgU8,
     ArgU16,
     ArgU32,
-    ArgString,
-    ArgBytes,
+    OpcodeArg,
+    OpcodeDef,
 )
 
 

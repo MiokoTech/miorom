@@ -1,17 +1,16 @@
 """
-from miorom.errors import ParseError
 miorom.link.heap
 ~~~~~~~~~~~~~~~~
 Dynamic In-ROM Runtime Heap Allocator (miorom_heap).
 Provides slab and buddy memory management primitives and C/assembly runtime payload
 generators to inject dynamic `malloc` and `free` routines into ROMs (DOL/ELF/GBA/NDS).
 """
+from dataclasses import dataclass
+from typing import List
 
+from miorom.core import schema
+from miorom.errors import ParseError
 from miorom.result import MioRomResult
-import struct
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
-
 
 HEAP_MAGIC = 0x4D494F48  # 'MIOH' (MioHeap)
 BLOCK_HEADER_SIZE = 16   # 16-byte header aligned
@@ -75,7 +74,7 @@ class MioRomHeap:
         # [0x08:0x0C] Flags (1 = allocated, 0 = free)
         # [0x0C:0x10] Next Block Offset (U32)
         flags = 1 if block.is_allocated else 0
-        struct.pack_into(
+        schema.pack_into(
             ">IIII",
             self.buffer,
             block.offset,
@@ -206,7 +205,7 @@ class MioRomHeap:
     def check_integrity(self) -> bool:
         """Verify headers and integrity across the entire heap buffer."""
         for b in self.blocks:
-            magic, sz, flags, nxt = struct.unpack_from(">IIII", self.buffer, b.offset)
+            magic, sz, flags, nxt = schema.unpack_from(">IIII", self.buffer, b.offset)
             if magic != HEAP_MAGIC:
                 return False
             if sz != b.size:
@@ -269,7 +268,7 @@ void miorom_free(void* ptr) {{
     MioBlockHeader* header = (MioBlockHeader*)((uint8_t*)ptr - sizeof(MioBlockHeader));
     if (header->magic != MIO_MAGIC) return;
     header->is_allocated = 0;
-    
+
     // Coalesce adjacent free blocks
     MioBlockHeader* curr = g_root_block;
     while (curr && curr->next) {{

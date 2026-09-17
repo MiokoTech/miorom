@@ -8,26 +8,24 @@ Descriptors (PVD), Type L & M Path Tables, hierarchical Directory Records,
 and sector-aligned file extents.
 """
 
-import os
-import struct
 import datetime
-from typing import Dict, List, Optional, Tuple, Union
+import os
+from typing import Dict, List, Optional
 
-from miorom.errors import ParseError
+from miorom.core import schema
 from miorom.result import MioRomResult
-
 
 SECTOR_SIZE = 2048
 
 
 def pack_both_u16(val: int) -> bytes:
     """Packs 16-bit unsigned integer as both little-endian and big-endian (4 bytes)."""
-    return struct.pack("<HH", val, val)
+    return schema.pack("<H", val) + schema.pack(">H", val)
 
 
 def pack_both_u32(val: int) -> bytes:
     """Packs 32-bit unsigned integer as both little-endian and big-endian (8 bytes)."""
-    return struct.pack("<II", val, val)
+    return schema.pack("<I", val) + schema.pack(">I", val)
 
 
 def format_iso_datetime(dt: Optional[datetime.datetime] = None) -> bytes:
@@ -42,7 +40,7 @@ def format_iso_datetime(dt: Optional[datetime.datetime] = None) -> bytes:
     second = dt.second
     # Timezone offset in 15-minute intervals (-48 to +52)
     tz_offset = 0
-    return struct.pack("BBBBBBb", year, month, day, hour, minute, second, tz_offset)
+    return schema.pack("BBBBBBb", year, month, day, hour, minute, second, tz_offset)
 
 
 def format_pvd_datetime(dt: Optional[datetime.datetime] = None) -> bytes:
@@ -260,11 +258,11 @@ class Iso9660Builder(MioRomResult):
             rec.append(len_di)
             rec.append(0)  # Extended attribute length
             if is_type_m:
-                rec.extend(struct.pack(">I", d.lba))
-                rec.extend(struct.pack(">H", parent_no))
+                rec.extend(schema.pack(">I", d.lba))
+                rec.extend(schema.pack(">H", parent_no))
             else:
-                rec.extend(struct.pack("<I", d.lba))
-                rec.extend(struct.pack("<H", parent_no))
+                rec.extend(schema.pack("<I", d.lba))
+                rec.extend(schema.pack("<H", parent_no))
             rec.extend(dir_id)
             if len_di % 2 != 0:
                 rec.append(0)  # Pad byte
@@ -360,13 +358,13 @@ class Iso9660Builder(MioRomResult):
         # Path Table Size (dual-endian u32)
         pvd[132:140] = pack_both_u32(path_table_size)
         # Location of Type-L Path Table (little-endian u32)
-        struct.pack_into("<I", pvd, 140, l_path_lba)
+        schema.pack_into("<I", pvd, 140, l_path_lba)
         # Location of Optional Type-L Path Table
-        struct.pack_into("<I", pvd, 144, 0)
+        schema.pack_into("<I", pvd, 144, 0)
         # Location of Type-M Path Table (big-endian u32)
-        struct.pack_into(">I", pvd, 148, m_path_lba)
+        schema.pack_into(">I", pvd, 148, m_path_lba)
         # Location of Optional Type-M Path Table
-        struct.pack_into(">I", pvd, 152, 0)
+        schema.pack_into(">I", pvd, 152, 0)
 
         # Root Directory Record (34 bytes)
         root_rec = self._build_directory_record(self.root, is_self=True)
@@ -428,3 +426,7 @@ class Iso9660Builder(MioRomResult):
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
         with open(output_path, "wb") as fp:
             fp.write(iso_bytes)
+
+
+# Convenience alias
+ISOBuilder = Iso9660Builder

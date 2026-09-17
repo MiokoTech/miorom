@@ -1,10 +1,9 @@
 import os
 import struct
 import tempfile
-import pytest
 
 from miorom.diff.mapper import BinaryDiffMapper
-from miorom.diff.porter import CrossRegionPorter, PortReport
+from miorom.diff.porter import CrossRegionPorter
 from miorom.formats.csv_handler import CsvHandler, TranslationRow
 
 
@@ -53,38 +52,81 @@ def test_port_csv_by_index():
 
 
 def test_port_csv_by_offset_correlation():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        src_csv = os.path.join(tmpdir, "src.csv")
-        tgt_csv = os.path.join(tmpdir, "tgt.csv")
+    # Create synthetic binaries where binary B is shifted by +0x200 bytes
+    # 64-byte shared anchor block
+    anchor = b"ANCHOR_SIGNATURE_SHARED_BETWEEN_BOTH_REGIONAL_BINARIES_12345678"
+    bin_a = bytearray(0x400)
+    bin_b = bytearray(0x600)
 
-        # Create synthetic binaries where binary B is shifted by +0x200 bytes
-        # 64-byte shared anchor block
-        anchor = b"ANCHOR_SIGNATURE_SHARED_BETWEEN_BOTH_REGIONAL_BINARIES_12345678"
-        bin_a = bytearray(0x400)
-        bin_b = bytearray(0x600)
+    bin_a[0x100:0x140] = anchor
+    bin_b[0x300:0x340] = anchor  # Shifted by +0x200
 
-        bin_a[0x100:0x140] = anchor
-        bin_b[0x300:0x340] = anchor  # Shifted by +0x200
+    mapper = BinaryDiffMapper(bytes(bin_a), bytes(bin_b))
+    mapper.find_matching_blocks(chunk_size=32)
+    assert mapper.correlate_offset(0x100) == 0x300
 
-        mapper = BinaryDiffMapper(bytes(bin_a), bytes(bin_b))
-        mapper.find_matching_blocks(chunk_size=32)
-        assert mapper.correlate_offset(0x100) == 0x300
+    # Source CSV (offset 0x100)
+    src_rows = [
+        TranslationRow(index=10, offset=0x100, original="OrigA", translation="TransA", context="A"),
+    ]
+    # Target CSV (offset 0x300)
+    tgt_rows = [
+        TranslationRow(index=99, offset=0x300, original="OrigB", translation="", context="B"),
+    ]
 
-        # Source CSV (offset 0x100)
-        src_rows = [
-            TranslationRow(index=10, offset=0x100, original="OrigA", translation="TransA", context="A"),
-        ]
-        # Target CSV (offset 0x300)
-        tgt_rows = [
-            TranslationRow(index=99, offset=0x300, original="OrigB", translation="", context="B"),
-        ]
+    porter = CrossRegionPorter(diff_mapper=mapper)
+    ported, report = porter.port_csv(src_rows, tgt_rows, strategy="offset", tolerance_bytes=16)
 
-        porter = CrossRegionPorter(diff_mapper=mapper)
-        ported, report = porter.port_csv(src_rows, tgt_rows, strategy="offset", tolerance_bytes=16)
+    assert report.migrated_strings == 1
+    assert ported[0].index == 99
+    assert ported[0].translation == "TransA"
 
-        assert report.migrated_strings == 1
-        assert ported[0].index == 99
-        assert ported[0].translation == "TransA"
+
+def test_port_csv_by_fuzzy_text_similarity():
+    src_rows = [
+        TranslationRow(index=10, offset=0x100, original="Hello adventurer!", translation="Halo petualang!", context="SRC"),
+    ]
+    tgt_rows = [
+        TranslationRow(index=99, offset=0x300, original="Hello, adventurer!", translation="", context="TGT"),
+    ]
+
+    porter = CrossRegionPorter()
+    ported, report = porter.port_csv(
+        src_rows,
+        tgt_rows,
+        strategy="fuzzy",
+        similarity_threshold=0.8,
+    )
+
+    assert report.migrated_strings == 1
+    assert report.unmatched_strings == 0
+    assert ported[0].index == 99
+    assert ported[0].offset == 0x300
+    assert ported[0].original == "Hello, adventurer!"
+    assert ported[0].translation == "Halo petualang!"
+
+
+def test_port_csv_fuzzy_unmatched_falls_back_to_target_original():
+    src_rows = [
+        TranslationRow(index=10, offset=0x100, original="Open the door", translation="Buka pintu"),
+    ]
+    tgt_rows = [
+        TranslationRow(index=99, offset=0x300, original="Save complete", translation=""),
+    ]
+
+    porter = CrossRegionPorter()
+    ported, report = porter.port_csv(
+        src_rows,
+        tgt_rows,
+        strategy="fuzzy",
+        similarity_threshold=0.95,
+        fallback_to_original=True,
+    )
+
+    assert report.migrated_strings == 0
+    assert report.unmatched_strings == 1
+    assert ported[0].translation == "Save complete"
+    assert report.warnings
 
 
 def test_port_csv_unmatched_fallback():

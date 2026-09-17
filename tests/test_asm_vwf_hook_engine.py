@@ -90,8 +90,8 @@ def test_thumb_vwf_deployment(sample_width_table):
     orig_instr = struct.pack("<H", 0x3108)
     rom[hook_rom_offset : hook_rom_offset + 2] = orig_instr
 
-    # Place a cave at 0x1000
-    cave_rom_offset = 0x1000
+    # Place a cave at 0x0700 (within 2048-byte reach of 16-bit Thumb branch)
+    cave_rom_offset = 0x0700
     rom[cave_rom_offset : cave_rom_offset + 256] = b"\x00" * 256
 
     config = VWFHookConfig(
@@ -248,3 +248,60 @@ def test_simulate_mode_preserves_buffer(sample_width_table):
 
     assert report.verified is True
     assert bytes(rom) == rom_before  # No modifications applied
+
+
+def test_thumb_routine_literal_pool_bypass():
+    """Verify Thumb width lookup routine branches over the literal pool and loads correctly."""
+    table_vaddr = 0x08002000
+    code = VWFHookEngine.synthesize_width_routine(
+        arch="thumb",
+        table_vaddr=table_vaddr,
+        fallback_width=8,
+    )
+    assert len(code) == 24  # 0x18 bytes
+    # Instruction at 0x06: LDR r2, [PC, #12] -> 0x4A03
+    ldr_halfword = struct.unpack_from("<H", code, 0x06)[0]
+    assert ldr_halfword == 0x4A03
+    # Branch at 0x0C over fallback & pool: B 0x18 -> 0xE004
+    b1_halfword = struct.unpack_from("<H", code, 0x0C)[0]
+    assert b1_halfword == 0xE004
+    # Branch at 0x10 over pool: B 0x18 -> 0xE002
+    b2_halfword = struct.unpack_from("<H", code, 0x10)[0]
+    assert b2_halfword == 0xE002
+    # Literal at 0x14
+    lit = struct.unpack_from("<I", code, 0x14)[0]
+    assert lit == table_vaddr
+
+
+def test_arm_inline_trampoline_no_bx_lr():
+    """Verify ARM width lookup inside inline trampoline does not return prematurely via BX lr."""
+    table_vaddr = 0x02100000
+    code = VWFHookEngine.synthesize_width_routine(
+        arch="arm",
+        table_vaddr=table_vaddr,
+        fallback_width=10,
+    )
+    assert len(code) == 40
+    words = [struct.unpack_from("<I", code, i * 4)[0] for i in range(10)]
+    # BX lr (0xE12FFF1E) must NOT be present in inline routine
+    assert 0xE12FFF1E not in words
+    # Must contain branch over pool (0xEA000002 and 0xEA000000)
+    assert words[6] == 0xEA000002
+    assert words[8] == 0xEA000000
+    # Literal at offset 36 (0x24)
+    assert words[9] == table_vaddr
+
+
+def test_mips_inline_trampoline_no_jr_ra():
+    """Verify MIPS width lookup inside inline trampoline omits standalone return (jr $ra; nop)."""
+    table_vaddr = 0x80050000
+    code = VWFHookEngine.synthesize_width_routine(
+        arch="mips",
+        table_vaddr=table_vaddr,
+        endian="<",
+    )
+    # Inline routine only contains 4 instructions (lui, addu, lb, addu) = 16 bytes
+    assert len(code) == 16
+    words = [struct.unpack_from("<I", code, i * 4)[0] for i in range(4)]
+    # jr $ra (0x03E00008) must NOT be present
+    assert 0x03E00008 not in words

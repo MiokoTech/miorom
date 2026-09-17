@@ -1,5 +1,4 @@
 """
-from miorom.errors import ParseError
 miorom.scanner.pattern
 ~~~~~~~~~~~~~~~~~~~~~~
 Universal Array-of-Bytes (AOB) pattern scanner and signature engine.
@@ -7,12 +6,14 @@ Supports IDA Pro, Cheat Engine, and Ghidra signature patterns with wildcards ('?
 Provides fast multi-byte search, sliding-window chunked file scanning, and
 wildcard-preserving binary patching.
 """
-
-from miorom.result import MioRomResult
 import os
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Iterator, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
+
+from miorom.errors import ParseError
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -183,7 +184,7 @@ class AOBPatternScanner:
         compiled = cls.compile(pattern)
         pat_len = compiled.size
         overlap = pat_len - 1
-        last_offset: Optional[int] = None
+        max_yielded_offset = -1
 
         with open(filepath, "rb") as file_obj:
             carry = b""
@@ -205,8 +206,8 @@ class AOBPatternScanner:
 
                     match_in_buf = match.start()
                     abs_offset = search_base_offset + match_in_buf
-                    if last_offset is None or last_offset != abs_offset:
-                        last_offset = abs_offset
+                    if abs_offset > max_yielded_offset:
+                        max_yielded_offset = abs_offset
                         yield PatternMatch(
                             offset=abs_offset,
                             address=base_address + abs_offset,

@@ -9,10 +9,9 @@ padding, strings), and synthesizes C struct and JSON definitions.
 
 from dataclasses import dataclass, field
 from enum import Enum
-import math
-import struct
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+from miorom.core import schema
 from miorom.result import MioRomResult
 
 
@@ -47,7 +46,7 @@ class StrideCandidate(MioRomResult):
 
 @dataclass
 class FieldProfile(MioRomResult):
-    """Profile of a single column/field within a repetitive struct."""
+    """Profile of a single column/field within a repetitive schema."""
     offset: int
     size: int
     field_type: FieldType
@@ -80,7 +79,7 @@ class StructProfile(MioRomResult):
 
     def to_c_struct(self, struct_name: str = "DissectedRecord") -> str:
         """Synthesizes a valid C struct declaration."""
-        lines = [f"typedef struct {{"]
+        lines = ["typedef struct {"]
         type_c_map = {
             FieldType.PADDING: "uint8_t",
             FieldType.UINT8: "uint8_t",
@@ -249,7 +248,7 @@ class StructProfiler:
     def profile_struct(
         cls,
         data: bytes,
-        stride: int,
+        stride: Union[int, StrideCandidate, List[StrideCandidate]],
         record_count: Optional[int] = None,
         pointer_range: Optional[Tuple[int, int]] = None,
         endian: str = "<",
@@ -257,22 +256,47 @@ class StructProfiler:
         """
         Profiles each field inside the detected stride across all records.
         """
-        available_records = len(data) // stride
+        if isinstance(stride, list):
+            if not stride:
+                raise ValueError("stride candidate list is empty; unable to resolve stride.")
+            first = stride[0]
+            if isinstance(first, StrideCandidate):
+                resolved_stride = first.stride
+            elif isinstance(first, int):
+                resolved_stride = first
+            else:
+                raise TypeError(
+                    f"Expected StrideCandidate or int in stride list, got {type(first).__name__}"
+                )
+        elif isinstance(stride, StrideCandidate):
+            resolved_stride = stride.stride
+        elif isinstance(stride, int):
+            resolved_stride = stride
+        else:
+            raise TypeError(
+                f"stride must be int, StrideCandidate, or List[StrideCandidate], got {type(stride).__name__}"
+            )
+
+        if resolved_stride <= 0:
+            raise ValueError(f"stride must be a positive integer, got {resolved_stride}")
+
+        available_records = len(data) // resolved_stride
         records = min(available_records, record_count) if record_count else available_records
         if records <= 0:
-            return StructProfile(stride=stride, record_count=0, total_bytes=0, fields=[])
+            return StructProfile(stride=resolved_stride, record_count=0, total_bytes=0, fields=[])
 
         fields: List[FieldProfile] = []
         col = 0
 
-        while col < stride:
-            # Try 4-byte analysis first if col + 4 <= stride
-            if col + 4 <= stride:
+        while col < resolved_stride:
+            # Try 4-byte analysis first if col + 4 <= resolved_stride and naturally aligned
+            can_try_4 = (col + 4 <= resolved_stride) and (resolved_stride % 4 != 0 or col % 4 == 0)
+            if can_try_4:
                 u32_vals = []
                 all_zeros = True
                 for r in range(records):
-                    off = r * stride + col
-                    val = struct.unpack_from(f"{endian}I", data, off)[0]
+                    off = r * resolved_stride + col
+                    val = schema.unpack_from(f"{endian}I", data, off)[0]
                     u32_vals.append(val)
                     if val != 0:
                         all_zeros = False
@@ -310,10 +334,33 @@ class StructProfiler:
                         col += 4
                         continue
 
-                # Check if values are small integers fitting into 16-bit or 8-bit
-                max_val = max(u32_vals)
-                if max_val > 0xFFFF:
-                    # Genuine 32-bit field
+                # Determine if 4 bytes represent a single 32-bit field or two 16-bit fields
+                h0 = [schema.unpack_from(f"{endian}H", data, r * resolved_stride + col)[0] for r in range(records)]
+                h1 = [schema.unpack_from(f"{endian}H", data, r * resolved_stride + col + 2)[0] for r in range(records)]
+                low_half = h0 if endian == "<" else h1
+                high_half = h1 if endian == "<" else h0
+
+                both_nonzero = any(v != 0 for v in low_half) and any(v != 0 for v in high_half)
+                is_split_16 = False
+                if both_nonzero and records > 1:
+                    if len(set(high_half)) > 1 and len(set(low_half)) == 1:
+                        # High word varies while low word is constant -> two separate 16-bit fields
+                        is_split_16 = True
+                    elif len(set(high_half)) > 1 and len(set(low_half)) > 1:
+                        # Both halves vary independently
+                        low_range = max(low_half) - min(low_half)
+                        if low_range < 32768:
+                            # Low half doesn't wrap, so high half variation is independent
+                            is_split_16 = True
+                        else:
+                            indep = any(
+                                high_half[r] != high_half[r - 1] and abs(low_half[r] - low_half[r - 1]) < 32768
+                                for r in range(1, records)
+                            )
+                            if indep:
+                                is_split_16 = True
+
+                if not is_split_16:
                     is_const = len(set(u32_vals)) == 1
                     fields.append(
                         FieldProfile(
@@ -332,8 +379,8 @@ class StructProfiler:
                     continue
 
             # Try 2-byte analysis
-            if col + 2 <= stride:
-                u16_vals = [struct.unpack_from(f"{endian}H", data, r * stride + col)[0] for r in range(records)]
+            if col + 2 <= resolved_stride:
+                u16_vals = [schema.unpack_from(f"{endian}H", data, r * resolved_stride + col)[0] for r in range(records)]
                 max_u16 = max(u16_vals)
                 if max_u16 > 0xFF or (col % 2 == 0 and not all(v == 0 for v in u16_vals)):
                     is_const = len(set(u16_vals)) == 1
@@ -354,7 +401,7 @@ class StructProfiler:
                     continue
 
             # Fall back to 1-byte field
-            u8_vals = [data[r * stride + col] for r in range(records)]
+            u8_vals = [data[r * resolved_stride + col] for r in range(records)]
             is_const = len(set(u8_vals)) == 1
             f_type = FieldType.PADDING if (is_const and u8_vals[0] == 0) else FieldType.UINT8
             fields.append(
@@ -373,8 +420,8 @@ class StructProfiler:
             col += 1
 
         return StructProfile(
-            stride=stride,
+            stride=resolved_stride,
             record_count=records,
-            total_bytes=records * stride,
+            total_bytes=records * resolved_stride,
             fields=fields,
         )

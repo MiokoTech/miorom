@@ -9,13 +9,11 @@ Supports:
 
 from __future__ import annotations
 
-import io
-import math
 import os
-import struct
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
+from miorom.core import schema
 from miorom.errors import ParseError
 from miorom.result import MioRomResult
 
@@ -74,7 +72,7 @@ class SSEQEvent(MioRomResult):
     value: int = 0
 
 
-def _inject_loop_start(events: List["SSEQEvent"], loop_target_offset: int, channel: int) -> None:
+def _inject_loop_start(events: List[SSEQEvent], loop_target_offset: int, channel: int) -> None:
     """Retroactively inserts a loop_start marker into an events list.
 
     The loop target byte offset corresponds to the start of a bytecode loop body.
@@ -137,7 +135,7 @@ class SSEQTrack:
                 bpm = max(1, ev.value)
                 us_per_beat = int(60_000_000 / bpm)
                 trk_events.extend(bytes([0xFF, 0x51, 0x03]))
-                trk_events.extend(struct.pack(">I", us_per_beat)[1:])  # 3-byte tempo
+                trk_events.extend(schema.pack(">I", us_per_beat)[1:])  # 3-byte tempo
                 last_event_tick = current_tick
 
             elif ev.event_type == "program_change":
@@ -173,12 +171,13 @@ class SSEQTrack:
                 # RPN 0 pitch bend sensitivity
                 trk_events.extend(write_vlq(d_time))
                 semitones = max(0, min(127, ev.value))
-                trk_events.extend(bytes([
-                    0xB0 | ch, 101, 0,       # RPN MSB = 0
-                    0xB0 | ch, 100, 0,       # RPN LSB = 0 (RPN #0 = pitch bend range)
-                    0xB0 | ch, 6, semitones, # Data Entry MSB = semitones
-                    0xB0 | ch, 38, 0,        # Data Entry LSB = 0 cents
-                ]))
+                trk_events.extend(bytes([0xB0 | ch, 101, 0]))   # RPN MSB = 0
+                trk_events.extend(write_vlq(0))
+                trk_events.extend(bytes([0xB0 | ch, 100, 0]))   # RPN LSB = 0 (RPN #0 = pitch bend range)
+                trk_events.extend(write_vlq(0))
+                trk_events.extend(bytes([0xB0 | ch, 6, semitones]))  # Data Entry MSB = semitones
+                trk_events.extend(write_vlq(0))
+                trk_events.extend(bytes([0xB0 | ch, 38, 0]))    # Data Entry LSB = 0 cents
                 last_event_tick = current_tick
 
             elif ev.event_type == "attack":
@@ -232,7 +231,7 @@ class SSEQTrack:
         trk_events.extend(bytes([0xFF, 0x2F, 0x00]))
 
         header = bytearray(b"MTrk")
-        header.extend(struct.pack(">I", len(trk_events)))
+        header.extend(schema.pack(">I", len(trk_events)))
         return bytes(header + trk_events)
 
 
@@ -266,13 +265,13 @@ class SSEQSequence:
         return []
 
     @classmethod
-    def from_file(cls, path: str) -> "SSEQSequence":
+    def from_file(cls, path: str) -> SSEQSequence:
         """Disassembles an SSEQ binary from disk into an SSEQSequence object."""
         with open(path, "rb") as f:
             return cls.from_bytes(f.read())
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "SSEQSequence":
+    def from_bytes(cls, data: bytes) -> SSEQSequence:
         """Disassembles SSEQ binary into an SSEQSequence object with full multi-track support."""
         if len(data) < 32 or data[:4] != cls.MAGIC:
             raise ParseError("Invalid SSEQ binary: missing 'SSEQ' magic.")
@@ -281,14 +280,15 @@ class SSEQSequence:
         if data_magic != b"DATA":
             raise ParseError("Invalid SSEQ binary: missing 'DATA' block.")
 
-        base_offset = struct.unpack_from("<I", data, 24)[0]
+        base_offset = schema.unpack_from("<I", data, 24)[0]
+        # If absolute file offset (>= 16, typically 0x1C): use directly.
+        # If relative to DATA block start (< 16, typically 0x0C): add DATA block start (16).
         seq_start = base_offset if base_offset >= 16 else (16 + base_offset)
         payload = data[seq_start:]
         payload_len = len(payload)
 
         # Check for multi-track allocation (0xFE opcode)
         if len(payload) > 3 and payload[0] == 0xFE:
-            track_mask = struct.unpack_from("<H", payload, 1)[0]
             pos = 3
             track_ptrs: Dict[int, int] = {}
 
@@ -406,7 +406,7 @@ class SSEQSequence:
 
             elif cmd == 0xC4:
                 # Pitch bend (signed int8)
-                bend = struct.unpack_from("<b", payload, pos)[0] if pos < payload_len else 0
+                bend = schema.unpack_from("<b", payload, pos)[0] if pos < payload_len else 0
                 pos += 1
                 events.append(_make_event(event_offset, delta_ticks=cur_delta, event_type="pitch_bend", channel=channel, value=bend))
                 cur_delta = 0
@@ -414,7 +414,7 @@ class SSEQSequence:
             elif cmd == 0xE0:
                 # Tempo
                 if pos + 2 <= payload_len:
-                    bpm = struct.unpack_from(">H", payload, pos)[0]
+                    bpm = schema.unpack_from("<H", payload, pos)[0]
                     pos += 2
                 else:
                     bpm = 120
@@ -499,7 +499,7 @@ class SSEQSequence:
         fmt = 1 if ntracks > 1 else 0
 
         header = bytearray(b"MThd")
-        header.extend(struct.pack(">IHHH", 6, fmt, ntracks, div))
+        header.extend(schema.pack(">IHHH", 6, fmt, ntracks, div))
 
         track_chunks = bytearray()
         if self.tracks:
@@ -514,38 +514,42 @@ class SSEQSequence:
 
     def save_midi(self, output_path: str) -> None:
         """Transpiles SSEQ to MIDI and writes to file on disk."""
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        parent = os.path.dirname(output_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         with open(output_path, "wb") as f:
             f.write(self.to_midi())
 
     def to_file(self, output_path: str) -> None:
         """Serializes SSEQ to binary and writes to file on disk."""
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        parent = os.path.dirname(output_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         with open(output_path, "wb") as f:
             f.write(self.to_bytes())
 
     @classmethod
-    def from_midi_file(cls, path: str) -> "SSEQSequence":
+    def from_midi_file(cls, path: str) -> SSEQSequence:
         """Parses a Standard MIDI (.mid) file from disk and compiles it into an SSEQSequence."""
         with open(path, "rb") as f:
             return cls.from_midi(f.read())
 
     @classmethod
-    def from_midi(cls, midi_bytes: bytes) -> "SSEQSequence":
+    def from_midi(cls, midi_bytes: bytes) -> SSEQSequence:
         """
         Parses a Standard MIDI (Format 0 or 1) binary and compiles it into an SSEQSequence.
         """
         if len(midi_bytes) < 14 or midi_bytes[:4] != b"MThd":
             raise ValueError("Invalid MIDI container: missing 'MThd' header.")
 
-        hdr_len, fmt, ntracks, division = struct.unpack_from(">IHHH", midi_bytes, 4)
+        hdr_len, fmt, ntracks, division = schema.unpack_from(">IHHH", midi_bytes, 4)
         pos = 8 + hdr_len
 
         tracks: List[SSEQTrack] = []
         for trk_idx in range(ntracks):
             if pos + 8 > len(midi_bytes):
                 break
-            trk_magic, trk_len = struct.unpack_from(">4sI", midi_bytes, pos)
+            trk_magic, trk_len = schema.unpack_from(">4sI", midi_bytes, pos)
             pos += 8
             trk_data = midi_bytes[pos : pos + trk_len]
             pos += trk_len
@@ -557,6 +561,8 @@ class SSEQSequence:
             t_pos = 0
             cur_delta = 0
             last_status = 0
+            rpn_msb_state: Optional[int] = None
+            rpn_lsb_state: Optional[int] = None
 
             while t_pos < len(trk_data):
                 delta, t_pos = read_vlq(trk_data, t_pos)
@@ -632,23 +638,15 @@ class SSEQSequence:
                         cur_delta = 0
                     elif ctrl == 6:
                         # CC6 Data Entry MSB for pitch bend range
-                        is_rpn0 = False
-                        recent = events[-4:] if len(events) >= 4 else events
-                        for rev_ev in reversed(recent):
-                            if getattr(rev_ev, "_rpn_msb", None) == 0 and getattr(rev_ev, "_rpn_lsb", None) == 0:
-                                is_rpn0 = True
-                                break
-                        if is_rpn0:
+                        if rpn_msb_state == 0 and rpn_lsb_state == 0:
                             events.append(SSEQEvent(delta_ticks=cur_delta, event_type="pitch_bend_range", channel=ch, value=val))
                             cur_delta = 0
                     elif ctrl in (100, 101):
-                        # RPN LSB/MSB — tag for pitch_bend_range detection on CC6
-                        dummy = SSEQEvent(delta_ticks=0, event_type="end", channel=ch)
+                        # RPN LSB/MSB — store as state for pitch_bend_range detection on CC6
                         if ctrl == 101:
-                            dummy._rpn_msb = val  # type: ignore[attr-defined]
+                            rpn_msb_state = val
                         else:
-                            dummy._rpn_lsb = val  # type: ignore[attr-defined]
-                        # Not emitted — just tracked as state; skip
+                            rpn_lsb_state = val
 
                 elif ev_type_high == 0xE0:
                     # Pitch Bend
@@ -709,13 +707,13 @@ class SSEQSequence:
             sub_tracks = tracks_to_compile[1:]
 
             # Track allocation bitmask (e.g. 1 << 0 | 1 << 1 ...)
-            alloc_mask = 1
+            alloc_mask = 0
             for trk in sub_tracks:
                 alloc_mask |= (1 << trk.track_id)
 
             preamble = bytearray()
             preamble.append(0xFE)
-            preamble.extend(struct.pack("<H", alloc_mask & 0xFFFF))
+            preamble.extend(schema.pack("<H", alloc_mask & 0xFFFF))
 
             # Placeholder for OPEN_TRACK commands
             # 0x93 <trk_num: uint8> <ptr: uint24>
@@ -742,20 +740,20 @@ class SSEQSequence:
             payload = preamble + open_commands + master_bytes + subtrack_bytes
 
         # Build DATA block
-        data_base_offset = 0x001C
+        data_base_offset = 0x001C  # File-absolute offset to sequence payload (16-byte header + 12-byte DATA header)
         data_block_len = 12 + len(payload)
         pad = (4 - (data_block_len % 4)) % 4
         data_block_len += pad
 
         data_block = bytearray()
         data_block.extend(b"DATA")
-        data_block.extend(struct.pack("<II", data_block_len, data_base_offset))
+        data_block.extend(schema.pack("<II", data_block_len, data_base_offset))
         data_block.extend(payload)
         data_block.extend(b"\x00" * pad)
 
         # Build SSEQ Header (16 bytes)
         total_file_len = 16 + len(data_block)
-        header = struct.pack(
+        header = schema.pack(
             "<4sHHIHH",
             self.MAGIC,
             0xFEFF,
@@ -771,6 +769,9 @@ class SSEQSequence:
     def _compile_track_events(events: List[SSEQEvent]) -> bytes:
         """Serializes list of events into SSEQ bytecode."""
         payload = bytearray()
+        loop_start_offset: Optional[int] = None
+        pending_loop_end_positions: List[int] = []  # positions of 0x94 jump instructions needing patching
+
         for ev in events:
             if ev.delta_ticks > 0:
                 payload.append(0x80)
@@ -794,10 +795,10 @@ class SSEQSequence:
                 payload.append(ev.value & 0x7F)
             elif ev.event_type == "pitch_bend":
                 payload.append(0xC4)
-                payload.extend(struct.pack("<b", max(-128, min(127, ev.value))))
+                payload.extend(schema.pack("<b", max(-128, min(127, ev.value))))
             elif ev.event_type == "tempo":
                 payload.append(0xE0)
-                payload.extend(struct.pack(">H", ev.value & 0xFFFF))
+                payload.extend(schema.pack("<H", ev.value & 0xFFFF))
             elif ev.event_type == "pitch_bend_range":
                 payload.append(0xC5)
                 payload.append(max(0, min(127, ev.value)))
@@ -813,13 +814,27 @@ class SSEQSequence:
             elif ev.event_type == "release":
                 payload.append(0xD3)
                 payload.append(ev.value & 0x7F)
-            elif ev.event_type in ("loop_start", "loop_end"):
-                # Informational loop marker
-                pass
+            elif ev.event_type == "loop_start":
+                # Record the current payload offset as the loop target
+                loop_start_offset = len(payload)
+            elif ev.event_type == "loop_end":
+                # Emit 0x94 (Jump) with 24-bit absolute offset placeholder
+                pending_loop_end_positions.append(len(payload))
+                payload.append(0x94)
+                payload.extend(b"\x00\x00\x00")  # placeholder, patched below
             elif ev.event_type == "end":
                 payload.append(0xFF)
+
+        # Patch all pending loop_end jump targets
+        if loop_start_offset is not None:
+            for jmp_pos in pending_loop_end_positions:
+                target = loop_start_offset
+                payload[jmp_pos + 1] = target & 0xFF
+                payload[jmp_pos + 2] = (target >> 8) & 0xFF
+                payload[jmp_pos + 3] = (target >> 16) & 0xFF
 
         if not payload or payload[-1] != 0xFF:
             payload.append(0xFF)
 
         return bytes(payload)
+

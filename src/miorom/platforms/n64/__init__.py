@@ -9,10 +9,10 @@ from miorom.platforms.n64.rom import (
     N64ByteOrder,
     N64Header,
     N64Rom,
-    detect_byte_order,
-    parse_byte_order,
     convert_endianness,
     convert_file_endianness,
+    detect_byte_order,
+    parse_byte_order,
     swap_from_big_endian,
     swap_to_big_endian,
 )

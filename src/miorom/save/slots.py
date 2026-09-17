@@ -1,6 +1,7 @@
-import struct
+from typing import Tuple
+
+from miorom.core import schema
 from miorom.errors import RelocationError
-from typing import Tuple, Optional
 
 
 class DualSlotSave:
@@ -33,8 +34,8 @@ class DualSlotSave:
         slot_b = data[slot_size : slot_size * 2]
 
         fmt = f"{endian}{'I' if counter_size == 4 else 'H'}"
-        cnt_a = struct.unpack_from(fmt, slot_a, counter_offset)[0]
-        cnt_b = struct.unpack_from(fmt, slot_b, counter_offset)[0]
+        cnt_a = schema.unpack_from(fmt, slot_a, counter_offset)[0]
+        cnt_b = schema.unpack_from(fmt, slot_b, counter_offset)[0]
 
         # Check for uninitialized / wiped memory (0xFFFFFFFF or 0)
         max_val = 0xFFFFFFFF if counter_size == 4 else 0xFFFF
@@ -83,7 +84,7 @@ class DualSlotSave:
         slot_buf = bytearray(new_slot_data[:slot_size].ljust(slot_size, b"\x00"))
         new_counter = (cur_counter + 1) & (0xFFFFFFFF if counter_size == 4 else 0xFFFF)
         fmt = f"{endian}{'I' if counter_size == 4 else 'H'}"
-        struct.pack_into(fmt, slot_buf, counter_offset, new_counter)
+        schema.pack_into(fmt, slot_buf, counter_offset, new_counter)
 
         data[target_offset : target_offset + slot_size] = slot_buf
         return next_idx

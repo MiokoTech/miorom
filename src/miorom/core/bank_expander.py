@@ -1,10 +1,11 @@
-from miorom.result import MioRomResult
-import struct
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
-
+from miorom.core import schema
 from miorom.errors import ParseError, RelocationError
+from miorom.result import MioRomResult
+
+
 class RomExpander:
     """
     ROM Capacity Expander for Retro Systems.
@@ -28,7 +29,7 @@ class RomExpander:
         # Determine LoROM vs HiROM header offset
         header_off = 0x7FC0
         if len(rom) >= 0xFFE0:
-            csum_hi, comp_hi = struct.unpack_from("<HH", rom, 0xFFDC)
+            csum_hi, comp_hi = schema.unpack_from("<HH", rom, 0xFFDC)
             if (csum_hi + comp_hi) == 0xFFFF and csum_hi > 0:
                 header_off = 0xFFC0
 
@@ -43,13 +44,13 @@ class RomExpander:
         # Recalculate 16-bit checksum
         total_sum = sum(rom)
         # Exclude old checksum and complement bytes
-        old_csum = struct.unpack_from("<H", rom, header_off + 0x1E)[0]
-        old_comp = struct.unpack_from("<H", rom, header_off + 0x1C)[0]
+        old_csum = schema.unpack_from("<H", rom, header_off + 0x1E)[0]
+        old_comp = schema.unpack_from("<H", rom, header_off + 0x1C)[0]
         total_sum -= (old_csum & 0xFF) + (old_csum >> 8) + (old_comp & 0xFF) + (old_comp >> 8)
 
         new_csum = total_sum & 0xFFFF
         new_comp = (~new_csum) & 0xFFFF
-        struct.pack_into("<HH", rom, header_off + 0x1C, new_comp, new_csum)
+        schema.pack_into("<HH", rom, header_off + 0x1C, new_comp, new_csum)
 
         return rom
 
@@ -83,7 +84,7 @@ class RomExpander:
         rom[0x014E] = 0
         rom[0x014F] = 0
         g_csum = sum(rom) & 0xFFFF
-        struct.pack_into(">H", rom, 0x014E, g_csum)
+        schema.pack_into(">H", rom, 0x014E, g_csum)
 
         return rom
 
@@ -175,20 +176,20 @@ class FarPointerRelocator:
         if self.pointer_format == "snes_24":
             # 3 bytes Little-Endian: (ram_addr & 0xFFFF) | (bank << 16)
             low_word = ram_addr & 0xFFFF
-            return struct.pack("<HB", low_word, bank & 0xFF)
+            return schema.pack("<HB", low_word, bank & 0xFF)
 
         elif self.pointer_format == "linear_32":
             # 4 bytes Little-Endian
             linear_addr = ram_addr + (bank * self.bank_size)
-            return struct.pack("<I", linear_addr)
+            return schema.pack("<I", linear_addr)
 
         elif self.pointer_format == "offset_16":
             # 2 bytes Little-Endian
-            return struct.pack("<H", ram_addr & 0xFFFF)
+            return schema.pack("<H", ram_addr & 0xFFFF)
 
         elif self.pointer_format == "gb_bank":
             # 1 byte bank, 2 bytes offset LE
-            return struct.pack("<BH", bank & 0xFF, ram_addr & 0xFFFF)
+            return schema.pack("<BH", bank & 0xFF, ram_addr & 0xFFFF)
 
         else:
             raise RelocationError(f"Unknown pointer format: '{self.pointer_format}'")

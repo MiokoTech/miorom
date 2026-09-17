@@ -20,8 +20,8 @@ except ImportError:
     HAS_PIL = False
 
 from miorom.graphics.image_bridge import ImageBridge
-from miorom.platforms.nds.ncer import NCERFile
 from miorom.platforms.nds.nanr import NANRFile
+from miorom.platforms.nds.ncer import NCERFile
 from miorom.platforms.nds.ncgr import NCGRFile
 from miorom.platforms.nds.nclr import NCLRFile
 from miorom.platforms.nds.nscr import NSCRFile
@@ -49,12 +49,14 @@ class NitroAssetCatalog:
         if not os.path.isdir(self.root_dir):
             return
 
-        def _index_file(fpath: str) -> None:
-            base = os.path.basename(fpath)
-            stem, ext = os.path.splitext(base)
-            low_stem = stem.lower()
-            low_ext = ext.lower()
+        supported_exts = {".ncgr", ".nclr", ".nscr", ".ncer", ".nanr"}
 
+        def _index_file(fpath: str, fname: str) -> None:
+            stem, ext = os.path.splitext(fname)
+            low_ext = ext.lower()
+            if low_ext not in supported_exts:
+                return
+            low_stem = stem.lower()
             if low_ext == ".ncgr":
                 self.ncgr_files[low_stem] = fpath
             elif low_ext == ".nclr":
@@ -69,12 +71,12 @@ class NitroAssetCatalog:
         if recursive:
             for root, _, files in os.walk(self.root_dir):
                 for fname in files:
-                    _index_file(os.path.join(root, fname))
+                    _index_file(os.path.join(root, fname), fname)
         else:
-            for fname in os.listdir(self.root_dir):
-                fpath = os.path.join(self.root_dir, fname)
-                if os.path.isfile(fpath):
-                    _index_file(fpath)
+            with os.scandir(self.root_dir) as it:
+                for entry in it:
+                    if entry.is_file():
+                        _index_file(entry.path, entry.name)
 
     def resolve(
         self,
@@ -152,10 +154,20 @@ class NitroScreen:
             elif any(k in self.name.lower() for k in ["talk_win", "waku", "obj_"]) or self.name.lower().endswith(("_2", "_3", "_4", "02", "03", "04")):
                 is_trans_zero = True
 
-        w_tiles = nscr.width_tiles
-        h_tiles = nscr.actual_height_tiles
-        width_px = nscr.width_pixels
-        height_px = nscr.actual_height_pixels
+        if nscr.width_pixels > 256 or nscr.height_pixels > 256:
+            if ncgr.width_tiles not in (0xFFFF, 0) and ncgr.height_tiles not in (0xFFFF, 0):
+                w_tiles = ncgr.width_tiles
+                h_tiles = ncgr.height_tiles
+            else:
+                w_tiles = 32
+                h_tiles = 32
+            width_px = w_tiles * 8
+            height_px = h_tiles * 8
+        else:
+            w_tiles = nscr.width_tiles
+            h_tiles = nscr.actual_height_tiles
+            width_px = nscr.width_pixels
+            height_px = nscr.actual_height_pixels
 
         img = Image.new("RGBA", (width_px, height_px), (0, 0, 0, 0))
         pixels = img.load()
@@ -264,7 +276,7 @@ class NitroSprite:
         self,
         seq_index: int = 0,
         transparency: bool = True,
-    ) -> List["Image.Image"]:
+    ) -> List[Image.Image]:
         """Renders all frames in a specific animation sequence as a list of images."""
         if not HAS_PIL:
             raise ImportError("Pillow is required for graphics rendering.")
@@ -284,7 +296,7 @@ class NitroSprite:
             ncer = NCERFile.from_bytes(f.read())
 
         seq = nanr.sequences[seq_index]
-        frames: List["Image.Image"] = []
+        frames: List[Image.Image] = []
         for f in seq.frames:
             img = ncer.render_bank(f.cell_index, ncgr, nclr, transparency=transparency)
             if img:
@@ -388,19 +400,18 @@ class NitroAssetGraph:
             if ncgr_path and os.path.isfile(ncgr_path):
                 try:
                     with open(nscr_path, "rb") as f_nscr:
-                        nscr = NSCRFile.from_bytes(f_nscr.read())
+                        max_tile = NSCRFile.quick_max_tile_index(f_nscr.read())
                     with open(ncgr_path, "rb") as f_ncgr:
-                        ncgr = NCGRFile.from_bytes(f_ncgr.read())
+                        tile_count = NCGRFile.quick_tile_count(f_ncgr.read(0x40))
 
-                    max_tile = max((e.tile_index for e in nscr.entries), default=0)
-                    if max_tile >= len(ncgr.tiles) and ncgr_fb:
+                    if max_tile >= tile_count and ncgr_fb:
                         # Secondary fallback if candidate too small
                         for alt_stem in ncgr_fb:
                             alt_path = self.catalog.ncgr_files.get(alt_stem.lower())
                             if alt_path and alt_path != ncgr_path:
                                 with open(alt_path, "rb") as f_alt:
-                                    alt_ncgr = NCGRFile.from_bytes(f_alt.read())
-                                if max_tile < len(alt_ncgr.tiles):
+                                    alt_count = NCGRFile.quick_tile_count(f_alt.read(0x40))
+                                if max_tile < alt_count:
                                     ncgr_path = alt_path
                                     break
                 except Exception:
@@ -419,7 +430,7 @@ class NitroAssetGraph:
 
         # Standalone boot warning screen
         caution_ncgr = self.catalog.ncgr_files.get("win_caution01")
-        caution_nclr = self.catalog.nclr_files.get("win_caution01")
+        _caution_nclr = self.catalog.nclr_files.get("win_caution01")
         if caution_ncgr:
             self.screen_ncgrs.add("win_caution01")
 
@@ -447,19 +458,27 @@ class NitroAssetGraph:
 
         return self
 
-    def export_all_screens(self, out_dir: str, transparency: str = "auto") -> int:
+    def export_all_screens(
+        self,
+        out_dir: str,
+        transparency: str = "auto",
+        progress_callback: Optional[callable] = None,
+    ) -> int:
         """Renders and exports all resolved background screens to PNG."""
         screens_dir = os.path.join(out_dir, "screens")
         os.makedirs(screens_dir, exist_ok=True)
         exported = 0
+        total = len(self.screens) + (1 if self.catalog.ncgr_files.get("win_caution01") else 0)
 
         screen_groups: Dict[str, List[str]] = defaultdict(list)
 
-        for name, screen in self.screens.items():
+        for idx, (name, screen) in enumerate(self.screens.items(), start=1):
             try:
                 out_png = os.path.join(screens_dir, f"{name}.png")
                 screen.export(out_png, transparency=transparency)
                 exported += 1
+                if progress_callback:
+                    progress_callback(idx, total, f"screens/{name}.png")
 
                 prefix_underscore = name[: name.rfind("_")] if "_" in name else name
                 prefix_strip_digits = re.sub(r"\d+$", "", name)
@@ -487,6 +506,8 @@ class NitroAssetGraph:
                 )
                 c_img.save(caution_png)
                 exported += 1
+                if progress_callback:
+                    progress_callback(total, total, "screens/win_caution01.png")
             except Exception:
                 pass
 
@@ -507,25 +528,39 @@ class NitroAssetGraph:
 
         return exported
 
-    def export_all_sprites(self, out_dir: str, transparency: bool = True) -> int:
+    def export_all_sprites(
+        self,
+        out_dir: str,
+        transparency: bool = True,
+        progress_callback: Optional[callable] = None,
+    ) -> int:
         """Renders and exports all resolved UI/character sprites to PNG."""
         ui_dir = os.path.join(out_dir, "ui")
         os.makedirs(ui_dir, exist_ok=True)
         exported = 0
+        total = len(self.sprites)
 
-        for name, sprite in self.sprites.items():
+        for idx, (name, sprite) in enumerate(self.sprites.items(), start=1):
             try:
                 out_png = os.path.join(ui_dir, f"{name}.png")
                 res = sprite.export(out_png, stacked=True, transparency=transparency)
                 if res:
                     exported += 1
+                    if progress_callback:
+                        progress_callback(idx, total, f"ui/{name}.png")
             except Exception:
                 pass
 
         return exported
 
-    def export_all(self, out_dir: str, screen_transparency: str = "auto", sprite_transparency: bool = True) -> Tuple[int, int]:
+    def export_all(
+        self,
+        out_dir: str,
+        screen_transparency: str = "auto",
+        sprite_transparency: bool = True,
+        progress_callback: Optional[callable] = None,
+    ) -> Tuple[int, int]:
         """Convenience method to export both screens and sprites in one pass."""
-        s_count = self.export_all_screens(out_dir, transparency=screen_transparency)
-        u_count = self.export_all_sprites(out_dir, transparency=sprite_transparency)
+        s_count = self.export_all_screens(out_dir, transparency=screen_transparency, progress_callback=progress_callback)
+        u_count = self.export_all_sprites(out_dir, transparency=sprite_transparency, progress_callback=progress_callback)
         return s_count, u_count

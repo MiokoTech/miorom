@@ -1,5 +1,4 @@
 """
-from miorom.errors import ParseError
 miorom.script.vm
 ~~~~~~~~~~~~~~~~
 Declarative Event & Cutscene Script Virtual Machine (VM) Engine.
@@ -7,13 +6,14 @@ Enables reverse engineers to easily define game-specific VM opcodes, disassemble
 binary script files into human-readable text, and recompile them with automatic
 label and branch target resolution.
 """
-
-from miorom.core.binary import BinaryReader, BinaryWriter
-from miorom.result import MioRomResult
 import ast
 import re
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+
+from miorom.core.binary import BinaryReader, BinaryWriter
+from miorom.errors import ParseError
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -135,7 +135,7 @@ class ScriptVM:
             if p + self.opcode_size > limit:
                 break
 
-            curr_addr = p
+            _curr_addr = p
             code = self._read_opcode(bytecode, p)
             if code not in self._opcodes:
                 lines.append(f"    .byte 0x{code:02x}")
@@ -265,10 +265,16 @@ class ScriptVM:
                     out.extend(BinaryWriter.pack_u32(target_addr, endian=self.endian))
                 elif arg_type == "u8":
                     out.append(int(arg_str, 0) & 0xFF)
+                elif arg_type == "s8":
+                    out.append(int(arg_str, 0) & 0xFF)
                 elif arg_type == "u16":
                     out.extend(BinaryWriter.pack_u16(int(arg_str, 0), endian=self.endian))
+                elif arg_type == "s16":
+                    out.extend(BinaryWriter.pack_u16(int(arg_str, 0) & 0xFFFF, endian=self.endian))
                 elif arg_type == "u32":
                     out.extend(BinaryWriter.pack_u32(int(arg_str, 0), endian=self.endian))
+                elif arg_type == "s32":
+                    out.extend(BinaryWriter.pack_u32(int(arg_str, 0) & 0xFFFFFFFF, endian=self.endian))
                 elif arg_type == "str_utf16":
                     # Safe literal evaluation
                     s_val = ast.literal_eval(arg_str)

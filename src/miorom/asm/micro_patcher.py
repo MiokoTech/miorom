@@ -6,8 +6,9 @@ Pure math and opcode transformation functions for PowerPC, MIPS, and ARM archite
 Leaves full control of instruction placement and verification to the programmer.
 """
 
-import struct
 from typing import Tuple
+
+from miorom.core import schema
 
 
 class SplitImmediateCalculator:
@@ -22,11 +23,11 @@ class SplitImmediateCalculator:
         Returns (ha16, l16).
         """
         addr = target_addr & 0xFFFFFFFF
-        l = addr & 0xFFFF
+        lo = addr & 0xFFFF
         ha = (addr >> 16) & 0xFFFF
-        if l >= 0x8000:
+        if lo >= 0x8000:
             ha = (ha + 1) & 0xFFFF
-        return ha, l
+        return ha, lo
 
     @classmethod
     def calc_mips_hi_lo(cls, target_addr: int) -> Tuple[int, int]:
@@ -69,11 +70,11 @@ class StackAllocPatcher:
         """
         if not (0 <= frame_size <= 255) or offset + 4 > len(code):
             return False
-        word = struct.unpack_from(f"{endian}I", code, offset)[0]
+        word = schema.unpack_from(f"{endian}I", code, offset)[0]
         # Preserve condition code
         cond = (word >> 28) & 0xF
         new_op = (cond << 28) | 0x024DD000 | frame_size
-        struct.pack_into(f"{endian}I", code, offset, new_op)
+        schema.pack_into(f"{endian}I", code, offset, new_op)
         return True
 
     @classmethod
@@ -92,7 +93,7 @@ class StackAllocPatcher:
         # addiu $sp, $sp, -frame_size
         imm16 = (-frame_size) & 0xFFFF
         op = 0x27BD0000 | imm16
-        struct.pack_into(f"{endian}I", code, offset, op)
+        schema.pack_into(f"{endian}I", code, offset, op)
         return True
 
 
@@ -114,7 +115,7 @@ class OpcodeTransmuter:
         if offset + 4 > len(code):
             return False
 
-        word = struct.unpack_from(f"{endian}I", code, offset)[0]
+        word = schema.unpack_from(f"{endian}I", code, offset)[0]
         is_ldrh = ((word >> 25) & 0x7) == 0 and ((word >> 4) & 0xF) == 0xB
         if not is_ldrh:
             return False
@@ -129,5 +130,5 @@ class OpcodeTransmuter:
 
         u_flag = 0x00800000 if u_bit else 0
         new_opcode = (cond << 28) | 0x05500000 | u_flag | (rn << 16) | (rd << 12) | (offset_imm & 0xFFF)
-        struct.pack_into(f"{endian}I", code, offset, new_opcode)
+        schema.pack_into(f"{endian}I", code, offset, new_opcode)
         return True

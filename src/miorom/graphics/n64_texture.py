@@ -7,11 +7,12 @@ Supports RGBA16, RGBA32, IA16, IA8, IA4, I8, I4, CI8, and CI4 formats.
 
 from __future__ import annotations
 
-import struct
 from enum import Enum
 from typing import Optional, Union
 
+from miorom.core import schema
 from miorom.errors import ParseError
+from miorom.graphics.png_codec import PNGCodec
 
 try:
     from PIL import Image
@@ -58,7 +59,7 @@ class N64TextureDecoder:
             if len(data) < needed:
                 data = data.ljust(needed, b"\x00")
             for idx in range(num_pixels):
-                val = struct.unpack_from(">H", data, idx * 2)[0]
+                val = schema.unpack_from(">H", data, idx * 2)[0]
                 r = ((val >> 11) & 0x1F) * 255 // 31
                 g = ((val >> 6) & 0x1F) * 255 // 31
                 b = ((val >> 1) & 0x1F) * 255 // 31
@@ -149,7 +150,7 @@ class N64TextureDecoder:
             # Decode palette (RGBA16)
             pal_colors = []
             for pi in range(0, len(palette_data) - 1, 2):
-                pval = struct.unpack_from(">H", palette_data, pi)[0]
+                pval = schema.unpack_from(">H", palette_data, pi)[0]
                 pr = ((pval >> 11) & 0x1F) * 255 // 31
                 pg = ((pval >> 6) & 0x1F) * 255 // 31
                 pb = ((pval >> 1) & 0x1F) * 255 // 31
@@ -179,11 +180,14 @@ class N64TextureDecoder:
         width: int,
         height: int,
         palette_data: Optional[bytes] = None,
-    ) -> "Image.Image":
-        if not HAS_PIL:
-            raise ImportError("Pillow is required. Install with 'pip install Pillow'.")
+    ):
+        """Decode texture to a Pillow Image (if available) or a :class:`~miorom.graphics.png_codec.PNGImage`."""
+        from miorom.graphics.png_codec import PNGColorType, PNGImage
         rgba = cls.decode(data, fmt, width, height, palette_data)
-        return Image.frombytes("RGBA", (width, height), rgba)
+        if HAS_PIL:
+            return Image.frombytes("RGBA", (width, height), rgba)
+        return PNGImage(width=width, height=height,
+                        color_type=PNGColorType.RGBA, bit_depth=8, pixels=rgba)
 
     @classmethod
     def to_png(
@@ -195,8 +199,14 @@ class N64TextureDecoder:
         output_path: str,
         palette_data: Optional[bytes] = None,
     ) -> str:
-        img = cls.to_image(data, fmt, width, height, palette_data)
-        img.save(output_path, format="PNG")
+        """Decode texture and save as PNG.  Works with or without Pillow installed."""
+        rgba = cls.decode(data, fmt, width, height, palette_data)
+        if HAS_PIL:
+            img = Image.frombytes("RGBA", (width, height), rgba)
+            img.save(output_path, format="PNG")
+        else:
+            png_bytes = PNGCodec.encode_rgba(width, height, rgba)
+            open(output_path, "wb").write(png_bytes)
         return output_path
 
 
@@ -230,7 +240,7 @@ class N64TextureEncoder:
                 b5 = (b * 31 + 127) // 255
                 a1 = 1 if a >= 128 else 0
                 val = (r5 << 11) | (g5 << 6) | (b5 << 1) | a1
-                struct.pack_into(">H", out, idx * 2, val)
+                schema.pack_into(">H", out, idx * 2, val)
             return bytes(out)
 
         elif format_name == "ia16":
@@ -256,16 +266,32 @@ class N64TextureEncoder:
     @classmethod
     def from_image(
         cls,
-        image_or_path: Union[str, "Image.Image"],
+        image_or_path,
         fmt: Union[N64TextureFormat, str],
     ) -> bytes:
-        if not HAS_PIL:
-            raise ImportError("Pillow is required. Install with 'pip install Pillow'.")
+        """
+        Encode an image into N64 texture format.
+
+        Accepts a PIL Image, a :class:`~miorom.graphics.png_codec.PNGImage`,
+        or a file path (PNG — decoded via :mod:`miorom.graphics.png_codec` when Pillow is absent).
+        """
+        from miorom.graphics.png_codec import PNGImage
         if isinstance(image_or_path, str):
-            img = Image.open(image_or_path)
+            if HAS_PIL:
+                img = Image.open(image_or_path)
+                img = img.convert("RGBA")
+                width, height = img.size
+                rgba_bytes = img.tobytes()
+            else:
+                raw = open(image_or_path, "rb").read()
+                width, height, rgba_bytes = PNGCodec.png_to_rgba(raw)
+        elif HAS_PIL and isinstance(image_or_path, Image.Image):
+            img = image_or_path.convert("RGBA")
+            width, height = img.size
+            rgba_bytes = img.tobytes()
+        elif isinstance(image_or_path, PNGImage):
+            width, height = image_or_path.width, image_or_path.height
+            rgba_bytes = image_or_path.to_rgba_bytes()
         else:
-            img = image_or_path
-        img = img.convert("RGBA")
-        width, height = img.size
-        rgba_bytes = img.tobytes()
+            raise TypeError("image_or_path must be a file path, PIL Image, or PNGImage")
         return cls.encode(rgba_bytes, fmt, width, height)

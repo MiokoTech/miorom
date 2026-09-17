@@ -7,7 +7,7 @@ and LZ10 overlay compression management for localized ROM translation.
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Union
 
 from miorom.compression.lz10 import LZ10
 from miorom.platforms.nds.rom import NDSOverlayEntry, NDSOverlayEntryStruct, NDSRom
@@ -148,17 +148,28 @@ class NDSOverlayCompressor:
     @classmethod
     def is_compressed(cls, data: Union[bytes, bytearray], flags: int = 0) -> bool:
         """
-        Determine if overlay payload is compressed based on flags or header inspection.
+        Determine if overlay payload is compressed based on flags or header/trailer inspection.
+        Supports both Nintendo BIOS LZ10 and BLZ backwards LZ77.
         """
-        if (flags & cls.COMPRESSION_FLAG) != 0 or (flags & 0x01) != 0:
+        if (flags & cls.COMPRESSION_FLAG) != 0:
             return True
         if len(data) >= 4 and data[0] == 0x10:
             return True
-        return False
+        from miorom.compression.blz import BLZ
+
+        return BLZ.is_compressed(data)
 
     @classmethod
     def decompress(cls, data: Union[bytes, bytearray], flags: int = 0) -> bytes:
-        """Decompress overlay payload if compressed, otherwise return raw bytes."""
+        """Decompress overlay payload if compressed (LZ10 or BLZ), otherwise return raw bytes."""
+        from miorom.compression.blz import BLZ
+
+        if BLZ.is_compressed(data):
+            try:
+                return BLZ.decompress(data)
+            except Exception:
+                pass
+
         if cls.is_compressed(data, flags):
             try:
                 return LZ10.decompress(data)
@@ -167,8 +178,12 @@ class NDSOverlayCompressor:
         return bytes(data)
 
     @classmethod
-    def compress(cls, data: Union[bytes, bytearray]) -> bytes:
-        """Compress overlay payload using standard BIOS LZ10 algorithm."""
+    def compress(cls, data: Union[bytes, bytearray], codec: str = "lz10") -> bytes:
+        """Compress overlay payload using standard BIOS LZ10 or BLZ backwards LZ77 algorithm."""
+        if codec.lower() == "blz":
+            from miorom.compression.blz import BLZ
+
+            return BLZ.compress(bytes(data))
         return LZ10.compress(bytes(data))
 
 

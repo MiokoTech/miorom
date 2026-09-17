@@ -6,7 +6,7 @@ Powered by MioROM.
 
 from __future__ import annotations
 
-from typing import Tuple, Union, Optional
+from typing import Tuple
 
 
 def interpolate_color(
@@ -36,9 +36,15 @@ def apply_vertical_gradient(
 ) -> bytes:
     """
     Applies a vertical linear color gradient across an 8-bit alpha mask (width*height bytes)
-    or 32-bit RGBA bytes.
+    or 32-bit RGBA bytes (using the source alpha channel as mask intensity).
     Returns a new 32-bit RGBA bytes buffer of size width * height * 4.
     """
+    if len(mask_bytes) not in (width * height, width * height * 4):
+        raise ValueError(
+            f"Invalid mask_bytes buffer size: expected {width * height} (L8) or "
+            f"{width * height * 4} (RGBA), got {len(mask_bytes)} bytes."
+        )
+
     out = bytearray(width * height * 4)
     is_l = (len(mask_bytes) == width * height)
 
@@ -73,6 +79,13 @@ def apply_outline_1px(
     Preserves inner opaque pixels.
     Returns a new 32-bit RGBA bytes buffer of size width * height * 4.
     """
+    expected_len = width * height * 4
+    if len(rgba_bytes) != expected_len:
+        raise ValueError(
+            f"Invalid rgba_bytes buffer size: expected {expected_len} bytes (width {width} * height {height} * 4), "
+            f"got {len(rgba_bytes)} bytes."
+        )
+
     out = bytearray(rgba_bytes)
     r_out, g_out, b_out, a_out = outline_color
 

@@ -9,10 +9,10 @@ Standard dialogue container used in Nintendo Wii, NDS (late), 3DS, and Switch ti
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 from miorom.core.binary import BinaryReader, BinaryWriter
-from miorom.core.schema import BinaryStruct, Padding, RawBytes, U8, U16, U32
+from miorom.core.schema import U8, U16, U32, BinaryStruct, Padding, RawBytes
 from miorom.errors import ParseError
 from miorom.result import MioRomResult
 
@@ -52,10 +52,19 @@ class MSBTFile:
 
     MAGIC = b"MsgStdBn"
 
-    def __init__(self, entries: Optional[List[MSBTEntry]] = None, encoding: str = "utf-16", endian: str = "<"):
+    def __init__(
+        self,
+        entries: Optional[List[MSBTEntry]] = None,
+        encoding: str = "utf-16",
+        endian: str = "<",
+        attribute_size: int = 0,
+        other_sections: Optional[List[Tuple[bytes, bytes]]] = None,
+    ):
         self.entries = list(entries or [])
         self.encoding = encoding.lower()
         self.endian = endian
+        self.attribute_size = attribute_size
+        self.other_sections = list(other_sections or [])
 
     @property
     def labels(self) -> List[str]:
@@ -75,7 +84,7 @@ class MSBTFile:
         self.entries.append(MSBTEntry(label=label, text=text))
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "MSBTFile":
+    def from_bytes(cls, data: bytes) -> MSBTFile:
         if len(data) < MSBTHeaderStruct.sizeof() or data[:8] != cls.MAGIC:
             raise ParseError("Invalid MSBT header or magic.")
 
@@ -89,6 +98,9 @@ class MSBTFile:
         pos = MSBTHeaderStruct.sizeof()
         labels: List[Tuple[str, int]] = []
         texts: List[str] = []
+        attributes: List[bytes] = []
+        attribute_size = 0
+        other_sections: List[Tuple[bytes, bytes]] = []
 
         while pos + MSBTSectionHeaderStruct.sizeof() <= len(data):
             sec_hdr = MSBTSectionHeaderStruct.from_bytes(data, offset=pos, endian=endian)
@@ -117,9 +129,21 @@ class MSBTFile:
                         str_idx = sec_reader.read_u32()
                         labels.append((l_name, str_idx))
 
+            elif sec_magic == b"ATR1":
+                atr_count = sec_reader.read_u32()
+                atr_size = sec_reader.read_u32()
+                attribute_size = atr_size
+                for _ in range(atr_count):
+                    if sec_reader.remaining >= atr_size:
+                        attributes.append(sec_reader.read_bytes(atr_size))
+                    else:
+                        break
+
             elif sec_magic == b"TXT2":
                 str_count = sec_reader.read_u32()
                 offsets = [sec_reader.read_u32() for _ in range(str_count)]
+                u16_field = U16(endian=endian)
+                tag_magic = b"\x0e\x00" if endian == "<" else b"\x00\x0e"
                 for off in offsets:
                     if off < len(sec_data):
                         if "utf-16" in encoding:
@@ -127,31 +151,52 @@ class MSBTFile:
                             while curr_t + 1 < len(sec_data):
                                 if sec_data[curr_t : curr_t + 2] == b"\x00\x00":
                                     break
+                                if sec_data[curr_t : curr_t + 2] == tag_magic and curr_t + 8 <= len(sec_data):
+                                    arg_len = u16_field.unpack(sec_data, curr_t + 6, endian)[0]
+                                    curr_t += 8 + arg_len
+                                    continue
                                 curr_t += 2
                             t_str = sec_data[off:curr_t].decode(encoding, errors="replace")
                         else:
-                            end = sec_data.find(b"\x00", off)
-                            if end == -1:
-                                end = len(sec_data)
-                            t_str = sec_data[off:end].decode(encoding, errors="replace")
+                            curr_t = off
+                            while curr_t < len(sec_data):
+                                if sec_data[curr_t] == 0:
+                                    break
+                                if sec_data[curr_t] == 0x0E and curr_t + 7 <= len(sec_data):
+                                    arg_len = u16_field.unpack(sec_data, curr_t + 5, endian)[0]
+                                    curr_t += 7 + arg_len
+                                    continue
+                                curr_t += 1
+                            t_str = sec_data[off:curr_t].decode(encoding, errors="replace")
                         texts.append(t_str)
+                    else:
+                        texts.append("")
+
+            else:
+                other_sections.append((sec_magic, sec_data))
 
             # 16-byte alignment
             pad = (16 - (sec_size % 16)) % 16
             pos += MSBTSectionHeaderStruct.sizeof() + sec_size + pad
 
-        # Map labels to text entries
-        entries: List[MSBTEntry] = []
-        if labels:
-            labels.sort(key=lambda x: x[1])
-            for l_name, idx in labels:
-                t_val = texts[idx] if idx < len(texts) else ""
-                entries.append(MSBTEntry(label=l_name, text=t_val))
-        else:
-            for i, t_val in enumerate(texts):
-                entries.append(MSBTEntry(label=f"STR_{i}", text=t_val))
+        # Map labels to text entries without dropping unlabelled strings
+        idx_to_label: Dict[int, str] = {}
+        for l_name, idx in labels:
+            idx_to_label[idx] = l_name
 
-        return cls(entries=entries, encoding=encoding, endian=endian)
+        entries: List[MSBTEntry] = []
+        for i, t_val in enumerate(texts):
+            l_name = idx_to_label.get(i, f"STR_{i}")
+            attr = attributes[i] if i < len(attributes) else b""
+            entries.append(MSBTEntry(label=l_name, text=t_val, attributes=attr))
+
+        return cls(
+            entries=entries,
+            encoding=encoding,
+            endian=endian,
+            attribute_size=attribute_size,
+            other_sections=other_sections,
+        )
 
     def to_bytes(self, endian: Optional[str] = None) -> bytes:
         """Serializes MSBTFile back into Nintendo MSBT binary container."""
@@ -160,7 +205,50 @@ class MSBTFile:
         enc_code = 0 if self.encoding == "utf-8" else 1
         codec = "utf-8" if enc_code == 0 else ("utf-16-be" if endian == ">" else "utf-16-le")
 
-        # 1. Build TXT2 Section
+        # 1. Build LBL1 Section (Single hash bucket group)
+        lbl_body = BinaryWriter(endian=endian)
+        lbl_body.write_u32(1)  # 1 group
+        # Group 0: count, offset (relative to table start)
+        lbl_body.write_u32(len(self.entries))
+        lbl_body.write_u32(12)
+
+        for i, e in enumerate(self.entries):
+            l_bytes = e.label.encode("ascii", errors="replace")
+            lbl_body.write_u8(len(l_bytes))
+            lbl_body.write_bytes(l_bytes)
+            lbl_body.write_u32(i)
+
+        lbl_body_bytes = lbl_body.to_bytes()
+        lbl_size = len(lbl_body_bytes)
+
+        lbl_sec = BinaryWriter(endian=endian)
+        lbl_sec.write_bytes(
+            MSBTSectionHeaderStruct(magic=b"LBL1", size=lbl_size).to_bytes(endian=endian)
+        )
+        lbl_sec.write_bytes(lbl_body_bytes)
+        lbl_sec.align(16)
+        lbl_sec_bytes = lbl_sec.to_bytes()
+
+        # 2. Build ATR1 Section (if attributes are present)
+        has_attrs = self.attribute_size > 0 or any(e.attributes for e in self.entries)
+        atr_sec_bytes = b""
+        if has_attrs:
+            eff_attr_size = self.attribute_size or max((len(e.attributes) for e in self.entries), default=0)
+            atr_body = BinaryWriter(endian=endian)
+            atr_body.write_u32(len(self.entries))
+            atr_body.write_u32(eff_attr_size)
+            for e in self.entries:
+                atr_body.write_bytes(e.attributes.ljust(eff_attr_size, b"\x00")[:eff_attr_size])
+            atr_body_bytes = atr_body.to_bytes()
+            atr_sec = BinaryWriter(endian=endian)
+            atr_sec.write_bytes(
+                MSBTSectionHeaderStruct(magic=b"ATR1", size=len(atr_body_bytes)).to_bytes(endian=endian)
+            )
+            atr_sec.write_bytes(atr_body_bytes)
+            atr_sec.align(16)
+            atr_sec_bytes = atr_sec.to_bytes()
+
+        # 3. Build TXT2 Section
         str_count = len(self.entries)
         txt_body = BinaryWriter(endian=endian)
         txt_body.write_u32(str_count)
@@ -194,35 +282,29 @@ class MSBTFile:
         )
         txt_sec.write_bytes(txt_body_bytes)
         txt_sec.align(16)
-
-        # 2. Build LBL1 Section (Single hash bucket group)
-        lbl_body = BinaryWriter(endian=endian)
-        lbl_body.write_u32(1)  # 1 group
-        # Group 0: count, offset (relative to table start)
-        lbl_body.write_u32(len(self.entries))
-        lbl_body.write_u32(12)
-
-        for i, e in enumerate(self.entries):
-            l_bytes = e.label.encode("ascii", errors="replace")
-            lbl_body.write_u8(len(l_bytes))
-            lbl_body.write_bytes(l_bytes)
-            lbl_body.write_u32(i)
-
-        lbl_body_bytes = lbl_body.to_bytes()
-        lbl_size = len(lbl_body_bytes)
-
-        lbl_sec = BinaryWriter(endian=endian)
-        lbl_sec.write_bytes(
-            MSBTSectionHeaderStruct(magic=b"LBL1", size=lbl_size).to_bytes(endian=endian)
-        )
-        lbl_sec.write_bytes(lbl_body_bytes)
-        lbl_sec.align(16)
-
-        # 3. Main Header (32 bytes)
-        lbl_sec_bytes = lbl_sec.to_bytes()
         txt_sec_bytes = txt_sec.to_bytes()
-        total_file_size = MSBTHeaderStruct.sizeof() + len(lbl_sec_bytes) + len(txt_sec_bytes)
 
+        # 4. Serialize other preserved sections
+        other_sec_bytes: List[bytes] = []
+        for sec_magic, sec_payload in self.other_sections:
+            sec_w = BinaryWriter(endian=endian)
+            sec_w.write_bytes(
+                MSBTSectionHeaderStruct(magic=sec_magic, size=len(sec_payload)).to_bytes(endian=endian)
+            )
+            sec_w.write_bytes(sec_payload)
+            sec_w.align(16)
+            other_sec_bytes.append(sec_w.to_bytes())
+
+        # Assemble all sections
+        sections: List[bytes] = [lbl_sec_bytes]
+        if atr_sec_bytes:
+            sections.append(atr_sec_bytes)
+        sections.append(txt_sec_bytes)
+        sections.extend(other_sec_bytes)
+
+        total_file_size = MSBTHeaderStruct.sizeof() + sum(len(s) for s in sections)
+
+        # 5. Main Header (32 bytes)
         main_writer = BinaryWriter(endian=endian)
         main_writer.write_bytes(
             MSBTHeaderStruct(
@@ -230,11 +312,11 @@ class MSBTFile:
                 bom=bom,
                 encoding=enc_code,
                 version=3,
-                section_count=2,
+                section_count=len(sections),
                 file_size=total_file_size,
             ).to_bytes(endian=endian)
         )
-        main_writer.write_bytes(lbl_sec_bytes)
-        main_writer.write_bytes(txt_sec_bytes)
+        for s in sections:
+            main_writer.write_bytes(s)
 
         return main_writer.to_bytes()

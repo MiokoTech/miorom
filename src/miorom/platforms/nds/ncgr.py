@@ -7,8 +7,10 @@ Standard tile/character graphics container for Nintendo DS games.
 
 from __future__ import annotations
 
+from typing import List
+
 from miorom.core.binary import BinaryWriter
-from miorom.core.schema import BinaryStruct, RawBytes, U16, U32
+from miorom.core.schema import U16, U32, BinaryStruct, RawBytes
 from miorom.errors import ParseError
 from miorom.graphics.tiles import Tile, decode_tile, encode_tile
 
@@ -64,7 +66,22 @@ class NCGRFile:
         return len(self.tiles)
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "NCGRFile":
+    def quick_tile_count(cls, data: bytes) -> int:
+        """Lightweight inspection of tile count from header without decoding pixels."""
+        if len(data) < 0x30:
+            return 0
+        header = NCGRHeaderStruct.from_bytes(data, offset=0)
+        if header.magic not in (cls.MAGIC, b"NCGR"):
+            return 0
+        char = CHARSectionStruct.from_bytes(data, offset=header.header_size)
+        if char.magic not in (cls.SECTION_MAGIC, b"CHAR"):
+            return 0
+        bpp = 4 if char.bpp_mode == 3 else 8
+        tile_bytes = 32 if bpp == 4 else 64
+        return char.data_size // tile_bytes
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> NCGRFile:
         if len(data) < 0x20:
             raise ParseError("Data too small for NCGR header.")
 

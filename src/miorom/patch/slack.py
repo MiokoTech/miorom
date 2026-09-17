@@ -7,9 +7,10 @@ and provides safe alignment-aware allocation and end-of-file growth.
 Prevents DMA corruption and downstream shifting when injecting expanded assets.
 """
 
-from miorom.result import MioRomResult
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
+
+from miorom.result import MioRomResult
 
 
 @dataclass

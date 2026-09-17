@@ -1,4 +1,5 @@
-from typing import List, Optional, Sequence
+from collections.abc import Sequence
+from typing import List, Optional
 
 
 def cumulative_offsets(

@@ -271,8 +271,8 @@ def test_cartridge_unpack_and_repack_roundtrip():
 
         unpacked_dir = os.path.join(tmpdir, "unpacked_gba")
         meta = unpack_rom(gba_file, unpacked_dir)
-        assert meta["format"] == "cartridge"
-        assert meta["subplatform"] == "gba"
+        # GBARomHandler has higher precedence than CartridgeRomHandler; format = 'gba'
+        assert meta["format"] == "gba"
         assert meta["title"] == "POKEMON_EM"
 
         # Change title in rom.bin

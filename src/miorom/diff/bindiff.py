@@ -1,15 +1,13 @@
 import math
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set
 
+from miorom.errors import ParseError
 from miorom.result import MioRomResult
-
-from miorom.asm.disasm import UniversalDisassembler
 from miorom.script.lifter import BinaryLifter
 
 
-from miorom.errors import ParseError
 @dataclass
 class FunctionFingerprint(MioRomResult):
     address: int
@@ -100,7 +98,6 @@ class BinDiffEngine:
 
         end_address = base_address + len(data)
         candidates: Set[int] = set()
-        import struct
 
         for offset in range(0, len(data) - pointer_size + 1, pointer_size):
             value = int.from_bytes(data[offset:offset + pointer_size], "big" if endian == ">" else "little")
@@ -129,12 +126,19 @@ class BinDiffEngine:
         # Cyclomatic complexity = E - V + 2
         cyclo = max(1, e_count - v_count + 2)
 
-        inst_count = sum(len(b.instructions) for b in ir_func.blocks.values())
+        inst_count = sum(
+            1
+            for b in ir_func.blocks.values()
+            for ins in b.instructions
+            if ins.op.value != "PHI"
+        )
         hist: Dict[str, int] = Counter()
         call_targets: List[int] = []
 
         for b in ir_func.blocks.values():
             for ins in b.instructions:
+                if ins.op.value == "PHI":
+                    continue
                 hist[ins.op.value] += 1
                 if ins.op.value == "CALL" and ins.args and isinstance(ins.args[0], int):
                     call_targets.append(ins.args[0])

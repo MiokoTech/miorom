@@ -5,11 +5,11 @@ Relative Pointer Table & Multi-Pointer Remapper Primitive.
 Solves relative offset arithmetic (offsets relative to header or end-of-table)
 and handles 1-to-many pointer references when text is relocated into new heaps.
 """
-from miorom.errors import RelocationError
+from collections.abc import Sequence
+from typing import Dict, List
 
-from dataclasses import dataclass
-import struct
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from miorom.core import schema
+from miorom.errors import RelocationError
 
 
 class RelativePointerTable:
@@ -36,7 +36,7 @@ class RelativePointerTable:
 
         for i in range(count):
             pos = table_offset + (i * pointer_size)
-            rel_val = struct.unpack_from(fmt, data, pos)[0]
+            rel_val = schema.unpack_from(fmt, data, pos)[0]
             absolute_targets.append(base_offset + rel_val)
 
         return absolute_targets
@@ -61,7 +61,7 @@ class RelativePointerTable:
             rel_val = target - base_offset
             if rel_val < 0:
                 raise RelocationError(f"Relative pointer cannot be negative: {target} < {base_offset}")
-            struct.pack_into(fmt, buffer, pos, rel_val)
+            schema.pack_into(fmt, buffer, pos, rel_val)
 
 
 class MultiPointerRemapper:
@@ -86,7 +86,7 @@ class MultiPointerRemapper:
 
         for loc in pointer_locations:
             if loc + pointer_size <= len(buffer):
-                target = struct.unpack_from(fmt, buffer, loc)[0]
+                target = schema.unpack_from(fmt, buffer, loc)[0]
                 if target not in target_map:
                     target_map[target] = []
                 target_map[target].append(loc)
@@ -112,7 +112,7 @@ class MultiPointerRemapper:
         for old_target, new_target in old_to_new.items():
             locations = ref_map.get(old_target, [])
             for loc in locations:
-                struct.pack_into(fmt, buffer, loc, new_target)
+                schema.pack_into(fmt, buffer, loc, new_target)
                 updated_count += 1
 
         return updated_count

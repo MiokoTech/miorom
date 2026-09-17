@@ -6,10 +6,11 @@ Shadow memory bounds checker for detecting out-of-bounds reads/writes, buffer ov
 in translated dialogue strings, use-after-free, and dangling pointer dereferences.
 """
 
-from miorom.result import MioRomResult
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
+
+from miorom.result import MioRomResult
 
 
 class AccessType(str, Enum):

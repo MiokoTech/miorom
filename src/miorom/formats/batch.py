@@ -1,8 +1,9 @@
-import os
 import glob
-from typing import List, Optional
 import logging
-from miorom.formats.csv_handler import CsvHandler, TranslationRow
+import os
+from typing import List, Optional
+
+from miorom.formats.csv_handler import CsvHandler
 
 logger = logging.getLogger(__name__)
 

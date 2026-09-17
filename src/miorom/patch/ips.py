@@ -1,10 +1,8 @@
-import struct
-from typing import Union, BinaryIO
-from io import BytesIO
-from typing import Iterator, List, Tuple
+from typing import Any, BinaryIO, Dict, List, Tuple
 
-from miorom.patch.hunks import PatchHunk
+from miorom.core import schema
 from miorom.errors import PatchError
+from miorom.patch.hunks import PatchHunk, merge_patches
 
 
 class IpsPatcher:
@@ -65,7 +63,8 @@ class IpsPatcher:
                 # Check for optional 3-byte truncation offset (IPS32 extension)
                 if pos + 3 <= patch_len:
                     trunc_size = (patch[pos] << 16) | (patch[pos+1] << 8) | patch[pos+2]
-                    result = result[:trunc_size]
+                    if 0 < trunc_size < len(result):  # Only truncate if plausible
+                        result = result[:trunc_size]
                 break
 
             if pos + 5 > patch_len:
@@ -121,13 +120,13 @@ class IpsPatcher:
             if orig_b != mod_b:
                 # Found start of difference
                 start = i
+                diff_bytes = bytearray()
                 # Check for special 'EOF' offset collision (0x454F46)
                 if start == 0x454F46:
-                    start -= 1
-                    i -= 1
+                    start = 0x454F45
+                    diff_bytes.append(modified[0x454F45] if 0x454F45 < mod_len else 0)
 
                 # Gather diff run up to max record size (65535 bytes)
-                diff_bytes = bytearray()
                 while i < max_len and len(diff_bytes) < 0xFFFF:
                     o = original[i] if i < orig_len else None
                     m = modified[i] if i < mod_len else None
@@ -151,14 +150,14 @@ class IpsPatcher:
                     # Check for RLE compression possibility
                     if size >= 8 and len(set(diff_bytes)) == 1:
                         # RLE record
-                        patch.extend(struct.pack(">I", start)[1:]) # 3-byte offset
+                        patch.extend(schema.pack(">I", start)[1:]) # 3-byte offset
                         patch.extend(b"\x00\x00")                 # Size 0
-                        patch.extend(struct.pack(">H", size))      # RLE size
+                        patch.extend(schema.pack(">H", size))      # RLE size
                         patch.append(diff_bytes[0])               # RLE byte
                     else:
                         # Normal record
-                        patch.extend(struct.pack(">I", start)[1:]) # 3-byte offset
-                        patch.extend(struct.pack(">H", size))      # Size
+                        patch.extend(schema.pack(">I", start)[1:]) # 3-byte offset
+                        patch.extend(schema.pack(">H", size))      # Size
                         patch.extend(diff_bytes)                  # Data
             else:
                 i += 1
@@ -166,7 +165,7 @@ class IpsPatcher:
         patch.extend(cls.EOF)
         # Truncation extension for shorter files
         if mod_len < orig_len:
-            patch.extend(struct.pack(">I", mod_len)[1:])
+            patch.extend(schema.pack(">I", mod_len)[1:])
 
         return bytes(patch)
 
@@ -202,9 +201,14 @@ class IpsPatcher:
         Apply IPS patch via constant-memory streaming buffers without loading full image into RAM.
         Ideal for large disc images (PS1, GameCube, Wii) on memory-constrained devices.
         """
-        hunks = sorted(cls.parse(patch_bytes), key=lambda h: h.offset)
+        # Resolve all overlapping/adjacent hunks in chronological order
+        hunks = merge_patches(cls.parse(patch_bytes))
         source_stream.seek(0)
         current_pos = 0
+
+        # Inspect truncation size (IPS32 extension)
+        inspect_data = cls.inspect(patch_bytes)
+        truncate_size = inspect_data.get("truncate_size")
 
         for hunk in hunks:
             while current_pos < hunk.offset:
@@ -221,8 +225,38 @@ class IpsPatcher:
             source_stream.seek(current_pos + len(hunk.data))
             current_pos += len(hunk.data)
 
+        # Stream remaining bytes from source
         while True:
-            chunk = source_stream.read(chunk_size)
+            if truncate_size is not None and current_pos >= truncate_size:
+                break
+            to_read = chunk_size
+            if truncate_size is not None:
+                to_read = min(chunk_size, truncate_size - current_pos)
+            chunk = source_stream.read(to_read)
             if not chunk:
                 break
             output_stream.write(chunk)
+            current_pos += len(chunk)
+
+        if truncate_size is not None:
+            output_stream.truncate(truncate_size)
+
+    @classmethod
+    def inspect(cls, patch: bytes) -> Dict[str, Any]:
+        """Inspects IPS patch metadata without applying it."""
+        records = cls.iter_records(patch)
+        total_changed = sum(len(r[1]) for r in records)
+        min_offset = min((r[0] for r in records), default=0)
+        max_offset = max((r[0] + len(r[1]) for r in records), default=0)
+        eof_pos = patch.rfind(cls.EOF)
+        truncate_size = None
+        if eof_pos != -1 and eof_pos + 6 <= len(patch):
+            truncate_size = (patch[eof_pos + 3] << 16) | (patch[eof_pos + 4] << 8) | patch[eof_pos + 5]
+
+        return {
+            "record_count": len(records),
+            "changed_bytes": total_changed,
+            "min_offset": min_offset,
+            "max_offset": max_offset,
+            "truncate_size": truncate_size,
+        }

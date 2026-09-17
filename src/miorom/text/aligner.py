@@ -1,7 +1,8 @@
-from miorom.result import MioRomResult
 import difflib
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any, Dict, List, Optional
+
+from miorom.result import MioRomResult
 
 
 @dataclass

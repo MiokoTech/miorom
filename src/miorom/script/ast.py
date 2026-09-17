@@ -1,8 +1,8 @@
-from miorom.result import MioRomResult
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from typing import List, Optional, Set
 
-from miorom.script.control_flow import BasicBlock, ControlFlowGraph
+from miorom.result import MioRomResult
+from miorom.script.control_flow import ControlFlowGraph
 from miorom.script.engine import DisassembledScript, Instruction
 
 

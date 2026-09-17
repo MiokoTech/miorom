@@ -1,10 +1,10 @@
 import argparse
-import sys
 import os
-import struct
+import sys
 
 from miorom import __version__
-from miorom.formats.batch import BatchSplitter, BatchMerger
+from miorom.core import schema
+from miorom.formats.batch import BatchMerger, BatchSplitter
 from miorom.formats.csv_handler import CsvHandler
 from miorom.text.line_wrapper import WordWrapper
 
@@ -67,6 +67,68 @@ def cmd_patch_apply(args):
     print(f"[✓] Successfully patched file: {args.output} ({size_mb:.2f} MB)!")
 
 
+def cmd_patch_inspect(args):
+    from miorom.patch import inspect_patch
+    print(f"[*] Inspecting patch file: {args.patch_file}...")
+    info = inspect_patch(args.patch_file)
+    fmt = info.get("format", "UNKNOWN")
+    print(f"  Format:          {fmt}")
+    print(f"  File Size:       {info.get('file_size', 0):,} bytes")
+    for k, v in info.items():
+        if k in ("format", "file_size", "filename"):
+            continue
+        label = k.replace("_", " ").title()
+        if isinstance(v, int) and "crc" in k:
+            print(f"  {label:<17}: 0x{v:08X}")
+        elif isinstance(v, int) and ("size" in k or "bytes" in k or "offset" in k or "count" in k):
+            print(f"  {label:<17}: {v:,}")
+        else:
+            print(f"  {label:<17}: {v}")
+
+
+def cmd_patch_export_riivolution(args):
+    print(f"[*] Comparing '{args.original}' -> '{args.modified}' for mod '{args.name}'...")
+    from miorom.platforms.wii.riivolution import create_riivolution_package
+
+    summary = create_riivolution_package(
+        original_root=args.original,
+        modified_root=args.modified,
+        output_dir=args.output,
+        mod_name=args.name,
+        game_ids=args.id,
+    )
+    print(f"[✓] Successfully exported Riivolution mod '{summary.mod_name}'!")
+    print(f"  XML Path:        {summary.xml_path}")
+    print(f"  Payload Dir:     {summary.payload_dir}")
+    print(f"  Modified Files:  {summary.modified_files_count}")
+    print(f"  Added Files:     {summary.added_files_count}")
+    print(f"  Total Payload:   {summary.total_payload_bytes / 1024:.2f} KB")
+
+
+def cmd_patch_apply_riivolution(args):
+    print(f"[*] Applying Riivolution XML '{args.xml}' to '{args.disc}'...")
+    from miorom.platforms.wii.disc import WiiDisc
+    from miorom.platforms.wii.riivolution import RiivolutionFile, apply_riivolution_to_disc
+
+    disc = WiiDisc.from_file(args.disc)
+    riiv_file = RiivolutionFile.from_xml(args.xml)
+    patched_disc = apply_riivolution_to_disc(
+        disc=disc,
+        riivolution_file=riiv_file,
+        external_root_dir=args.root,
+    )
+    out_ext = os.path.splitext(args.output)[1].lower()
+    if out_ext == ".rvz":
+        patched_disc.save_rvz(args.output)
+    elif out_ext == ".wbfs":
+        patched_disc.save_wbfs(args.output)
+    else:
+        with open(args.output, "wb") as f:
+            f.write(patched_disc.to_bytes())
+    size_mb = os.path.getsize(args.output) / (1024 * 1024)
+    print(f"[✓] Saved patched disc to '{args.output}' ({size_mb:.2f} MB)!")
+
+
 def cmd_compress(args):
     print(f"[*] Compressing '{args.input_file}' using {args.format.upper()}...")
     from miorom.compression import compress
@@ -94,7 +156,7 @@ def cmd_decompress(args):
 
 def cmd_scan(args):
     print(f"[*] Scanning '{args.input_file}' for text and pointers...")
-    from miorom.core.scanner import StringScanner, PointerScanner
+    from miorom.core.scanner import PointerScanner, StringScanner
     from miorom.formats.csv_handler import CsvHandler, TranslationRow
 
     with open(args.input_file, "rb") as f:
@@ -181,7 +243,6 @@ def cmd_scan(args):
             TranslationRow(
                 index=i+1,
                 offset=s.offset,
-                length=s.length,
                 original=s.text,
                 translation=""
             )
@@ -270,6 +331,7 @@ def cmd_init(args):
 
 def cmd_run(args):
     import importlib.util
+
     from miorom.project.game import Game
     if not os.path.exists(args.game_py):
         print(f"[!] File not found: '{args.game_py}'")
@@ -340,8 +402,8 @@ def cmd_cheat(args):
 
 def cmd_port_csv(args):
     print(f"[*] Porting translations from '{args.source_csv}' -> '{args.target_csv}' (Strategy: {args.strategy.upper()})...")
-    from miorom.diff.porter import CrossRegionPorter
     from miorom.diff.mapper import BinaryDiffMapper
+    from miorom.diff.porter import CrossRegionPorter
 
     mapper = None
     if args.strategy == "offset":
@@ -369,7 +431,6 @@ def cmd_port_csv(args):
 def cmd_port_patch(args):
     print(f"[*] Porting patch '{args.patch}' from '{args.from_file}' to '{args.to_file}'...")
     from miorom.diff.bindiff import BinDiffEngine
-    from miorom.diff.mapper import BinaryDiffMapper
     from miorom.diff.porter import CrossRegionPorter
 
     def parse_address_list(raw: str) -> list:
@@ -454,6 +515,7 @@ def cmd_inject_elf(args):
 def cmd_scan_text(args):
     print(f"[*] Scanning binary text streams in '{args.input_file}'...")
     import json
+
     from miorom.scanner.text_stream import TextStreamScanner
 
     with open(args.input_file, "rb") as f:
@@ -504,7 +566,7 @@ def cmd_disasm(args):
             print(f"0x{base + inst.offset:06X}:  {inst.text}")
     else:
         dis = UniversalDisassembler(arch=args.arch)
-        instructions = dis.disassemble_stream(raw_code, base_pc=base, count=args.count)
+        instructions = dis.disassemble(raw_code, base_address=base, max_instructions=args.count)
         for inst in instructions:
             hex_bytes = " ".join(f"{b:02X}" for b in inst.bytes_)
             print(f"0x{inst.offset:08X}:  {hex_bytes:<12}  {inst.mnemonic:<8} {inst.operands}")
@@ -523,13 +585,13 @@ def cmd_checksum(args):
     print(f"  CRC-16-CCITT: 0x{RetroChecksum.crc16_ccitt(data):04X}")
 
     if args.system in ("genesis", "md", "all") and len(data) >= 0x200:
-        actual_sum = struct.unpack(">H", data[0x18E:0x190])[0]
+        actual_sum = schema.unpack(">H", data[0x18E:0x190])[0]
         calc_sum = RetroChecksum.genesis_checksum(data)
         status = "VALID" if actual_sum == calc_sum else f"MISMATCH (expected 0x{calc_sum:04X})"
         print(f"  Genesis Sum : 0x{actual_sum:04X} [{status}]")
         if args.fix and actual_sum != calc_sum:
             buf = bytearray(data)
-            buf[0x18E:0x190] = struct.pack(">H", calc_sum)
+            buf[0x18E:0x190] = schema.pack(">H", calc_sum)
             with open(args.input_file, "wb") as f:
                 f.write(buf)
             print(f"[✓] Patched Genesis checksum to 0x{calc_sum:04X} in '{args.input_file}'!")
@@ -587,7 +649,7 @@ def cmd_tile_dedup(args):
     saved = orig_tile_cnt - uniq_tile_cnt
     pct = (saved / orig_tile_cnt * 100) if orig_tile_cnt > 0 else 0
 
-    print(f"[✓] Optimization Results:")
+    print("[✓] Optimization Results:")
     print(f"  Original tiles : {orig_tile_cnt} ({len(raw_tiles)} bytes)")
     print(f"  Unique tiles   : {uniq_tile_cnt} ({len(opt_bytes)} bytes)")
     print(f"  Tiles saved    : {saved} ({pct:.1f}% reduction)")
@@ -659,7 +721,223 @@ def cmd_vfs(args):
         print(f"[✓] Injected {len(data)} bytes from '{args.input_file}' -> '{args.uri}' (repacked atomically)!")
 
 
+def _detect_audio_format(path: str, data: bytes) -> str:
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".wav", ".wave") or data.startswith(b"RIFF"):
+        return "wav"
+    if ext == ".vag" or data.startswith(b"VAGp"):
+        return "vag"
+    if ext == ".brr":
+        return "brr"
+    if ext == ".dsp":
+        return "dsp"
+    if ext == ".spc" or data.startswith(b"SNES-SPC700"):
+        return "spc"
+    if ext == ".sdat" or data.startswith(b"SDAT"):
+        return "sdat"
+    return ext.lstrip(".")
 
+
+def cmd_audio_convert(args):
+    from miorom.audio.brr import BRRCodec
+    from miorom.audio.dsp_adpcm import DSPADPCMCodec
+    from miorom.audio.vag import VAGFile
+    from miorom.audio.wav_codec import WavCodec
+
+    with open(args.input_file, "rb") as f:
+        in_data = f.read()
+
+    in_fmt = (args.from_format or _detect_audio_format(args.input_file, in_data)).lower()
+    out_fmt = (args.to_format or _detect_audio_format(args.output, b"")).lower()
+
+    print(f"[*] Converting audio: '{args.input_file}' ({in_fmt.upper()}) -> '{args.output}' ({out_fmt.upper()})...")
+
+    # Step 1: Decode to PCM samples
+    samples: list[int] = []
+    sample_rate = args.rate or 44100
+    channels = args.channels or 1
+
+    if in_fmt == "wav":
+        sound = WavCodec.decode(in_data)
+        if args.channels == 1 and sound.channels > 1:
+            sound = sound.to_mono()
+        samples = sound.samples
+        sample_rate = args.rate or sound.sample_rate
+        channels = sound.channels
+    elif in_fmt == "vag":
+        vag = VAGFile.from_bytes(in_data)
+        samples = vag.decode()
+        sample_rate = args.rate or vag.header.sample_rate or 44100
+        channels = 1
+    elif in_fmt == "brr":
+        samples = BRRCodec.decode(in_data)
+        sample_rate = args.rate or 32000
+        channels = 1
+    elif in_fmt == "dsp":
+        samples = DSPADPCMCodec.decode(in_data)
+        sample_rate = args.rate or 32000
+        channels = 1
+    else:
+        raise ValueError(f"Unsupported input audio format: '{in_fmt}'")
+
+    # Step 2: Encode to target format
+    os.makedirs(os.path.dirname(os.path.abspath(args.output)) or ".", exist_ok=True)
+
+    if out_fmt == "wav":
+        out_bytes = WavCodec.encode(
+            samples,
+            sample_rate=sample_rate,
+            channels=channels,
+            bits_per_sample=16,
+        )
+    elif out_fmt == "vag":
+        if channels > 1:
+            sound = WavCodec.decode(WavCodec.encode(samples, sample_rate, channels)).to_mono()
+            samples = sound.samples
+        vag_file = VAGFile.from_pcm(
+            samples,
+            sample_rate=sample_rate,
+            name=os.path.splitext(os.path.basename(args.output))[0],
+            loop_point=args.loop,
+        )
+        out_bytes = vag_file.to_bytes()
+    elif out_fmt == "brr":
+        if channels > 1:
+            sound = WavCodec.decode(WavCodec.encode(samples, sample_rate, channels)).to_mono()
+            samples = sound.samples
+        out_bytes = BRRCodec.encode(samples, loop_point=args.loop)
+    else:
+        raise ValueError(f"Unsupported output audio format: '{out_fmt}'")
+
+    with open(args.output, "wb") as f:
+        f.write(out_bytes)
+
+    duration = len(samples) / (sample_rate * channels) if sample_rate > 0 else 0
+    print(f"[✓] Converted {len(in_data):,} bytes -> {len(out_bytes):,} bytes ({duration:.2f}s, {sample_rate} Hz) saved to '{args.output}'!")
+
+
+def cmd_audio_extract(args):
+    from miorom.audio.sdat import SDATContainer
+    from miorom.audio.spc import SpcFile
+
+    with open(args.container, "rb") as f:
+        data = f.read()
+
+    os.makedirs(args.output_dir, exist_ok=True)
+    fmt = _detect_audio_format(args.container, data)
+
+    print(f"[*] Extracting audio container '{args.container}' into '{args.output_dir}'...")
+
+    if fmt == "spc":
+        spc = SpcFile.from_bytes(data)
+        rate = args.rate or 32000
+        wav_map = spc.dump_samples_to_wav(sample_rate=rate)
+        for idx, wav_bytes in wav_map.items():
+            fname = os.path.join(args.output_dir, f"sample_{idx:03d}.wav")
+            with open(fname, "wb") as f:
+                f.write(wav_bytes)
+        print(f"[✓] Extracted {len(wav_map)} BRR samples as WAV files into '{args.output_dir}'!")
+
+    elif fmt == "sdat":
+        sdat = SDATContainer(data)
+        counts = sdat.extract_all(args.output_dir)
+        total = sum(counts.values())
+        print(f"[✓] Extracted {total} files from SDAT archive into '{args.output_dir}':")
+        for cat, count in counts.items():
+            if count > 0:
+                print(f"    - {cat.upper()}: {count} files")
+
+    else:
+        raise ValueError(f"Unsupported audio container: '{args.container}'. Supported: .spc, .sdat")
+
+
+def cmd_audio_info(args):
+    import json
+
+    from miorom.audio.sdat import SDATContainer
+    from miorom.audio.spc import SpcFile
+    from miorom.audio.vag import VAGHeader
+    from miorom.audio.wav_codec import WavCodec
+
+    with open(args.input_file, "rb") as f:
+        data = f.read()
+
+    fmt = _detect_audio_format(args.input_file, data)
+    info: dict[str, object] = {"format": fmt.upper(), "file_size": len(data), "path": args.input_file}
+
+    if fmt == "wav":
+        info.update(WavCodec.inspect(data))
+    elif fmt == "vag":
+        hdr = VAGHeader.from_bytes(data)
+        num_blocks = hdr.data_size // 16 if hdr.data_size else len(data[48:]) // 16
+        num_samples = num_blocks * 28
+        rate = hdr.sample_rate or 44100
+        info.update({
+            "name": hdr.name,
+            "version": hdr.version,
+            "sample_rate": rate,
+            "channels": 1,
+            "bits_per_sample": 16,
+            "num_samples": num_samples,
+            "duration_seconds": round(num_samples / rate, 3) if rate > 0 else 0.0,
+        })
+    elif fmt == "brr":
+        blocks = len(data) // 9
+        num_samples = blocks * 16
+        rate = args.rate or 32000
+        info.update({
+            "sample_rate": rate,
+            "channels": 1,
+            "num_blocks": blocks,
+            "num_samples": num_samples,
+            "duration_seconds": round(num_samples / rate, 3) if rate > 0 else 0.0,
+        })
+    elif fmt == "spc":
+        spc = SpcFile.from_bytes(data)
+        samples = spc.list_samples()
+        info.update({
+            "song_title": spc.header.song_title,
+            "game_title": spc.header.game_title,
+            "artist": spc.header.artist,
+            "dumper": spc.header.dumper_name,
+            "duration_seconds": spc.header.duration_seconds,
+            "pc": f"0x{spc.header.pc:04X}",
+            "sample_count": len(samples),
+        })
+    elif fmt == "sdat":
+        sdat = SDATContainer(data)
+        info.update({
+            "entry_count": len(sdat.entries),
+            "sequences": len(sdat.sequences),
+            "sound_banks": len(sdat.sound_banks),
+            "wave_archives": len(sdat.wave_archives),
+        })
+    else:
+        info["status"] = "Raw / Unrecognized audio format"
+
+    if getattr(args, "json", False):
+        print(json.dumps(info, indent=2))
+    else:
+        print(f"[*] Audio Info: {args.input_file}")
+        for k, v in info.items():
+            if k == "path":
+                continue
+            label = k.replace("_", " ").title()
+            if isinstance(v, int) and "size" in k:
+                print(f"  {label:<18}: {v:,} bytes")
+            elif isinstance(v, float):
+                print(f"  {label:<18}: {v}s" if "duration" in k else f"  {label:<18}: {v}")
+            else:
+                print(f"  {label:<18}: {v}")
+
+
+def cmd_audio(args):
+    if args.audio_command == "convert":
+        cmd_audio_convert(args)
+    elif args.audio_command == "extract":
+        cmd_audio_extract(args)
+    elif args.audio_command == "info":
+        cmd_audio_info(args)
 
 
 def main():
@@ -691,19 +969,62 @@ def main():
     p_val.add_argument("-c", "--max-chars", type=int, default=32, help="Max characters per line (default: 32)")
     p_val.add_argument("-l", "--max-lines", type=int, default=3, help="Max lines per textbox (default: 3)")
 
-    # Patch Create command
-    p_pcreate = subparsers.add_parser("patch-create", help="Create an IPS, BPS, UPS, or Xdelta patch between original and modified ROM")
+    # Unified Patch command
+    p_patch = subparsers.add_parser("patch", help="ROM patching operations (apply, create, inspect)")
+    patch_subs = p_patch.add_subparsers(dest="patch_command", required=True)
+
+    # patch apply
+    p_patch_apply = patch_subs.add_parser("apply", help="Apply an IPS, BPS, PPF, UPS, or Xdelta patch to an original ROM")
+    p_patch_apply.add_argument("original", help="Path to original / unmodified ROM/ISO")
+    p_patch_apply.add_argument("patch", help="Path to patch file (.bps, .ips, .ppf, .ups, .xdelta)")
+    p_patch_apply.add_argument("-o", "--output", required=True, help="Path to output patched ROM/ISO")
+    p_patch_apply.add_argument("-f", "--format", choices=["bps", "ips", "ppf", "ups", "xdelta"], default=None, help="Force patch format (default: auto-detect)")
+
+    # patch create
+    p_patch_create = patch_subs.add_parser("create", help="Create an IPS, BPS, PPF, UPS, or Xdelta patch between original and modified ROM")
+    p_patch_create.add_argument("original", help="Path to original / unmodified ROM/ISO")
+    p_patch_create.add_argument("modified", help="Path to modified / translated ROM/ISO")
+    p_patch_create.add_argument("-o", "--output", required=True, help="Path to output patch file (.bps, .ips, .ppf, .ups, .xdelta)")
+    p_patch_create.add_argument("-f", "--format", choices=["bps", "ips", "ppf", "ups", "xdelta"], default=None, help="Patch format (default: infer from output extension)")
+
+    # patch inspect
+    p_patch_inspect = patch_subs.add_parser("inspect", help="Inspect patch file metadata, format, and checksums")
+    p_patch_inspect.add_argument("patch_file", help="Path to patch file (.bps, .ips, .ppf, .ups, .xdelta)")
+
+    # patch export-riivolution
+    p_patch_export_riiv = patch_subs.add_parser(
+        "export-riivolution",
+        help="Export delta assets and Riivolution XML mod package for Nintendo Wii",
+    )
+    p_patch_export_riiv.add_argument("--orig", "--original", dest="original", required=True, help="Path to original unpacked game directory")
+    p_patch_export_riiv.add_argument("--mod", "--modified", dest="modified", required=True, help="Path to modified project assets directory")
+    p_patch_export_riiv.add_argument("-n", "--name", required=True, help="Mod name (e.g. MarioKart_Indo)")
+    p_patch_export_riiv.add_argument("--id", required=True, help="Target Game ID (e.g. RMCE01 or RMC)")
+    p_patch_export_riiv.add_argument("-o", "--output", required=True, help="Output directory for Riivolution package (e.g. ./sdcard)")
+
+    # patch apply-riivolution
+    p_patch_apply_riiv = patch_subs.add_parser(
+        "apply-riivolution",
+        help="Apply Riivolution XML mod directly to a Wii disc image (.iso, .wbfs, .rvz)",
+    )
+    p_patch_apply_riiv.add_argument("--disc", required=True, help="Path to clean input Wii disc image (.iso, .wbfs, .rvz)")
+    p_patch_apply_riiv.add_argument("--xml", required=True, help="Path to Riivolution XML mod file")
+    p_patch_apply_riiv.add_argument("--root", required=True, help="Path to external mod assets root folder")
+    p_patch_apply_riiv.add_argument("-o", "--output", required=True, help="Path to output patched disc image (.iso, .wbfs, .rvz)")
+
+    # Patch Create command (backwards-compat flat alias)
+    p_pcreate = subparsers.add_parser("patch-create", help="Create an IPS, BPS, PPF, UPS, or Xdelta patch between original and modified ROM")
     p_pcreate.add_argument("original", help="Path to original / unmodified ROM/ISO")
     p_pcreate.add_argument("modified", help="Path to modified / translated ROM/ISO")
-    p_pcreate.add_argument("-o", "--output", required=True, help="Path to output patch file (.xdelta, .bps, .ips, .ups)")
-    p_pcreate.add_argument("-f", "--format", choices=["xdelta", "bps", "ips", "ups"], default="bps", help="Patch format (default: bps)")
+    p_pcreate.add_argument("-o", "--output", required=True, help="Path to output patch file (.bps, .ips, .ppf, .ups, .xdelta)")
+    p_pcreate.add_argument("-f", "--format", choices=["bps", "ips", "ppf", "ups", "xdelta"], default=None, help="Patch format (default: infer from output extension)")
 
-    # Patch Apply command
-    p_papply = subparsers.add_parser("patch-apply", help="Apply an IPS, BPS, UPS, or Xdelta patch to an original ROM")
+    # Patch Apply command (backwards-compat flat alias)
+    p_papply = subparsers.add_parser("patch-apply", help="Apply an IPS, BPS, PPF, UPS, or Xdelta patch to an original ROM")
     p_papply.add_argument("original", help="Path to original / unmodified ROM/ISO")
-    p_papply.add_argument("patch", help="Path to patch file (.xdelta, .bps, .ips, .ups)")
+    p_papply.add_argument("patch", help="Path to patch file (.bps, .ips, .ppf, .ups, .xdelta)")
     p_papply.add_argument("-o", "--output", required=True, help="Path to output patched ROM/ISO")
-    p_papply.add_argument("-f", "--format", choices=["xdelta", "bps", "ips", "ups"], default=None, help="Force patch format")
+    p_papply.add_argument("-f", "--format", choices=["bps", "ips", "ppf", "ups", "xdelta"], default=None, help="Force patch format (default: auto-detect)")
 
     # Compress command
     p_comp = subparsers.add_parser("compress", help="Compress a file using console compression (LZ10, LZ11, RLE, Yaz0, Yay0, aPLib, Huffman)")
@@ -924,6 +1245,32 @@ def main():
     p_vfs_write.add_argument("uri", help="Nested file URI (e.g. 'menu.arc::win_recipe.arc::timg/gfontC29.tpl')")
     p_vfs_write.add_argument("-i", "--input-file", required=True, help="Source input file path to inject")
 
+    # Audio command suite
+    p_audio = subparsers.add_parser("audio", help="Audio encoding, decoding, conversion, and container extraction")
+    audio_subparsers = p_audio.add_subparsers(dest="audio_command", required=True)
+
+    # audio convert
+    p_aud_conv = audio_subparsers.add_parser("convert", help="Convert audio file between WAV, VAG, BRR, and DSP-ADPCM")
+    p_aud_conv.add_argument("input_file", help="Source audio file path (.wav, .vag, .brr, .dsp)")
+    p_aud_conv.add_argument("-o", "--output", required=True, help="Target audio file path (.wav, .vag, .brr)")
+    p_aud_conv.add_argument("-r", "--rate", type=int, default=None, help="Target sampling rate in Hz (e.g. 32000, 44100)")
+    p_aud_conv.add_argument("-c", "--channels", type=int, default=None, choices=[1, 2], help="Number of channels (1=mono, 2=stereo)")
+    p_aud_conv.add_argument("-l", "--loop", type=int, default=None, help="Loop point sample offset for VAG/BRR")
+    p_aud_conv.add_argument("--from-format", default=None, help="Explicit input format override (wav, vag, brr, dsp)")
+    p_aud_conv.add_argument("--to-format", default=None, help="Explicit output format override (wav, vag, brr)")
+
+    # audio extract
+    p_aud_ext = audio_subparsers.add_parser("extract", help="Extract samples or wave files from audio containers (.spc, .sdat)")
+    p_aud_ext.add_argument("container", help="Source container file path (.spc, .sdat)")
+    p_aud_ext.add_argument("-o", "--output-dir", required=True, help="Output directory for extracted audio files")
+    p_aud_ext.add_argument("-r", "--rate", type=int, default=None, help="Sampling rate for WAV decoding (default: 32000)")
+
+    # audio info
+    p_aud_info = audio_subparsers.add_parser("info", help="Inspect audio file metadata, duration, sample rate, channels")
+    p_aud_info.add_argument("input_file", help="Path to audio file (.wav, .vag, .brr, .spc, .sdat)")
+    p_aud_info.add_argument("-r", "--rate", type=int, default=None, help="Assumed sampling rate for headerless raw formats (e.g. BRR)")
+    p_aud_info.add_argument("--json", action="store_true", help="Output metadata in JSON format")
+
     args = parser.parse_args(argv[1:])
 
     if args.command == "split":
@@ -932,6 +1279,17 @@ def main():
         cmd_merge(args)
     elif args.command == "validate":
         cmd_validate(args)
+    elif args.command == "patch":
+        if args.patch_command == "apply":
+            cmd_patch_apply(args)
+        elif args.patch_command == "create":
+            cmd_patch_create(args)
+        elif args.patch_command == "inspect":
+            cmd_patch_inspect(args)
+        elif args.patch_command == "export-riivolution":
+            cmd_patch_export_riivolution(args)
+        elif args.patch_command == "apply-riivolution":
+            cmd_patch_apply_riivolution(args)
     elif args.command == "patch-create":
         cmd_patch_create(args)
     elif args.command == "patch-apply":
@@ -978,6 +1336,8 @@ def main():
         cmd_gfx(args)
     elif args.command == "vfs":
         cmd_vfs(args)
+    elif args.command == "audio":
+        cmd_audio(args)
     else:
         parser.print_help()
 

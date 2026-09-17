@@ -1,7 +1,8 @@
-from miorom.core.schema import BinaryStruct, RawBytes, U16, U32, U8
+from typing import Any, Dict, List, Optional, Union
+
+from miorom.core.schema import U8, U16, U32, BinaryStruct, RawBytes
 from miorom.errors import ParseError
-from typing import Any, Dict, List, Optional, Tuple, Union
-from miorom.graphics.tiles import Tile, decode_tile, encode_tile
+from miorom.graphics.tiles import Tile
 
 
 class NitroBlockHeaderStruct(BinaryStruct):

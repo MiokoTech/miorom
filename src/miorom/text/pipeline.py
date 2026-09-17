@@ -7,19 +7,16 @@ and safe, overflow-aware re-injection with automatic slack relocation and
 ROM integrity checksum fixing.
 """
 
-from miorom.result import MioRomResult
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
-import json
-import struct
 import warnings
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Union
 
-from miorom.core.pointer import PointerTable, PointerEntry
-from miorom.core.integrity import RomIntegrityManager, IntegrityReport
-from miorom.text.po_handler import PoHandler, PoEntry
-from miorom.patch.relocator import AutoRelocationManager, RelocationSummary, RelocatablePointer
+from miorom.core import schema as bschema
+from miorom.patch.relocator import AutoRelocationManager, RelocationSummary
+from miorom.result import MioRomResult
 from miorom.text.charmap import CharMap
 from miorom.text.dte import DTEMiner
+from miorom.text.po_handler import PoHandler
 from miorom.text.tokenizer import ControlCodeSchema, ControlCodeTokenizer
 
 
@@ -69,13 +66,15 @@ class StringTablePipeline:
                 raw_ptr = int.from_bytes(raw_bytes, "little" if endian == "<" else "big")
             else:
                 fmt = f"{endian}{'I' if pointer_size == 4 else 'H'}"
-                raw_ptr = struct.unpack_from(fmt, buffer, ptr_loc)[0]
+                raw_ptr = bschema.unpack_from(fmt, buffer, ptr_loc)[0]
 
             # is_relative=True: pointer value is a signed offset from the pointer's own ROM location.
             # is_relative=False: pointer value is an absolute RAM address; subtract base_address to get ROM offset.
             if is_relative:
                 ptr_loc_i = table_offset + (i * pointer_size)
-                target_off = ptr_loc_i + raw_ptr
+                max_val = 1 << (pointer_size * 8)
+                signed_val = raw_ptr if raw_ptr < (max_val >> 1) else raw_ptr - max_val
+                target_off = ptr_loc_i + signed_val
             else:
                 target_off = raw_ptr - base_address
 
@@ -250,6 +249,8 @@ class StringTablePipeline:
 
         # Auto-fix integrity checksums.
         if auto_fix_integrity:
+            from miorom.core.integrity import RomIntegrityManager
+
             fixed_data, report = RomIntegrityManager.fix(bytes(buffer), platform=platform)
             if len(fixed_data) == len(buffer):
                 buffer[:] = fixed_data

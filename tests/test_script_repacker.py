@@ -62,3 +62,30 @@ def test_smart_script_repacker_arbitrary_lengthening():
     new_disasm = engine.disassemble(new_bytecode)
     jump_ins = next(ins for ins in new_disasm.instructions if ins.name == "JUMP")
     assert jump_ins.args["target"] == f"LABEL_{new_end_offset:04X}" or jump_ins.args["target"] == new_end_offset
+
+
+def test_repacker_with_raw_bytes_instruction():
+    engine = BytecodeEngine(endian="<")
+    engine.register_opcode(0x01, "NOP")
+    engine.register_opcode(0x03, "JUMP", [ArgU16("target", is_jump_target=True)])
+    engine.register_opcode(0xFF, "EXIT")
+
+    # Script:
+    # 0x00: JUMP to 0x06
+    # 0x03: Unknown custom multi-byte instruction (e.g. 3 bytes raw: b"\xAA\xBB\xCC")
+    # 0x06: EXIT
+    from miorom.script.engine import Instruction, DisassembledScript
+    ins_jump = Instruction(offset=0x00, opcode_id=0x03, name="JUMP", args={"target": "LABEL_0006"})
+    ins_raw = Instruction(offset=0x03, opcode_id=0xAA, name="CUSTOM", args={"raw_bytes": b"\xAA\xBB\xCC"})
+    ins_exit = Instruction(offset=0x06, opcode_id=0xFF, name="EXIT", label="LABEL_0006")
+
+    script = DisassembledScript([ins_jump, ins_raw, ins_exit])
+    repacker = SmartScriptRepacker(engine)
+    out_bytes, report = repacker.repack_with_translations(script, {})
+
+    assert len(out_bytes) == 3 + 3 + 1  # 7 bytes
+    assert out_bytes[3:6] == b"\xAA\xBB\xCC"
+    # Target in JUMP must point to 0x06
+    target_val = struct.unpack_from("<H", out_bytes, 1)[0]
+    assert target_val == 0x06
+

@@ -165,6 +165,20 @@ miorom patch-apply "clean.iso" "patch.xdelta" -o "game_patched.iso"
 
 ---
 
+### 6b. `patch export-riivolution` & `patch apply-riivolution` - Nintendo Wii Mod Loader
+
+Export delta assets and generate compliant Riivolution XML mod distributions, or apply Riivolution XML mods directly into Wii disc images (`.iso`, `.wbfs`, `.rvz`).
+
+```bash
+# Export delta assets to Riivolution SD card layout
+miorom patch export-riivolution --orig <unpacked_orig_dir> --mod <modified_dir> -n <mod_name> --id <game_id> -o <sdcard_dir>
+
+# Apply Riivolution mod into a playable disc image
+miorom patch apply-riivolution --disc <clean_disc> --xml <mod.xml> --root <mod_assets_dir> -o <patched_disc>
+```
+
+---
+
 ### 7. `compress` - Console BIOS Compressor
 
 Compresses data using console-standard compression algorithms.
@@ -530,5 +544,68 @@ Injects a modified local file into a nested container path and atomically rebuil
 
 ```bash
 miorom vfs write <uri> -i <input_file>
+```
+
+---
+
+### 24. `audio` - Multi-Format Audio Codec, Converter & Container Ripper
+
+Converts audio files between standard PCM WAV and console-native ADPCM codecs (Sony PS1 VAG, SNES SPC700 BRR, Nintendo GameCube/Wii DSP-ADPCM), inspects stream metadata, and extracts sound samples from console containers (`.spc`, `.sdat`).
+
+```bash
+miorom audio <subcommand> [options] [arguments]
+```
+
+#### Subcommands
+
+##### `audio convert`
+Converts audio files between WAV, VAG (PS1/PS2), BRR (SNES), and DSP-ADPCM (GameCube/Wii).
+
+```bash
+miorom audio convert <input_file> -o <output_file> [-r RATE] [-c CHANNELS] [-l LOOP] [--from-format FMT] [--to-format FMT]
+```
+
+###### Examples
+```bash
+# Convert a WAV sound effect to Sony PS1 VAG
+miorom audio convert "sfx.wav" -o "sfx.vag" -r 22050 -c 1
+
+# Convert a SNES BRR sample back to playable WAV
+miorom audio convert "jump.brr" -o "jump.wav" -r 32000
+
+# Convert stereo WAV to Nintendo DSP-ADPCM
+miorom audio convert "bgm.wav" -o "bgm.dsp" -r 44100 -c 2
+```
+
+##### `audio extract`
+Extracts all embedded waveform samples and sound banks from console audio containers directly into standard 16-bit PCM `.wav` files.
+
+```bash
+miorom audio extract <container_file> -o <output_dir> [-r RATE]
+```
+
+###### Examples
+```bash
+# Extract all instrument samples from a SNES .spc sound file
+miorom audio extract "theme.spc" -o "extracted_spc_samples/"
+
+# Extract audio streams from a Nintendo DS .sdat sound archive
+miorom audio extract "sound_data.sdat" -o "extracted_sdat_wavs/"
+```
+
+##### `audio info`
+Inspects audio file headers, duration, channel configuration, sampling rates, and loop points.
+
+```bash
+miorom audio info <input_file> [--json]
+```
+
+###### Examples
+```bash
+# Inspect a Nintendo Wii BRSTM or GameCube DSP audio file
+miorom audio info "track01.brstm"
+
+# Export metadata in JSON format
+miorom audio info "voice.vag" --json
 ```
 

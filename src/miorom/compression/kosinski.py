@@ -10,7 +10,6 @@ Pure Python implementation using MioROM binary primitives.
 
 from __future__ import annotations
 
-from typing import Optional
 from miorom.errors import CompressionError
 
 
@@ -147,12 +146,12 @@ class KosinskiCodec:
                 idx = window.rfind(sub2)
                 while idx != -1:
                     match_pos = start_w + idx
-                    l = 2
-                    while l < max_match and data[match_pos + l] == data[pos + l]:
-                        l += 1
+                    match_len = 2
+                    while match_len < max_match and data[match_pos + match_len] == data[pos + match_len]:
+                        match_len += 1
                     dist = pos - match_pos
-                    if l > best_len or (l == best_len and dist < best_dist):
-                        best_len = l
+                    if match_len > best_len or (match_len == best_len and dist < best_dist):
+                        best_len = match_len
                         best_dist = dist
                     if best_len >= 256:
                         break
@@ -205,6 +204,7 @@ class KosinskiCodec:
                 desc_bits.append(0)
             val = sum(bit << i for i, bit in enumerate(desc_bits))
             out[desc_pos] = val & 0xFF
+            out[desc_pos + 1] = (val >> 8) & 0xFF
         # desc_pos holds empty descriptor on non-bit alignment
         return bytes(out)
 

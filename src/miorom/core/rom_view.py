@@ -7,13 +7,13 @@ reverse engineering, string querying, pointer scanning, and automated diagnosis.
 """
 
 import os
-
-from miorom.errors import ParseError
 import re
-from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Set, Tuple, Union
+from collections.abc import Iterator, Sequence
+from typing import Callable, Dict, List, Optional, Union
 
-from miorom.core.scanner import StringScanner, PointerScanner, FoundString, CandidatePointerTable
-from miorom.scanner.inspector import SmartInspector, InspectionReport
+from miorom.core.scanner import CandidatePointerTable, FoundString, PointerScanner, StringScanner
+from miorom.errors import ParseError
+from miorom.scanner.inspector import InspectionReport, SmartInspector
 
 
 class StringQuery:

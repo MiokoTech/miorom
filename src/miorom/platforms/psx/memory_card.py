@@ -20,11 +20,11 @@ Format Specifications:
 
 from __future__ import annotations
 
-import struct
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Optional
 
-from miorom.core.schema import BinaryStruct, RawBytes, U16, U32, U8
+from miorom.core import schema
+from miorom.core.schema import U8, U16, U32, BinaryStruct, RawBytes
 from miorom.errors import ParseError
 from miorom.graphics.palette import Color, Palette
 
@@ -85,13 +85,13 @@ class PSXMCDirectoryEntryStruct(BinaryStruct):
 
 class PSXSaveHeaderStruct(BinaryStruct):
     """
-    Save Data Block Frame 0 Header (64 bytes).
+    Save Data Block Frame 0 Header (68 bytes).
     """
     _endian = "<"
     magic = RawBytes(2)          # b"SC"
     icon_flags = U8()            # 0x11 (1 frame), 0x12 (2 frames), 0x13 (3 frames)
     block_count = U8()           # Total 8KB blocks used (1..15)
-    title_raw = RawBytes(64)     # Shift-JIS encoded title
+    title_raw = RawBytes(64)     # Shift-JIS encoded title (64 bytes)
 
 
 @dataclass
@@ -118,7 +118,7 @@ class PSXSaveFile:
             self.block_count = needed_blocks
 
     @classmethod
-    def from_mcs(cls, data: bytes) -> "PSXSaveFile":
+    def from_mcs(cls, data: bytes) -> PSXSaveFile:
         """
         Parses an individual .mcs single-save file (128-byte header + N * 8192 data).
         """
@@ -149,7 +149,7 @@ class PSXSaveFile:
         file_size: int,
         block_data: bytes,
         start_block: int,
-    ) -> "PSXSaveFile":
+    ) -> PSXSaveFile:
         if len(block_data) < 128:
             raise ParseError("Block data too small for PSX save header.")
 
@@ -168,7 +168,7 @@ class PSXSaveFile:
         colors: List[Color] = []
         for i in range(16):
             if (i * 2 + 2) <= len(pal_bytes):
-                val = struct.unpack_from("<H", pal_bytes, i * 2)[0]
+                val = schema.unpack_from("<H", pal_bytes, i * 2)[0]
                 # Color 0 is transparent in BIOS icon display
                 alpha = 0 if i == 0 else 255
                 colors.append(Color.from_bgr555(val & 0x7FFF, alpha=alpha))
@@ -224,40 +224,61 @@ class PSXSaveFile:
 
         return bytes(rgba)
 
-    def get_icon_image(self, frame_idx: int = 0) -> Optional["Image.Image"]:
+    def get_icon_image(self, frame_idx: int = 0) -> Any:
         """
-        Renders an icon frame as a PIL RGBA Image.
+        Renders an icon frame as an RGBA image (PIL Image or PNGImage fallback).
         """
-        if not HAS_PIL:
-            return None
-
         rgba_bytes = self.decode_icon_rgba(frame_idx)
-        img = Image.frombytes("RGBA", (16, 16), rgba_bytes)
-        return img
+        if HAS_PIL:
+            return Image.frombytes("RGBA", (16, 16), rgba_bytes)
+        from miorom.graphics.png_codec import PNGColorType, PNGImage
+        return PNGImage(
+            width=16,
+            height=16,
+            color_type=PNGColorType.RGBA,
+            bit_depth=8,
+            pixels=rgba_bytes,
+        )
 
-    def get_icon_images(self) -> List["Image.Image"]:
+    def get_icon_images(self) -> List[Any]:
         """
-        Renders all animated icon frames as PIL RGBA Images.
+        Renders all animated icon frames as RGBA images (PIL Image or PNGImage fallback).
         """
-        if not HAS_PIL:
-            return []
-        return [self.get_icon_image(i) for i in range(len(self.icon_bitmaps)) if self.get_icon_image(i) is not None]
+        return [self.get_icon_image(i) for i in range(len(self.icon_bitmaps))]
+
+    def save_icon_png(self, output_path: str, frame_idx: int = 0) -> str:
+        """Saves an icon frame to a PNG file. Zero-dependency (works without Pillow)."""
+        from miorom.graphics.png_codec import PNGCodec
+        rgba_bytes = self.decode_icon_rgba(frame_idx)
+        png_bytes = PNGCodec.encode_rgba(16, 16, rgba_bytes)
+        with open(output_path, "wb") as f:
+            f.write(png_bytes)
+        return output_path
 
     def build_block_data(self) -> bytes:
         """
         Serializes this save file into (block_count * 8192) bytes.
+        Automatically recalculates needed block counts and synchronizes file_size
+        to ensure modified payloads are never truncated.
         """
+        num_icons = max(1, min(3, len(self.icon_bitmaps)))
+        header_and_icons_size = 128 + num_icons * 128
+        actual_file_size = header_and_icons_size + len(self.payload)
+        needed_blocks = max(1, (actual_file_size + BLOCK_SIZE - 1) // BLOCK_SIZE)
+        if self.block_count < needed_blocks:
+            self.block_count = needed_blocks
+        self.file_size = actual_file_size
+
         total_size = self.block_count * BLOCK_SIZE
         buf = bytearray(total_size)
 
         # Header 68 bytes
         buf[0:2] = b"SC"
-        num_icons = max(1, min(3, len(self.icon_bitmaps)))
         icon_flags = 0x10 | num_icons
         buf[2] = icon_flags
         buf[3] = self.block_count
 
-        # Shift-JIS title (64 bytes)
+        # Shift-JIS title (up to 64 bytes)
         encoded_title = self.title.encode("shift_jis", errors="replace")[:64]
         buf[4 : 4 + len(encoded_title)] = encoded_title
 
@@ -269,7 +290,7 @@ class PSXSaveFile:
                 val = c.to_bgr555()
             else:
                 val = 0
-            pal_bytes[i * 2 : i * 2 + 2] = struct.pack("<H", val)
+            pal_bytes[i * 2 : i * 2 + 2] = schema.pack("<H", val)
         buf[0x60:0x80] = pal_bytes
 
         # Icon bitmaps
@@ -289,17 +310,18 @@ class PSXSaveFile:
         """
         Exports the save file into standard .mcs single save format.
         """
+        blocks = self.build_block_data()
+
         dir_buf = bytearray(128)
-        dir_buf[0:4] = struct.pack("<I", PSXBlockState.IN_USE_INITIAL)
-        dir_buf[4:8] = struct.pack("<I", self.file_size)
-        dir_buf[8:10] = struct.pack("<H", 0xFFFF)
+        dir_buf[0:4] = schema.pack("<I", PSXBlockState.IN_USE_INITIAL)
+        dir_buf[4:8] = schema.pack("<I", self.file_size)
+        dir_buf[8:10] = schema.pack("<H", 0xFFFF)
 
         fname_bytes = self.filename.encode("ascii", errors="replace")[:21]
         dir_buf[10 : 10 + len(fname_bytes)] = fname_bytes
 
         dir_buf[127] = calculate_frame_xor(dir_buf)
 
-        blocks = self.build_block_data()
         return bytes(dir_buf) + blocks
 
 
@@ -320,14 +342,14 @@ class PSXMemoryCard:
         self._data = raw_data
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "PSXMemoryCard":
+    def from_bytes(cls, data: bytes) -> PSXMemoryCard:
         """
         Loads and verifies a 128 KB PSX memory card image.
         """
         return cls(bytearray(data))
 
     @classmethod
-    def format_blank(cls) -> "PSXMemoryCard":
+    def format_blank(cls) -> PSXMemoryCard:
         """
         Creates a freshly formatted, blank 128 KB memory card image.
         """
@@ -340,17 +362,17 @@ class PSXMemoryCard:
         # Frames 1..15: Directory entries (all FREE)
         for i in range(1, 16):
             frame_off = i * FRAME_SIZE
-            buf[frame_off : frame_off + 4] = struct.pack("<I", PSXBlockState.FREE)
-            buf[frame_off + 4 : frame_off + 8] = struct.pack("<I", 0)
-            buf[frame_off + 8 : frame_off + 10] = struct.pack("<H", 0xFFFF)
+            buf[frame_off : frame_off + 4] = schema.pack("<I", PSXBlockState.FREE)
+            buf[frame_off + 4 : frame_off + 8] = schema.pack("<I", 0)
+            buf[frame_off + 8 : frame_off + 10] = schema.pack("<H", 0xFFFF)
             buf[frame_off + 127] = calculate_frame_xor(buf[frame_off : frame_off + 128])
 
         # Frames 16..35: Broken frame list (clean entries)
         for i in range(16, 36):
             frame_off = i * FRAME_SIZE
-            buf[frame_off : frame_off + 4] = struct.pack("<I", 0xFFFFFFFF)
-            buf[frame_off + 4 : frame_off + 8] = struct.pack("<I", 0)
-            buf[frame_off + 8 : frame_off + 10] = struct.pack("<H", 0xFFFF)
+            buf[frame_off : frame_off + 4] = schema.pack("<I", 0xFFFFFFFF)
+            buf[frame_off + 4 : frame_off + 8] = schema.pack("<I", 0)
+            buf[frame_off + 8 : frame_off + 10] = schema.pack("<H", 0xFFFF)
             buf[frame_off + 127] = calculate_frame_xor(buf[frame_off : frame_off + 128])
 
         return cls(buf)
@@ -477,19 +499,25 @@ class PSXMemoryCard:
 
             if idx == 0:
                 alloc = PSXBlockState.IN_USE_INITIAL
+                file_sz = save.file_size
+                fname_bytes = save.filename.encode("ascii", errors="replace")[:21]
             elif idx == len(chain) - 1:
                 alloc = PSXBlockState.IN_USE_LAST
+                file_sz = 0
+                fname_bytes = b""
             else:
                 alloc = PSXBlockState.IN_USE_MIDDLE
+                file_sz = 0
+                fname_bytes = b""
 
             next_b = chain[idx + 1] if idx + 1 < len(chain) else 0xFFFF
 
-            dir_buf[0:4] = struct.pack("<I", alloc)
-            dir_buf[4:8] = struct.pack("<I", save.file_size)
-            dir_buf[8:10] = struct.pack("<H", next_b)
+            dir_buf[0:4] = schema.pack("<I", alloc)
+            dir_buf[4:8] = schema.pack("<I", file_sz)
+            dir_buf[8:10] = schema.pack("<H", next_b)
 
-            fname_bytes = save.filename.encode("ascii", errors="replace")[:21]
-            dir_buf[10 : 10 + len(fname_bytes)] = fname_bytes
+            if fname_bytes:
+                dir_buf[10 : 10 + len(fname_bytes)] = fname_bytes
 
             dir_buf[127] = calculate_frame_xor(dir_buf)
             self._data[frame_off : frame_off + FRAME_SIZE] = dir_buf
@@ -500,10 +528,18 @@ class PSXMemoryCard:
         """
         Deletes a save file starting at start_block by updating allocation flags.
         """
+        if not (1 <= start_block <= 15):
+            raise IndexError(f"Block index out of range: {start_block} (must be 1..15).")
+        first_entry = self.get_directory_entry(start_block)
+        if first_entry.alloc_state != PSXBlockState.IN_USE_INITIAL:
+            raise ValueError(f"Block {start_block} is not the start of an active save file.")
+
+        visited = set()
         curr = start_block
         is_first = True
 
-        while curr != 0xFFFF and (1 <= curr <= 15):
+        while curr != 0xFFFF and (1 <= curr <= 15) and curr not in visited:
+            visited.add(curr)
             entry = self.get_directory_entry(curr)
             frame_off = curr * FRAME_SIZE
 
@@ -515,6 +551,22 @@ class PSXMemoryCard:
             else:
                 new_alloc = PSXBlockState.DELETED_MID
 
-            self._data[frame_off : frame_off + 4] = struct.pack("<I", new_alloc)
+            self._data[frame_off : frame_off + 4] = schema.pack("<I", new_alloc)
             self._data[frame_off + 127] = calculate_frame_xor(self._data[frame_off : frame_off + 128])
             curr = entry.next_block
+
+    def get_file(self, filename: str) -> Optional[PSXSaveFile]:
+        """
+        Finds and returns an active save file by filename (case-insensitive).
+        """
+        target = filename.strip().upper()
+        for f in self.get_files():
+            if f.filename.strip().upper() == target:
+                return f
+        return None
+
+    def has_file(self, filename: str) -> bool:
+        """
+        Returns True if an active save file with the given filename exists on the card.
+        """
+        return self.get_file(filename) is not None

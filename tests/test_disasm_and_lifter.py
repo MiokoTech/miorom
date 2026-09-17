@@ -1,10 +1,9 @@
 import struct
-import pytest
 
-from miorom.asm.disasm import UniversalDisassembler, DisasmInstruction
-from miorom.asm.disambiguator import CodeDataDisambiguator, ByteClassification
-from miorom.asm.slicer import DataFlowSlicer, JumpTable
-from miorom.script.ir import IROp, IRVar
+from miorom.asm.disambiguator import ByteClassification, CodeDataDisambiguator
+from miorom.asm.disasm import UniversalDisassembler
+from miorom.asm.slicer import DataFlowSlicer
+from miorom.script.ir import IROp
 from miorom.script.lifter import BinaryLifter
 
 
@@ -156,6 +155,23 @@ def test_binary_lifter_to_c():
     assert "return r3_1;" in c_code
 
 
+def test_binary_lifter_linear_function_does_not_insert_phi():
+    # PowerPC function:
+    # 0x00: addi r3, r3, 10
+    # 0x04: blr
+    code = bytearray(8)
+    struct.pack_into(">I", code, 0x00, 0x3863000A)
+    struct.pack_into(">I", code, 0x04, 0x4E800020)
+
+    ir_func = BinaryLifter.lift(bytes(code), base_address=0x80001000, arch="ppc")
+
+    assert all(
+        ins.op != IROp.PHI
+        for block in ir_func.blocks.values()
+        for ins in block.instructions
+    )
+
+
 def test_universal_disassembler_mips():
     # MIPS instructions (big-endian):
     # 0x00: addiu $a0, $zero, 42 -> 0x2404002A (li $a0, 42)
@@ -198,3 +214,158 @@ def test_binary_lifter_mips_to_c():
     assert "int mips_add_ten()" in c_code
     assert "$v0_1 = $a0 + 0xA;" in c_code
     assert "return $v0_1;" in c_code
+
+
+def test_binary_lifter_mips_conditional_branch_delay_slot_stays_in_branch_block():
+    # MIPS: beqz $t0, 0x100C; addiu $t1, $t1, 1 (delay slot); nop; nop
+    beq = (0x04 << 26) | (8 << 21) | (0 << 16) | 2
+    addiu = (0x09 << 26) | (9 << 21) | (9 << 16) | 1
+    code = struct.pack(">IIII", beq, addiu, 0, 0)
+
+    ir_func = BinaryLifter.lift(code, 0x1000, arch="mips", endian=">")
+    entry = ir_func.blocks["loc_00001000"]
+
+    add_ins = next(ins for ins in entry.instructions if ins.op == IROp.ADD)
+    branch_ins = next(ins for ins in entry.instructions if ins.op == IROp.BRANCH_COND)
+
+    assert add_ins.pc == 0x1004
+    assert branch_ins.pc == 0x1000
+    assert entry.instructions.index(add_ins) < entry.instructions.index(branch_ins)
+    assert "loc_00001004" not in ir_func.blocks
+    assert "loc_00001008" in entry.successors
+    assert "loc_0000100C" in entry.successors
+
+
+def test_binary_lifter_mips_jump_and_return_delay_slots_stay_in_branch_block():
+    addiu = (0x09 << 26) | (9 << 21) | (9 << 16) | 1
+    cases = [
+        ((0x02 << 26) | 0x403, IROp.BRANCH),
+        ((0x03 << 26) | 0x403, IROp.CALL),
+        (0x03E00008, IROp.RETURN),
+    ]
+
+    for branch_word, expected_op in cases:
+        code = struct.pack(">IIII", branch_word, addiu, 0, 0)
+        ir_func = BinaryLifter.lift(code, 0x1000, arch="mips", endian=">")
+        entry = ir_func.blocks["loc_00001000"]
+
+        add_ins = next(ins for ins in entry.instructions if ins.op == IROp.ADD)
+        control_ins = next(ins for ins in entry.instructions if ins.op == expected_op)
+
+        assert add_ins.pc == 0x1004
+        assert control_ins.pc == 0x1000
+        assert entry.instructions.index(add_ins) < entry.instructions.index(control_ins)
+        assert "loc_00001004" not in ir_func.blocks
+
+
+def test_binary_lifter_mips_branch_without_available_delay_slot_is_safe():
+    beq = (0x04 << 26) | (8 << 21) | (0 << 16) | 2
+    code = struct.pack(">I", beq)
+
+    ir_func = BinaryLifter.lift(code, 0x1000, arch="mips", endian=">")
+    entry = ir_func.blocks["loc_00001000"]
+
+    assert entry.instructions[0].op == IROp.BRANCH_COND
+    assert entry.instructions[0].comment == "MIPS delay slot outside lifted data"
+
+
+def test_binary_lifter_conditional_branch_cfg_and_cyclomatic_complexity():
+    from miorom.diff.bindiff import BinDiffEngine
+
+    # Diamond CFG in Thumb:
+    # 0x1000: cmp r0, #0       (0x2800)
+    # 0x1002: beq 0x1006       (0xD000: PC+4+0 = 0x1006)
+    # 0x1004: movs r1, #1      (0x2101)  <- fall-through branch
+    # 0x1006: bx lr            (0x4770)  <- convergence block
+    thumb_code = struct.pack("<4H", 0x2800, 0xD000, 0x2101, 0x4770)
+    func = BinaryLifter.lift(thumb_code, base_address=0x1000, arch="thumb", function_name="thumb_diamond")
+
+    # 3 basic blocks: entry (1000), fall-through (1004), join (1006)
+    assert len(func.blocks) == 3
+    b_entry = func.blocks["loc_00001000"]
+    b_fall = func.blocks["loc_00001004"]
+    b_join = func.blocks["loc_00001006"]
+
+    # Entry block must have 2 successors: branch taken (1006) and fall-through (1004)
+    assert "loc_00001006" in b_entry.successors
+    assert "loc_00001004" in b_entry.successors
+    assert len(b_entry.successors) == 2
+
+    # Fall-through block must NOT be an orphan; its predecessor is entry block
+    assert "loc_00001000" in b_fall.predecessors
+    assert b_fall.successors == ["loc_00001006"]
+
+    # Join block must have both paths as predecessors
+    assert "loc_00001000" in b_join.predecessors
+    assert "loc_00001004" in b_join.predecessors
+    assert all(ins.op != IROp.PHI for ins in b_join.instructions)
+
+    # Cyclomatic complexity: E - V + 2 = 3 edges - 3 nodes + 2 = 2
+    fp = BinDiffEngine.fingerprint_function(thumb_code, 0x1000, 0x1000, arch="thumb")
+    assert fp.block_count == 3
+    assert fp.edge_count == 3
+    assert fp.cyclomatic_complexity == 2
+
+
+def test_binary_lifter_cmp_and_arm_condition_expression():
+    # ARM conditional branch with CMP:
+    # 0x1000: cmp r0, #0
+    # 0x1004: beq 0x100C
+    # 0x1008: mov r1, #1
+    # 0x100C: bx lr
+    arm_code = struct.pack("<4I", 0xE3500000, 0x0A000000, 0xE3A01001, 0xE12FFF1E)
+    func = BinaryLifter.lift(arm_code, base_address=0x1000, arch="arm", function_name="arm_cmp_test")
+
+    b_entry = func.blocks["loc_00001000"]
+    # First instruction must be CMP
+    cmp_ins = b_entry.instructions[0]
+    assert cmp_ins.op == IROp.CMP
+    assert str(cmp_ins.args[0]) == "r0"
+    assert cmp_ins.args[1] == 0
+
+    # Second instruction must be BRANCH_COND with synthesized condition expression "r0 == 0"
+    br_ins = b_entry.instructions[1]
+    assert br_ins.op == IROp.BRANCH_COND
+    assert br_ins.args == [0x100C, "r0 == 0"]
+
+    # Decompile to C must include synthesized relational condition
+    c_code = BinaryLifter.decompile_to_c(func)
+    assert "if (r0 == 0) goto loc_0000100C;" in c_code
+
+
+def test_binary_lifter_inserts_phi_for_arm_loop_back_edge():
+    # Loop:
+    # 0x1000: mov r0, #5
+    # 0x1004: sub r0, r0, #1
+    # 0x1008: cmp r0, #0
+    # 0x100C: bne 0x1004
+    # 0x1010: bx lr
+    code = struct.pack(
+        "<5I",
+        0xE3A00005,
+        0xE2400001,
+        0xE3500000,
+        0x1AFFFFFC,
+        0xE12FFF1E,
+    )
+
+    ir_func = BinaryLifter.lift(code, 0x1000, arch="arm")
+    loop_block = ir_func.blocks["loc_00001004"]
+
+    assert loop_block.predecessors == ["loc_00001000", "loc_00001004"]
+    assert loop_block.instructions[0].op == IROp.PHI
+
+    phi_nodes = [ins for ins in loop_block.instructions if ins.op == IROp.PHI]
+    assert len(phi_nodes) == 1
+
+    phi = phi_nodes[0]
+    assert str(phi.dst) == "r0_3"
+    assert len(phi.args) == 2
+    assert [(pred, str(var)) for pred, var in phi.args] == [
+        ("loc_00001000", "r0_1"),
+        ("loc_00001004", "r0_2"),
+    ]
+
+    sub_ins = next(ins for ins in loop_block.instructions if ins.op == IROp.SUB)
+    assert sub_ins.args[0] == phi.dst
+    assert str(sub_ins.args[0]) != "r0_1"

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import json
-from miorom.errors import ParseError
 import os
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 
 from miorom.archive.container import ArchiveContainer
 from miorom.compression import compress, decompress
-from miorom.formats.csv_handler import CsvHandler
+from miorom.errors import ParseError
 from miorom.patch import create_patch
 from miorom.platforms.gb import fix_gb_checksum
 from miorom.platforms.gba import fix_gba_checksum
@@ -21,10 +19,10 @@ from miorom.platforms.wii import U8Archive
 class PipelineHook:
     """Callback protocol for pipeline lifecycle events."""
 
-    def before_step(self, step: "PipelineStep", context: PipelineContext) -> None:
+    def before_step(self, step: PipelineStep, context: PipelineContext) -> None:
         return None
 
-    def after_step(self, step: "PipelineStep", context: PipelineContext, success: bool) -> None:
+    def after_step(self, step: PipelineStep, context: PipelineContext, success: bool) -> None:
         return None
 
 
@@ -66,7 +64,7 @@ class PipelineStep:
         return {"step_type": self.step_type}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PipelineStep":
+    def from_dict(cls, data: Dict[str, Any]) -> PipelineStep:
         raise NotImplementedError
 
 
@@ -98,7 +96,7 @@ class DecompressStep(PipelineStep):
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "DecompressStep":
+    def from_dict(cls, data: Dict[str, Any]) -> DecompressStep:
         return cls(
             input_path=data["input_path"],
             output_path=data["output_path"],
@@ -135,7 +133,7 @@ class CompressStep(PipelineStep):
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "CompressStep":
+    def from_dict(cls, data: Dict[str, Any]) -> CompressStep:
         return cls(
             input_path=data["input_path"],
             output_path=data["output_path"],
@@ -156,12 +154,8 @@ class ExtractArchiveStep(PipelineStep):
         dst = context.format_string(self.output_dir)
         os.makedirs(dst, exist_ok=True)
 
-        with open(src, "rb") as f:
-            raw = f.read()
-
         if self.archive_type.lower() == "u8":
-            u8 = U8Archive.from_bytes(raw)
-            u8.extract_to_disk(dst)
+            U8Archive.extract_all(src, dst)
         else:
             container = ArchiveContainer()
             with open(src, "rb") as stream:
@@ -177,7 +171,7 @@ class ExtractArchiveStep(PipelineStep):
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ExtractArchiveStep":
+    def from_dict(cls, data: Dict[str, Any]) -> ExtractArchiveStep:
         return cls(
             archive_path=data["archive_path"],
             output_dir=data["output_dir"],
@@ -199,15 +193,13 @@ class PackArchiveStep(PipelineStep):
         os.makedirs(os.path.dirname(os.path.abspath(dst)), exist_ok=True)
 
         if self.archive_type.lower() == "u8":
-            u8 = U8Archive.from_directory(src)
-            packed = u8.to_bytes()
+            U8Archive.pack(src, dst)
         else:
             container = ArchiveContainer()
             container.load_from_dir(src)
             packed = container.pack()
-
-        with open(dst, "wb") as f:
-            f.write(packed)
+            with open(dst, "wb") as f:
+                f.write(packed)
         return True
 
     def to_dict(self) -> Dict[str, Any]:
@@ -219,7 +211,7 @@ class PackArchiveStep(PipelineStep):
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PackArchiveStep":
+    def from_dict(cls, data: Dict[str, Any]) -> PackArchiveStep:
         return cls(
             input_dir=data["input_dir"],
             output_path=data["output_path"],
@@ -266,7 +258,7 @@ class FixChecksumStep(PipelineStep):
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "FixChecksumStep":
+    def from_dict(cls, data: Dict[str, Any]) -> FixChecksumStep:
         return cls(
             rom_path=data["rom_path"],
             platform=data["platform"],
@@ -302,7 +294,7 @@ class CreatePatchStep(PipelineStep):
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "CreatePatchStep":
+    def from_dict(cls, data: Dict[str, Any]) -> CreatePatchStep:
         return cls(
             original_path=data["original_path"],
             modified_path=data["modified_path"],
@@ -332,7 +324,7 @@ class PipelineRecipe:
         self.steps: List[PipelineStep] = steps or []
         self.hooks: List[PipelineHook] = []
 
-    def add_step(self, step: PipelineStep) -> "PipelineRecipe":
+    def add_step(self, step: PipelineStep) -> PipelineRecipe:
         self.steps.append(step)
         return self
 
@@ -344,7 +336,7 @@ class PipelineRecipe:
             raise TypeError("step_cls must inherit from PipelineStep")
         STEP_REGISTRY[name] = step_cls
 
-    def add_hook(self, hook: PipelineHook) -> "PipelineRecipe":
+    def add_hook(self, hook: PipelineHook) -> PipelineRecipe:
         self.hooks.append(hook)
         return self
 
@@ -373,7 +365,7 @@ class PipelineRecipe:
         return json.dumps(self.to_dict(), indent=indent)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PipelineRecipe":
+    def from_dict(cls, data: Dict[str, Any]) -> PipelineRecipe:
         name = data.get("name", "recipe")
         raw_steps = data.get("steps", [])
         steps = []
@@ -387,7 +379,7 @@ class PipelineRecipe:
         return cls(name=name, steps=steps)
 
     @classmethod
-    def from_json(cls, json_str: str) -> "PipelineRecipe":
+    def from_json(cls, json_str: str) -> PipelineRecipe:
         return cls.from_dict(json.loads(json_str))
 
     def save_file(self, filepath: str):
@@ -395,6 +387,6 @@ class PipelineRecipe:
             f.write(self.to_json())
 
     @classmethod
-    def load_file(cls, filepath: str) -> "PipelineRecipe":
-        with open(filepath, "r", encoding="utf-8") as f:
+    def load_file(cls, filepath: str) -> PipelineRecipe:
+        with open(filepath, encoding="utf-8") as f:
             return cls.from_json(f.read())

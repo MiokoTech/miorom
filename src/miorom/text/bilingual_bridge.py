@@ -8,13 +8,14 @@ ControlTagSanitizer for syntax linting and SlotToHeapPointerizer for seamless
 arbitrary text expansion.
 """
 
-from miorom.result import MioRomResult
-from dataclasses import dataclass, field
 import json
-import struct
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Tuple, Union
 
-from miorom.text.po_handler import PoHandler, PoEntry
+from miorom.core import schema
+from miorom.result import MioRomResult
+from miorom.text.po_handler import PoEntry, PoHandler
 from miorom.text.sanitizer import ControlTagSanitizer
 
 
@@ -121,7 +122,7 @@ class BilingualAssetBridge:
 
             # Write pointer to table
             ptr_pos = table_offset + (i * pointer_size)
-            struct.pack_into(fmt, buffer, ptr_pos, cur_heap)
+            schema.pack_into(fmt, buffer, ptr_pos, cur_heap)
 
             cur_heap += len(payload)
 

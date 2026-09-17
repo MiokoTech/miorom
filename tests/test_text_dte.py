@@ -110,3 +110,19 @@ def test_dte_reserved_codes():
     )
     for code in stats.dictionary.keys():
         assert code not in {0x80, 0x81}
+
+
+def test_dte_encode_unmapped_unicode_raises_value_error():
+    dictionary = {0x80: "th"}
+    # Unicode char > 0xFF (e.g. '\u3042' or '\u0141') without charmap mapping must raise ValueError
+    with pytest.raises(ValueError, match="cannot be encoded as a single byte"):
+        DteCodec.encode("the \u3042 test", dictionary)
+
+
+def test_dte_empty_token_safety():
+    """Ensure dictionaries containing empty strings do not cause infinite loops in DteCodec/DTEMiner."""
+    from miorom.text.dte import DTEMiner
+    encoded = DteCodec.encode("hello", {0x80: "", 0x81: "ll"})
+    assert 0x81 in encoded
+    encoded_miner = DTEMiner.compress_text("hello", {b"\x80": "", b"\x81": "ll"})
+    assert b"\x81" in encoded_miner

@@ -245,3 +245,45 @@ msgstr "Siapkah engkau melangkah?"
         block_id="block_po",
     )
     assert re_block.entries[2].text == "Siapkah engkau melangkah?"
+
+
+def test_extract_and_inject_relative_pointer_table():
+    # Build synthetic ROM with relative pointers
+    rom = bytearray(0x800)
+    table_offset = 0x20
+    # Entry 0 at table_offset (relative offset: target 0x100) -> 0x100
+    # Entry 1 at table_offset + 4 (relative offset: target 0x150) -> 0x150
+    import struct
+    struct.pack_into("<I", rom, table_offset, 0x100)
+    struct.pack_into("<I", rom, table_offset + 4, 0x150)
+    rom[0x100:0x106] = b"Hello\x00"
+    rom[0x150:0x156] = b"World\x00"
+
+    block = DialogueDissector.extract_from_table(
+        data=bytes(rom),
+        table_offset=table_offset,
+        pointer_count=2,
+        pointer_size=4,
+        endian="<",
+        base_address=0,
+        encoding="utf-8",
+        pointer_type="relative",
+    )
+    assert len(block.entries) == 2
+    assert block.entries[0].text == "Hello"
+    assert block.entries[1].text == "World"
+    assert block.pointer_type == "relative"
+
+    # Inject translation that overflows and relocates
+    report = DialogueDissector.inject_translations(
+        data=rom,
+        block=block,
+        translations={1: "A much longer translated string that will overflow"},
+        encoding="utf-8",
+        free_space_ranges=[(0x400, 0x600)],
+    )
+    assert report.relocated_entries == 1
+    # For relative pointers, the written value should be the direct ROM offset 0x400 (not 0x400 + base_address)
+    new_ptr = struct.unpack_from("<I", rom, table_offset + 4)[0]
+    assert new_ptr == 0x400
+

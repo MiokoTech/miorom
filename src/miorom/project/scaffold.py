@@ -7,7 +7,6 @@ Generates standard project directories and configuration scaffolding for ROM hac
 import os
 from typing import Optional
 
-
 GAME_PY_TEMPLATE = '''"""
 {project_name} - MioROM Game Definition
 """

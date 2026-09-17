@@ -9,9 +9,6 @@ Saturn, and GameCube games (Command & Conquer, Need for Speed, The Sims, SimCity
 
 from __future__ import annotations
 
-import io
-from typing import List, Tuple
-
 from miorom.errors import CompressionError
 from miorom.result import MioRomResult
 
@@ -41,10 +38,10 @@ class RefPack(MioRomResult):
         if has_large_size:
             if len(data) < 6:
                 raise CompressionError("Truncated RefPack 4-byte size header.")
-            uncompressed_size = (data[pos] << 24) | (data[pos + 1] << 16) | (data[pos + 2] << 8) | data[pos + 3]
+            _uncompressed_size = (data[pos] << 24) | (data[pos + 1] << 16) | (data[pos + 2] << 8) | data[pos + 3]
             pos += 4
         else:
-            uncompressed_size = (data[pos] << 16) | (data[pos + 1] << 8) | data[pos + 2]
+            _uncompressed_size = (data[pos] << 16) | (data[pos + 1] << 8) | data[pos + 2]
             pos += 3
 
         out = bytearray()
@@ -182,7 +179,6 @@ class RefPack(MioRomResult):
             best_len = 0
             best_offset = 0
 
-            max_offset = min(cursor, 131072)
             max_len = min(1028, size - cursor)
 
             # Fast window search (lookback up to 16384 for standard speed)

@@ -70,3 +70,13 @@ def test_trie_transcoder_fallback():
     # Char 'Z' is unmapped
     encoded = tt.encode("XZ", fallback_bytes=b"?")
     assert encoded == b"\x01?"
+
+
+def test_trie_transcoder_load_table_space_preservation():
+    """Ensure standard .tbl space mapping line (20= ) is not discarded by stripping."""
+    tbl_content = "20= \n41=A\n"
+    tt = TrieTranscoder()
+    tt.load_table(tbl_content)
+    assert tt.entry_count == 2
+    assert tt.decode(b"\x20\x41") == " A"
+    assert tt.encode(" A") == b"\x20\x41"

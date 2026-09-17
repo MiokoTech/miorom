@@ -1,12 +1,12 @@
-import os
-from miorom.errors import ParseError
-import tempfile
-from typing import Dict, Any, Optional
 import json
+import os
+import tempfile
+from typing import Any, Dict, Optional
 
-from miorom.rom.base import BaseRomHandler
+from miorom.compression import compress, decompress
+from miorom.errors import ParseError
 from miorom.platforms.wii.u8 import U8Archive
-from miorom.compression import decompress, compress
+from miorom.rom.base import BaseRomHandler
 
 
 class U8RomHandler(BaseRomHandler):
@@ -88,7 +88,7 @@ class U8RomHandler(BaseRomHandler):
             meta_path = os.path.join(input_dir, "miorom.meta.json")
             if os.path.isfile(meta_path):
                 try:
-                    with open(meta_path, "r", encoding="utf-8") as f:
+                    with open(meta_path, encoding="utf-8") as f:
                         meta = json.load(f)
                     comp_type = meta.get("compression")
                 except Exception:

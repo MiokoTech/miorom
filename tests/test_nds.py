@@ -1,5 +1,7 @@
 import struct
+
 import pytest
+
 from miorom.platforms.nds.narc import NARCArchive
 from miorom.platforms.nds.rom import NDSRom
 
@@ -21,6 +23,25 @@ def test_narc_pack_and_unpack_roundtrip():
     assert entries[0].data == file1
     assert entries[1].data == file2
     assert entries[2].data == file3
+
+
+def test_narc_pack_preserves_input_filenames(tmp_path):
+    payloads = {
+        "0000.bin": b"AAAA",
+        "0002_verylongfilenamewithmanychars.bin": b"C" * 500,
+        "0101_script_02.bin": b"dialogue",
+    }
+    for filename, data in payloads.items():
+        (tmp_path / filename).write_bytes(data)
+
+    narc_path = tmp_path / "out.narc"
+    NARCArchive.pack(str(tmp_path), str(narc_path))
+
+    entries = NARCArchive.unpack_entries(narc_path.read_bytes())
+    by_name = {entry.name: entry.data for entry in entries}
+
+    assert [entry.name for entry in entries] == sorted(payloads)
+    assert by_name == {name: payloads[name] for name in sorted(payloads)}
 
 
 def test_nds_rom_header_parse():
@@ -172,7 +193,8 @@ def test_nds_overlay_parsing():
 
 
 def test_nds_extract_and_repack_helpers(tmp_path):
-    from miorom.platforms.nds import extract_rom, repack_rom, extract_nds_rom, repack_nds_rom
+    from miorom.platforms.nds import extract_nds_rom, extract_rom, repack_nds_rom, repack_rom
+
     assert extract_rom is extract_nds_rom
     assert repack_rom is repack_nds_rom
 
@@ -215,5 +237,48 @@ def test_nds_patch_arm7_vaddr():
     assert rom.patch_arm7_vaddr(0x02380020, 0xCAFEBABE, expected=0xDEADBEEF)
     assert struct.unpack_from("<I", rom.data, 0x420)[0] == 0xCAFEBABE
 
+
+def test_nds_header_checksum_validation_and_integrity_manager():
+    """Verify hardware-accurate BIOS SWI 0x0E CRC16 (poly 0x8408) across NDSRom and RomIntegrityManager."""
+    from miorom.core.integrity import RomIntegrityManager
+    from miorom.core.checksum import RetroChecksum
+
+    raw = bytearray(0x400)
+    raw[0:12] = b"INTEGRITY_DS"
+    raw[12:16] = b"AITE"
+    raw[16:18] = b"01"
+    struct.pack_into("<I", raw, 0x20, 0x200)   # arm9_offset = 0x200
+    struct.pack_into("<I", raw, 0x2C, 0x80)    # arm9_size = 0x80
+    struct.pack_into("<I", raw, 0x30, 0x280)   # arm7_offset = 0x280
+    struct.pack_into("<I", raw, 0x3C, 0x80)    # arm7_size = 0x80
+
+    rom = NDSRom(bytes(raw))
+    # Recalculate checksum
+    crc_val = rom.fix_header_checksum()
+    expected_crc = RetroChecksum.crc16_nds(bytes(rom.data[:0x15E]))
+    assert crc_val == expected_crc
+    assert rom.is_header_checksum_valid() is True
+    assert rom.verify_header_checksum() is True
+
+    # Check that RomIntegrityManager recognizes and validates it
+    report = RomIntegrityManager.verify(rom.data)
+    assert report.platform == "NDS"
+    assert report.is_valid is True
+
+    # Mutate a header byte and ensure both fail
+    mutated = bytearray(rom.data)
+    mutated[0x50] ^= 0xFF
+    rom_mut = NDSRom(bytes(mutated))
+    assert rom_mut.is_header_checksum_valid() is False
+    assert rom_mut.verify_header_checksum() is False
+    report_mut = RomIntegrityManager.verify(bytes(mutated))
+    assert report_mut.is_valid is False
+
+    # Fix with RomIntegrityManager and ensure NDSRom accepts it
+    fixed_bytes, report_fix = RomIntegrityManager.fix(bytes(mutated))
+    assert report_fix.is_valid is True
+    rom_fixed = NDSRom(fixed_bytes)
+    assert rom_fixed.is_header_checksum_valid() is True
+    assert rom_fixed.verify_header_checksum() is True
 
 

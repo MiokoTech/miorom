@@ -1,5 +1,6 @@
 import heapq
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from typing import Dict, List, Optional, Tuple
 
 from miorom.core.bitstream import BitReader, BitWriter
 from miorom.errors import ParseError

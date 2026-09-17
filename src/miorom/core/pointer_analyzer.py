@@ -5,10 +5,11 @@ Pointer table analysis, sequence validation, monotonicity metrics,
 and candidate discovery for retro console binary reverse engineering.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple, Union
-import struct
+from typing import Dict, List, Optional, Tuple, Union
 
+from miorom.core import schema
 from miorom.result import MioRomResult
 
 
@@ -90,12 +91,12 @@ def unpack_pointer(
         )
 
     if stride == 2:
-        return struct.unpack_from(f"{endian}H", data, offset)[0]
+        return schema.unpack_from(f"{endian}H", data, offset)[0]
     elif stride == 3:
         raw = data[offset : offset + 3]
         return int.from_bytes(raw, "little" if endian == "<" else "big")
     elif stride == 4:
-        return struct.unpack_from(f"{endian}I", data, offset)[0]
+        return schema.unpack_from(f"{endian}I", data, offset)[0]
     else:
         raise ValueError(f"Unsupported pointer stride {stride}, must be 2, 3, or 4")
 
@@ -121,11 +122,11 @@ def pack_pointer(
         )
 
     if stride == 2:
-        return struct.pack(f"{endian}H", target)
+        return schema.pack(f"{endian}H", target)
     elif stride == 3:
         return target.to_bytes(3, "little" if endian == "<" else "big")
     else:
-        return struct.pack(f"{endian}I", target)
+        return schema.pack(f"{endian}I", target)
 
 
 def unpack_pointers(

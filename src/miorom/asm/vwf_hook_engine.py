@@ -8,12 +8,12 @@ architecture-specific width-lookup routine generation, and trampoline hook injec
 for fan translation reverse engineering across ARM, Thumb, MIPS, SNES (65816), and NES (6502).
 """
 
-from dataclasses import dataclass, field
-import struct
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, Union
 
 from miorom.asm.codecave import CodeCaveFinder
 from miorom.asm.trampoline import HookRecord, TrampolineHook
+from miorom.core import schema
 from miorom.errors import RelocationError, UnsupportedFormatError
 from miorom.result import MioRomResult
 from miorom.text.vwf import GlyphWidthTable
@@ -112,6 +112,7 @@ class VWFHookEngine:
                 table_vaddr=table_vaddr,
                 fallback_width=fallback_width,
                 endian=endian,
+                standalone=False,
             )
 
         # 2. Thumb 16-bit (GBA / NDS)
@@ -121,24 +122,29 @@ class VWFHookEngine:
             # 0x00: CMP r0, #0x20       (0x2820)
             # 0x02: BLO .fallback       (0xD304 -> +4 halfwords to 0x0E)
             # 0x04: SUB r0, r0, #0x20   (0x3820)
-            # 0x06: LDR r2, [PC, #8]    (0x4A02 -> load literal at 0x10)
+            # 0x06: LDR r2, [PC, #12]   (0x4A03 -> BaseAddr (0x06+4)&~3 = 0x08, 0x08+12 = 0x14)
             # 0x08: LDRB r3, [r2, r0]   (0x5C13)
             # 0x0A: ADD r1, r1, r3      (0x18C9)
-            # 0x0C: B .done             (0xE001 -> branch over fallback to 0x10)
+            # 0x0C: B .after_pool       (0xE004 -> PC 0x10 + 8 = 0x18)
             # .fallback (0x0E):
-            # 0x0E: ADD r1, #fallback   (0x3100 | fallback_width)
-            # .done (0x10):
-            # 0x10: table_vaddr (32-bit uint)
+            # 0x0E: ADD r1, #fallback   (0x3100 | (fallback_width & 0xFF))
+            # 0x10: B .after_pool       (0xE002 -> PC 0x14 + 4 = 0x18)
+            # 0x12: NOP                 (0x46C0)
+            # .pool (0x14):
+            # 0x14: table_vaddr (32-bit uint)
+            # .after_pool (0x18):
             buf = bytearray()
-            buf.extend(struct.pack("<H", 0x2820))
-            buf.extend(struct.pack("<H", 0xD304))
-            buf.extend(struct.pack("<H", 0x3820))
-            buf.extend(struct.pack("<H", 0x4A02))
-            buf.extend(struct.pack("<H", 0x5C13))
-            buf.extend(struct.pack("<H", 0x18C9))
-            buf.extend(struct.pack("<H", 0xE001))
-            buf.extend(struct.pack("<H", 0x3100 | (fallback_width & 0xFF)))
-            buf.extend(struct.pack("<I", table_vaddr))
+            buf.extend(schema.pack("<H", 0x2820))
+            buf.extend(schema.pack("<H", 0xD304))
+            buf.extend(schema.pack("<H", 0x3820))
+            buf.extend(schema.pack("<H", 0x4A03))
+            buf.extend(schema.pack("<H", 0x5C13))
+            buf.extend(schema.pack("<H", 0x18C9))
+            buf.extend(schema.pack("<H", 0xE004))
+            buf.extend(schema.pack("<H", 0x3100 | (fallback_width & 0xFF)))
+            buf.extend(schema.pack("<H", 0xE002))
+            buf.extend(schema.pack("<H", 0x46C0))
+            buf.extend(schema.pack("<I", table_vaddr))
             return bytes(buf)
 
         # 3. MIPS 32-bit (PS1 / N64 / PSP)
@@ -147,6 +153,7 @@ class VWFHookEngine:
                 table_vaddr=table_vaddr,
                 fallback_width=fallback_width,
                 endian=endian,
+                standalone=False,
             )
 
         # 4. SNES / W65C816 16-bit

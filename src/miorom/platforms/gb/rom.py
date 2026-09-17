@@ -1,6 +1,6 @@
+
+from miorom.core.schema import U8, U16, BinaryStruct, FixedString, RawBytes
 from miorom.errors import ParseError
-from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U16, U8
-from typing import Optional
 
 
 class GBCoreHeaderStruct(BinaryStruct):

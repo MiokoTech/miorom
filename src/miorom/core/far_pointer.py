@@ -6,10 +6,10 @@ for banked retro console architectures (NES, Game Boy, SNES, and PCE).
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple, Union
-import struct
+from typing import Dict, List, Optional, Tuple, Union
 
-from miorom.core.bus_mapper import SNESBusMapper, GameBoyBusMapper
+from miorom.core import schema
+from miorom.core.bus_mapper import GameBoyBusMapper, SNESBusMapper
 from miorom.result import MioRomResult
 
 
@@ -123,7 +123,7 @@ def read_split_pointer_table(
         b_pos = bank_offset + i
         a_pos = addr_offset + (i * 2)
         bank_val = data[b_pos]
-        addr_val = struct.unpack_from(f"{endian}H", data, a_pos)[0]
+        addr_val = schema.unpack_from(f"{endian}H", data, a_pos)[0]
         f_offset = resolve_banked_to_offset(
             bank=bank_val,
             cpu_address=addr_val,
@@ -162,7 +162,7 @@ def write_split_pointer_table(
         b_pos = entry.bank_table_offset if entry.bank_table_offset is not None else (table.bank_offset + entry.index)
         a_pos = entry.addr_table_offset if entry.addr_table_offset is not None else (table.addr_offset + entry.index * 2)
         buffer[b_pos] = entry.bank & 0xFF
-        struct.pack_into(f"{table.endian}H", buffer, a_pos, entry.cpu_address & 0xFFFF)
+        schema.pack_into(f"{table.endian}H", buffer, a_pos, entry.cpu_address & 0xFFFF)
 
 
 def read_interleaved_pointer_table(
@@ -190,9 +190,9 @@ def read_interleaved_pointer_table(
         pos = table_offset + (i * 3)
         if bank_first:
             b_val = data[pos]
-            a_val = struct.unpack_from(f"{endian}H", data, pos + 1)[0]
+            a_val = schema.unpack_from(f"{endian}H", data, pos + 1)[0]
         else:
-            a_val = struct.unpack_from(f"{endian}H", data, pos)[0]
+            a_val = schema.unpack_from(f"{endian}H", data, pos)[0]
             b_val = data[pos + 2]
 
         f_offset = resolve_banked_to_offset(
@@ -234,9 +234,9 @@ def write_interleaved_pointer_table(
         pos = table.table_offset + (i * 3)
         if table.bank_first:
             buffer[pos] = entry.bank & 0xFF
-            struct.pack_into(f"{table.endian}H", buffer, pos + 1, entry.cpu_address & 0xFFFF)
+            schema.pack_into(f"{table.endian}H", buffer, pos + 1, entry.cpu_address & 0xFFFF)
         else:
-            struct.pack_into(f"{table.endian}H", buffer, pos, entry.cpu_address & 0xFFFF)
+            schema.pack_into(f"{table.endian}H", buffer, pos, entry.cpu_address & 0xFFFF)
             buffer[pos + 2] = entry.bank & 0xFF
 
 

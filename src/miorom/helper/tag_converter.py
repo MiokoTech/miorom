@@ -5,8 +5,9 @@ Helper for converting between binary control codes / hex tags and human-readable
 Handles multi-byte game control sequences and generic [0xXXXX] hex escapes.
 """
 
-import struct
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
+
+from miorom.core import schema
 
 
 class TagConverter:
@@ -82,7 +83,7 @@ class TagConverter:
         while p < limit:
             if max_length is not None and len(chars) >= max_length:
                 break
-            val = struct.unpack_from(fmt, data, p)[0]
+            val = schema.unpack_from(fmt, data, p)[0]
             if val == 0:
                 if stop_on_null:
                     break
@@ -139,12 +140,12 @@ class TagConverter:
                 if end_tag != -1:
                     try:
                         val = int(reverted[i + 3:end_tag], 16)
-                        out.extend(struct.pack(fmt, val))
+                        out.extend(schema.pack(fmt, val))
                         i = end_tag + 1
                         continue
                     except ValueError:
                         pass
-            out.extend(struct.pack(fmt, ord(reverted[i])))
+            out.extend(schema.pack(fmt, ord(reverted[i])))
             i += 1
 
         if null_terminate:

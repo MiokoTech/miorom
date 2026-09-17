@@ -1,6 +1,10 @@
+from miorom.core.schema import U32, BinaryStruct
 from miorom.errors import CompressionError
-from miorom.core.schema import BinaryStruct, U32
 
+
+class RLEExtendedSizeStruct(BinaryStruct):
+    _endian = "<"
+    uncompressed_size = U32()
 
 class RLE:
     """
@@ -117,6 +121,9 @@ class RLE:
                     flag = len(lit_run) - 1
                     out.append(flag)
                     out.extend(lit_run)
+
+        if include_end_marker:
+            out.append(cls.END_OF_STREAM)
 
         while len(out) % 4 != 0:
             out.append(0)

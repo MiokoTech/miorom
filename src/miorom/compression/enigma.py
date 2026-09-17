@@ -11,8 +11,9 @@ Pure Python implementation using MioROM binary primitives.
 from __future__ import annotations
 
 from collections import Counter
-from typing import List, Tuple
-from miorom.core.schema import BinaryStruct, U8, U16
+from typing import List
+
+from miorom.core.schema import U8, U16, BinaryStruct
 from miorom.errors import CompressionError
 
 

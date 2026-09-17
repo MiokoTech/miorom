@@ -8,7 +8,6 @@ and game definitions using simple decorators.
 
 from typing import Any, Callable, Dict, Optional, Type
 
-
 _CODEC_REGISTRY: Dict[str, Any] = {}
 _CONTAINER_REGISTRY: Dict[str, Any] = {}
 _GAME_REGISTRY: Dict[str, Any] = {}

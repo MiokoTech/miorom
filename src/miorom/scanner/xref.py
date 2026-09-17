@@ -1,14 +1,14 @@
-import struct
 import json
 import re
 from collections import defaultdict, deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from miorom.asm.disasm import DisasmInstruction, UniversalDisassembler
-from miorom.script.ir import IRBlock, IRFunction, IROp
+from miorom.asm.disasm import UniversalDisassembler
+from miorom.core import schema
 from miorom.result import MioRomResult
+from miorom.script.ir import IRBlock, IRFunction, IROp
 
 
 class XRefType(Enum):
@@ -75,7 +75,7 @@ class XRefGraph:
     def load(cls, path: str) -> "XRefGraph":
         """Load XRefGraph from a JSON file created by save()."""
         graph = cls()
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         for e in data.get("entries", []):
             graph.add_xref(
@@ -294,6 +294,17 @@ class XRefAnalyzer:
                             )
                         except (ValueError, TypeError):
                             pass
+                    elif ins.op == IROp.BRANCH_COND and ins.args:
+                        try:
+                            target = int(ins.args[0])
+                            graph.add_xref(
+                                source=ins.pc or func.entry_address,
+                                target=target,
+                                xref_type=XRefType.CODE_JUMP,
+                                context=f"{func.name}:BRANCH_COND",
+                            )
+                        except (ValueError, TypeError):
+                            pass
                     elif ins.op in (IROp.LOAD, IROp.STORE) and ins.args:
                         for arg in ins.args:
                             try:
@@ -344,7 +355,7 @@ class XRefAnalyzer:
         fmt = f"{endian or '>'}I" if arch == "ppc" else f"{endian or '<'}I"
 
         for off in range(0, end_align, 4):
-            val = struct.unpack_from(fmt, data, off)[0]
+            val = schema.unpack_from(fmt, data, off)[0]
             if valid_range[0] <= val < valid_range[1]:
                 src_addr = base_address + off
                 graph.add_xref(

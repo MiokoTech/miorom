@@ -6,8 +6,9 @@ Handles extraction and bit-perfect reconstruction of dual-table containers with
 Table 1 at 0x10 and Table 2 in the footer.
 """
 
-import struct
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
+
+from miorom.core import schema
 
 
 class DualTableHelper:
@@ -39,11 +40,11 @@ class DualTableHelper:
         if len(data) < 0x20:
             return [], []
 
-        t2_offset = struct.unpack_from(f"{endian}I", data, 4)[0]
+        t2_offset = schema.unpack_from(f"{endian}I", data, 4)[0]
         if t2_offset <= 0 or t2_offset + 16 > len(data):
             return [], []
 
-        c1, c2, m1, m2 = struct.unpack_from(f"{endian}IIII", data, t2_offset)
+        c1, c2, m1, m2 = schema.unpack_from(f"{endian}IIII", data, t2_offset)
         t1_count = c1 - c2
 
         def process_str(s: str) -> str:
@@ -58,7 +59,7 @@ class DualTableHelper:
         # Extract Table 1
         t1_strings: List[str] = []
         for i in range(t1_count):
-            ptr = struct.unpack_from(f"{endian}I", data, 0x10 + i * 4)[0]
+            ptr = schema.unpack_from(f"{endian}I", data, 0x10 + i * 4)[0]
             s = process_str(cls._read_string(data, ptr, encoding))
             if not filter_empty or s:
                 t1_strings.append(s)
@@ -67,7 +68,7 @@ class DualTableHelper:
         t2_ptrs_offset = t2_offset + 16
         t2_strings: List[str] = []
         for i in range(c2):
-            ptr = struct.unpack_from(f"{endian}I", data, t2_ptrs_offset + i * 4)[0]
+            ptr = schema.unpack_from(f"{endian}I", data, t2_ptrs_offset + i * 4)[0]
             s = process_str(cls._read_string(data, ptr, encoding))
             if not filter_empty or s:
                 t2_strings.append(s)
@@ -136,11 +137,11 @@ class DualTableHelper:
         # Construct binary
         out = bytearray()
         # Header (16 bytes): [0, t2_offset, 1, 0]
-        out.extend(struct.pack(f"{endian}IIII", 0, meta_start, 1, 0))
+        out.extend(schema.pack(f"{endian}IIII", 0, meta_start, 1, 0))
 
         # Table 1 pointers
         for off in t1_offsets:
-            out.extend(struct.pack(f"{endian}I", off))
+            out.extend(schema.pack(f"{endian}I", off))
 
         # String pools
         out.extend(pool1_bytes)
@@ -148,14 +149,14 @@ class DualTableHelper:
         out.extend(b"\x00\x00\x00\x00")  # 4-byte padding
 
         # Metadata block: [c1, t2_count, 1, 0]
-        out.extend(struct.pack(f"{endian}IIII", c1, t2_count, 1, 0))
+        out.extend(schema.pack(f"{endian}IIII", c1, t2_count, 1, 0))
 
         # Table 2 pointers
         for off in t2_offsets:
-            out.extend(struct.pack(f"{endian}I", off))
+            out.extend(schema.pack(f"{endian}I", off))
 
         # p_end
-        out.extend(struct.pack(f"{endian}I", p_end))
+        out.extend(schema.pack(f"{endian}I", p_end))
 
         # Align to boundary
         if alignment > 1:

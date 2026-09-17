@@ -7,9 +7,10 @@ Parses N64 Compact MIDI sequences (.m64) and audio sample bank structures.
 
 from __future__ import annotations
 
-import struct
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
+
+from miorom.core import schema
 from miorom.result import MioRomResult
 
 
@@ -31,7 +32,7 @@ class M64Sequence:
         self.raw_data = raw_data or b""
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "M64Sequence":
+    def from_bytes(cls, data: bytes) -> M64Sequence:
         cmds: List[M64Command] = []
         i = 0
         length = len(data)
@@ -92,11 +93,11 @@ class N64Audiobank:
         self.raw_bytes = raw_bytes
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "N64Audiobank":
+    def from_bytes(cls, data: bytes) -> N64Audiobank:
         return cls(data)
 
     @property
     def sample_count(self) -> int:
         if len(self.raw_bytes) < 4:
             return 0
-        return struct.unpack(">H", self.raw_bytes[:2])[0]
+        return schema.unpack(">H", self.raw_bytes[:2])[0]

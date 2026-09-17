@@ -8,10 +8,11 @@ recalculates internal File Allocation Tables (FAT), shifts subsequent file offse
 and updates parent archive headers all the way up to master ROM alignment.
 """
 
-from miorom.result import MioRomResult
 from dataclasses import dataclass, field
-import struct
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import List, Optional, Tuple
+
+from miorom.core import schema
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -98,9 +99,9 @@ class CascadingContainerRepacker:
 
             # Write FAT entry
             table_pos = i * fat_entry_size
-            struct.pack_into(fat_fmt, table_bytes, table_pos, cur_payload_offset)
+            schema.pack_into(fat_fmt, table_bytes, table_pos, cur_payload_offset)
             if table_has_sizes:
-                struct.pack_into(fat_fmt, table_bytes, table_pos + pointer_size, entry_sz)
+                schema.pack_into(fat_fmt, table_bytes, table_pos + pointer_size, entry_sz)
 
             # Append payload
             payload_bytes.extend(entry_data)
@@ -115,8 +116,8 @@ class CascadingContainerRepacker:
         header_buf[:magic_len] = header_magic
 
         total_file_size = payloads_start + len(payload_bytes)
-        struct.pack_into(fat_fmt, header_buf, 4, count)
-        struct.pack_into(fat_fmt, header_buf, 8, total_file_size)
+        schema.pack_into(fat_fmt, header_buf, 4, count)
+        schema.pack_into(fat_fmt, header_buf, 8, total_file_size)
 
         final_buffer.extend(header_buf)
         final_buffer.extend(table_bytes)
@@ -152,25 +153,32 @@ class CascadingContainerRepacker:
         Unpacks a table-based container into individual ContainerEntry items.
         """
         fat_fmt = f"{endian}{'I' if pointer_size == 4 else 'H'}"
-        count = struct.unpack_from(fat_fmt, data, 4)[0]
+        if len(data) < header_size:
+            return []
+        count = schema.unpack_from(fat_fmt, data, 4)[0]
         fat_entry_size = pointer_size * (2 if table_has_sizes else 1)
+        max_possible_entries = max(0, (len(data) - header_size) // fat_entry_size)
+        count = min(count, max_possible_entries)
 
         entries: List[ContainerEntry] = []
         for i in range(count):
             table_pos = header_size + i * fat_entry_size
-            offset = struct.unpack_from(fat_fmt, data, table_pos)[0]
+            offset = schema.unpack_from(fat_fmt, data, table_pos)[0]
 
             if table_has_sizes:
-                size = struct.unpack_from(fat_fmt, data, table_pos + pointer_size)[0]
+                size = schema.unpack_from(fat_fmt, data, table_pos + pointer_size)[0]
             else:
                 # Next entry offset or EOF
                 if i + 1 < count:
-                    next_off = struct.unpack_from(fat_fmt, data, table_pos + fat_entry_size)[0]
-                    size = next_off - offset
+                    next_off = schema.unpack_from(fat_fmt, data, table_pos + fat_entry_size)[0]
+                    size = max(0, next_off - offset)
                 else:
-                    size = len(data) - offset
+                    size = max(0, len(data) - offset)
 
-            entry_data = data[offset : offset + size]
+            if offset < 0 or offset >= len(data):
+                entry_data = b""
+            else:
+                entry_data = data[offset : min(len(data), offset + max(0, size))]
             entries.append(
                 ContainerEntry(
                     entry_id=i,

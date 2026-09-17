@@ -1,8 +1,9 @@
-from miorom.result import MioRomResult
 import math
 from collections import Counter
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
+
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -109,7 +110,6 @@ def compress_lzss(
         flag_pos = len(out)
         out.append(0)  # placeholder for flag byte
         flag_byte = 0
-        bits_left = 8
 
         for bit_idx in range(8):
             if pos >= length:

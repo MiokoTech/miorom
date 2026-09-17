@@ -1,8 +1,9 @@
-from miorom.result import MioRomResult
 import re
-from miorom.errors import ParseError
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
+
+from miorom.errors import ParseError
+from miorom.result import MioRomResult
 
 
 def msf_to_lba(m: int, s: int, f: int) -> int:
@@ -142,7 +143,7 @@ class CueSheet:
 
     @classmethod
     def from_file(cls, path: str) -> "CueSheet":
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
+        with open(path, encoding="utf-8", errors="replace") as f:
             return cls.from_string(f.read())
 
     def to_string(self) -> str:

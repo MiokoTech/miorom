@@ -1,17 +1,16 @@
-from miorom.result import MioRomResult
 import os
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Tuple, Union
 
-from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U32, U8
+from miorom.core.schema import U8, U32, BinaryStruct, FixedString, RawBytes
 from miorom.platforms.n64.checksum import (
     N64CIC,
     calculate_n64_checksum,
     detect_cic,
-    fix_n64_checksum,
     verify_n64_checksum,
 )
+from miorom.result import MioRomResult
 
 
 class N64HeaderStruct(BinaryStruct):

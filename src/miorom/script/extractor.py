@@ -7,7 +7,7 @@ Universal script string extractor and reinserter for ROM hacking workflows.
 import csv
 import io
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
 
 from miorom.result import MioRomResult

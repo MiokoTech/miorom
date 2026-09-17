@@ -6,11 +6,12 @@ Solves 16-bit pointer and 64KB/16KB bank overflow limitations on classic archite
 (SNES LoROM/HiROM, Game Boy MBC, GBA) when massive text expansions cannot fit
 within a single local memory bank.
 """
-from miorom.result import MioRomResult
-from miorom.errors import RelocationError
-
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, List
+
+from miorom.errors import RelocationError
+from miorom.result import MioRomResult
 
 
 @dataclass

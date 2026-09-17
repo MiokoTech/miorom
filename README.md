@@ -2,8 +2,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Tests: 1143 Passed](https://img.shields.io/badge/Tests-1143%20Passed-brightgreen.svg)](tests/)
-[![Documentation](https://img.shields.io/badge/docs-miokotech.github.io%2Fmiorom-06b6d4.svg?style=flat&logo=materialformkdocs&logoColor=white)](MioROM Documentations)
+[![Tests: 1521 Passed](https://img.shields.io/badge/Tests-1521%20Passed-brightgreen.svg)](tests/)
+[![Documentation](https://img.shields.io/badge/docs-Full%20Documentation-06b6d4.svg?style=flat&logo=materialformkdocs&logoColor=white)](https://miokotech.github.io/miorom/)
 [![Platforms: Multi-Console](https://img.shields.io/badge/Platforms-NDS%20%7C%20Wii%20%7C%20GC%20%7C%20N64%20%7C%20GBA%20%7C%20SNES%20%7C%20NES%20%7C%20PS1-orange.svg)](https://miokotech.github.io/miorom/PLATFORMS/)
 
 **MioROM** is an advanced, modular Python framework and low-level primitive library for ROM hacking, game localization engineering, and binary reverse engineering.
@@ -59,13 +59,14 @@ MioROM provides native parsers, serializers, and filesystem handlers across mult
 
 | Platform | Containers & Filesystems | Executables & Formats | Text, Fonts & Compression |
 | :--- | :--- | :--- | :--- |
-| **Nintendo DS** | `.nds` ROM, NARC (`.narc`) archives, FAT | ARM9/ARM7 binaries, overlays, Thumb-16 | NFTR fonts, NCLR/NCGR/NSCR graphics, SDAT audio, LZ10, LZ11, RLE |
-| **Nintendo Wii / GameCube** | Optical Disc (`.iso`, `.gcm`), U8 (`.arc`, `.szs`), FST | DOL executables, ELF objects, PPC32 | BRFNT fonts, TPL textures, DSP-ADPCM audio, Yaz0, Yay0 |
-| **Game Boy Advance** | `.gba` ROM, Cartridge headers | ARM/Thumb relative branches, ThumbSnippet | BGR555 palettes, 4bpp tiles, Complement CRC, aPLib |
+| **Nintendo DS** | `.nds` ROM, NARC (`.narc`) archives, FAT, Banner (`NDSBanner`) | ARM9/ARM7 binaries, Overlay manager (`y9.bin`/`y7.bin`), Thumb-16 | NFTR fonts, NCLR/NCGR/NSCR graphics, NCER sprite cells, NANR animations, NSBMD/NSBTX 3D models, SDAT/STRM/SWAR audio, LZ10, LZ11, RLE, BLZ |
+| **Nintendo Wii / GameCube** | Optical Disc (`.iso`, `.gcm`, `.wii`), WBFS sparse (`.wbfs`), U8 (`.arc`, `.szs`), RARC (`.arc`), RVZ (`.rvz`), FST, WAD packages | DOL executables, Relocatable Modules (`.rel`), PPC32 | BRFNT fonts, TPL/BTI textures, BRRES/TEX0 models, BRLAN/BRLYT layouts, BRSAR/BRSTM audio, THP video, MSBT/BMG/MSBF text, Yaz0, Yay0, Trucha bug fake-signing |
+| **Game Boy Advance** | `.gba` ROM, 1-64MB Cartridge capacity, Multiboot (`.mb`) | ARM/Thumb branch encoding, Entrypoint calc, SWI scanner | BGR555 palettes, 4bpp tiles, Complement CRC, RTC, SRAM patcher, Pointer relinker, Sappy audio, LZ10, aPLib |
 | **Nintendo 64** | `.z64` (BE), `.v64` (Swapped), `.n64` (LE) | MIPS split-pointer scanner, COP1 floats | IPL3 CIC checksums, Fast3D textures, Yay0, Yaz0 |
 | **Super Nintendo** | `.sfc`, `.smc` (LoROM / HiROM / ExHiROM) | 65816 memory mapping & REP/SEP tracking | 2bpp/4bpp planar tiles, SPC700 BRR audio, SnesSnippet |
 | **Nintendo Entertainment System** | `.nes`, `.unf` (iNES, NES 2.0) | MOS 6502 disasm & prologue scan | Mapper detection (MMC1/3/5, UNROM, etc.), PRG/CHR separation, 2bpp tiles |
-| **PlayStation 1** | Optical Disc (ISO9660, CUE/BIN multi-track) | PS-X EXE, STR video, CD-XA audio | TIM textures, SPU-ADPCM VAG audio, MDEC video bitstreams, EDC/ECC |
+| **PlayStation 1** | Optical Disc (Mode 1 ISO, Mode 2 Form 1 BIN, CUE), VFS, 128KB Memory Card (`.mcr`, `.mcs`) | PS-X EXE, SYSTEM.CNF, STR video, CD-XA audio | TIM textures, SPU-ADPCM VAG audio, MDEC video bitstreams, 32-bit EDC recalculation, animated save icon frames |
+| **Sony PSP** | UMD ISO, CSO compressed, EBOOT.PBP package, VFS | Relocatable PRX (ELF), MIPS stub hooker, SDK NID resolver | PARAM.SFO, ATRAC3 / ATRAC3plus audio, GIM textures & GE hardware swizzling |
 | **Sega Genesis / Mega Drive** | `.md`, `.bin`, `.smd` (Interleaved de-interleaving) | 68000 header & SRAM registers | 16-bit big-endian ROM checksum recalculation, M68K disasm |
 
 ---
@@ -124,7 +125,10 @@ MioROM provides native parsers, serializers, and filesystem handlers across mult
 - **`VWFHookEngine`**: End-to-end VWF hook deployer — synthesizes architecture-specific width lookup routines (ARM32, Thumb, MIPS32, SNES W65C816, MOS 6502), allocates code caves, and atomically patches ROM buffers.
 
 ### 6. Filesystem, Containers & Disc Images
-- **`RomManager`**: Unified auto-detecting ROM unpacker and repacker for NDS, GameCube/Wii ISO, U8 Archive, NARC, NES, ISO9660, and Cartridges.
+- **`RomManager`**: Unified auto-detecting ROM unpacker and repacker for GBA, PS1, PSP, NDS, GameCube/Wii ISO, U8 Archive, NARC, NES, ISO9660, and Cartridges.
+- **`GBARom` & `GBARomHandler`**: Game Boy Advance cartridge engine with 1-64MB capacity expansion, complement checksum repair, logo restoration, RTC detection, SRAM patching, 32-bit pointer relinking, and BIOS SWI scanning.
+- **`PSXRom` & `PSXRomHandler`**: PlayStation 1 optical disc engine supporting 2048-byte Mode 1 ISO and 2352-byte Mode 2 Form 1 BIN with bit-exact 32-bit EDC recalculation, `SYSTEM.CNF` parser/editor, VFS operations, and CUE generation.
+- **`PSPRom` & `PSPRomHandler`**: PlayStation Portable disc and package ROM engine supporting ISO, CSO, and PBP with in-memory format conversion and VFS.
 - **`NESRom` & `NESHeaderStruct`**: iNES and NES 2.0 container parser with mapper identification (MMC1/3/5, UNROM, etc.), PRG/CHR separation, and 512-byte trainer handling.
 - **`ISO9660` & `CueBinDisc`**: Pure-Python optical disc filesystem parser and injector with LBA sector reallocation and ECMA-130 EDC/ECC recalculation.
 - **`VirtualFileSystem` (VFS)**: In-memory hierarchical filesystem layer allowing transparent archive mounting, file browsing, and in-place node editing.

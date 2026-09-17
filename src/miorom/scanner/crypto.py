@@ -1,7 +1,9 @@
-from miorom.result import MioRomResult
-import struct
+from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Dict, Iterator, List, Optional, Tuple
+from typing import List
+
+from miorom.core import schema
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -66,16 +68,16 @@ class CryptoScanner:
     ])
 
     # MD5 Invariant State Constants (A, B, C, D)
-    MD5_CONSTANTS_LE = struct.pack("<4I", 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476)
-    MD5_CONSTANTS_BE = struct.pack(">4I", 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476)
+    MD5_CONSTANTS_LE = schema.pack("<4I", 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476)
+    MD5_CONSTANTS_BE = schema.pack(">4I", 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476)
 
     # SHA-1 / SHA-256 Invariant State Constants (A, B, C, D, E)
-    SHA1_CONSTANTS_LE = struct.pack("<5I", 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0)
-    SHA1_CONSTANTS_BE = struct.pack(">5I", 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0)
+    SHA1_CONSTANTS_LE = schema.pack("<5I", 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0)
+    SHA1_CONSTANTS_BE = schema.pack(">5I", 0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0)
 
     # TEA / XTEA Golden Ratio Delta Constant (0x9E3779B9)
-    TEA_DELTA_LE = struct.pack("<I", 0x9E3779B9)
-    TEA_DELTA_BE = struct.pack(">I", 0x9E3779B9)
+    TEA_DELTA_LE = schema.pack("<I", 0x9E3779B9)
+    TEA_DELTA_BE = schema.pack(">I", 0x9E3779B9)
 
     # CRC32 IEEE lookup table prefix
     CRC32_IEEE_PREFIX = bytes([

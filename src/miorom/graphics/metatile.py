@@ -6,9 +6,9 @@ engine for retro console architectures (NES, Game Boy, SNES, Genesis, GBA).
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple, Union
-import struct
+from typing import Dict, List, Optional, Tuple
 
+from miorom.core import schema
 from miorom.graphics.tilemap import Tilemap, TilemapEntry
 from miorom.result import MioRomResult
 
@@ -75,10 +75,10 @@ class MetatileTable(MioRomResult):
             if pos + stride > len(data):
                 break
             if is_16bit:
-                w_tl = struct.unpack_from(f"{endian}H", data, pos)[0]
-                w_tr = struct.unpack_from(f"{endian}H", data, pos + 2)[0]
-                w_bl = struct.unpack_from(f"{endian}H", data, pos + 4)[0]
-                w_br = struct.unpack_from(f"{endian}H", data, pos + 6)[0]
+                w_tl = schema.unpack_from(f"{endian}H", data, pos)[0]
+                w_tr = schema.unpack_from(f"{endian}H", data, pos + 2)[0]
+                w_bl = schema.unpack_from(f"{endian}H", data, pos + 4)[0]
+                w_br = schema.unpack_from(f"{endian}H", data, pos + 6)[0]
                 e_tl = TilemapEntry.from_u16(w_tl, fmt=fmt)
                 e_tr = TilemapEntry.from_u16(w_tr, fmt=fmt)
                 e_bl = TilemapEntry.from_u16(w_bl, fmt=fmt)
@@ -131,10 +131,10 @@ class MetatileTable(MioRomResult):
 
         for m in sorted_metas:
             if is_16bit:
-                out.extend(struct.pack(f"{endian}H", m.tl.to_u16(fmt=fmt)))
-                out.extend(struct.pack(f"{endian}H", m.tr.to_u16(fmt=fmt)))
-                out.extend(struct.pack(f"{endian}H", m.bl.to_u16(fmt=fmt)))
-                out.extend(struct.pack(f"{endian}H", m.br.to_u16(fmt=fmt)))
+                out.extend(schema.pack(f"{endian}H", m.tl.to_u16(fmt=fmt)))
+                out.extend(schema.pack(f"{endian}H", m.tr.to_u16(fmt=fmt)))
+                out.extend(schema.pack(f"{endian}H", m.bl.to_u16(fmt=fmt)))
+                out.extend(schema.pack(f"{endian}H", m.br.to_u16(fmt=fmt)))
             else:
                 out.append(m.tl.tile_index & 0xFF)
                 out.append(m.tr.tile_index & 0xFF)
@@ -281,7 +281,7 @@ class MetatileMap(MioRomResult):
             if bytes_per_entry == 1:
                 out.append(val & 0xFF)
             elif bytes_per_entry == 2:
-                out.extend(struct.pack(f"{endian}H", val & 0xFFFF))
+                out.extend(schema.pack(f"{endian}H", val & 0xFFFF))
             else:
                 raise ValueError("bytes_per_entry must be 1 or 2")
         return bytes(out)
@@ -308,7 +308,7 @@ class MetatileMap(MioRomResult):
             if bytes_per_entry == 1:
                 map_data.append(data[pos])
             elif bytes_per_entry == 2:
-                map_data.append(struct.unpack_from(f"{endian}H", data, pos)[0])
+                map_data.append(schema.unpack_from(f"{endian}H", data, pos)[0])
             else:
                 raise ValueError("bytes_per_entry must be 1 or 2")
             pos += bytes_per_entry

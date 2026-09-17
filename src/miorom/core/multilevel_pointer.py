@@ -1,10 +1,11 @@
-from miorom.result import MioRomResult
-import struct
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import List, Optional
 
-
+from miorom.core import schema
 from miorom.errors import ParseError, RelocationError
+from miorom.result import MioRomResult
+
+
 @dataclass
 class TableLevel(MioRomResult):
     """
@@ -50,7 +51,7 @@ class MultiLevelPointerTable:
                     f"Level {lvl_idx} entry offset 0x{entry_file_offset:08X} is out of bounds."
                 )
 
-            pointer_val = struct.unpack_from(fmt, data, entry_file_offset)[0]
+            pointer_val = schema.unpack_from(fmt, data, entry_file_offset)[0]
 
             # Convert pointer to file offset
             if lvl.base_ram != 0:
@@ -101,7 +102,7 @@ class MultiLevelPointerTable:
             lvl = self.levels[lvl_idx]
             fmt = f"{lvl.endian}{'I' if lvl.stride == 4 else 'H'}"
             entry_file_offset = cur_table_offset + idx * lvl.stride
-            pointer_val = struct.unpack_from(fmt, data, entry_file_offset)[0]
+            pointer_val = schema.unpack_from(fmt, data, entry_file_offset)[0]
 
             if lvl.base_ram != 0:
                 cur_table_offset = pointer_val - lvl.base_ram
@@ -122,4 +123,4 @@ class MultiLevelPointerTable:
         elif self.ram_base != 0:
             target_val += self.ram_base
 
-        struct.pack_into(fmt, data, target_entry_offset, target_val)
+        schema.pack_into(fmt, data, target_entry_offset, target_val)

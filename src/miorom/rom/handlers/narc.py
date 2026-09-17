@@ -1,10 +1,10 @@
 import os
-from miorom.errors import ParseError
-from miorom.security import sanitize_extract_path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from miorom.rom.base import BaseRomHandler
+from miorom.errors import ParseError
 from miorom.platforms.nds.narc import NARCArchive
+from miorom.rom.base import BaseRomHandler
+from miorom.security import sanitize_extract_path
 
 
 class NarcRomHandler(BaseRomHandler):
@@ -61,10 +61,12 @@ class NarcRomHandler(BaseRomHandler):
 
         file_names = sorted(os.listdir(root_dir))
         file_payloads = []
+        packed_names = []
         for fn in file_names:
             fp = os.path.join(root_dir, fn)
             if os.path.isfile(fp):
                 with open(fp, "rb") as f_in:
                     file_payloads.append(f_in.read())
+                packed_names.append(fn)
 
-        return NARCArchive.pack_files(file_payloads)
+        return NARCArchive.pack_files(file_payloads, names=packed_names)

@@ -132,3 +132,34 @@ def test_relocate_pointer_table_batch():
         ptr_val = struct.unpack_from("<I", buf, i * 4)[0]
         data_len = len(new_payloads[i])
         assert buf[ptr_val : ptr_val + data_len] == new_payloads[i]
+
+
+def test_relative_pointer_relocation():
+    buf = bytearray(256)
+    # Pointer at offset 0x20 points to 0x80 (delta = 0x60)
+    ptr_loc = 0x20
+    target_off = 0x80
+    delta = target_off - ptr_loc
+    struct.pack_into("<I", buf, ptr_loc, delta)
+    buf[target_off : target_off + 10] = b"OldContent"
+
+    manager = AutoRelocationManager(buf)
+    ptr_def = RelocatablePointer(pointer_offset=ptr_loc, pointer_size=4, is_relative=True)
+    assert manager.read_pointer_value(ptr_def) == target_off
+
+    new_data = b"Much longer content that will definitely trigger an overflow relocation!"
+    rec = manager.relocate_item(
+        item_id="rel_01",
+        old_offset=target_off,
+        old_size=10,
+        new_payload=new_data,
+        pointers=[ptr_def],
+    )
+
+    assert rec.overflowed is True
+    # Verify pointer value in buffer is now new_offset - ptr_loc
+    updated_val = struct.unpack_from("<I", buf, ptr_loc)[0]
+    assert updated_val == rec.new_offset - ptr_loc
+    # And reading it returns rec.new_offset
+    assert manager.read_pointer_value(ptr_def) == rec.new_offset
+

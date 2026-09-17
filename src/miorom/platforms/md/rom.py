@@ -1,8 +1,11 @@
-from miorom.result import MioRomResult
-import os
 from dataclasses import dataclass
-from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U8, U16, U32
-from typing import Optional, Tuple
+from typing import Optional
+
+from miorom.core.schema import U8, U16, U32, BinaryStruct, FixedString, RawBytes
+from miorom.result import MioRomResult
+
+_U16_BE = U16(default=0, endian=">")
+
 
 
 class MDChecksumStruct(BinaryStruct):
@@ -59,9 +62,11 @@ def deinterleave_smd(data: bytes) -> bytes:
 def interleave_smd(data: bytes) -> bytes:
     """Interleave flat ROM binary into Super Magic Drive (.smd) format with 512-byte header."""
     block_size = 16384
-    half_block = 8192
-    aligned_len = len(data) - (len(data) % block_size)
-    num_blocks = aligned_len // block_size
+    _half_block = 8192
+    rem = len(data) % block_size
+    if rem != 0:
+        data = data + (b"\x00" * (block_size - rem))
+    num_blocks = len(data) // block_size
 
     smd_header = bytearray(512)
     smd_header[0] = num_blocks & 0xFF
@@ -93,10 +98,10 @@ def calculate_md_checksum(rom_bytes: bytes) -> int:
     if len(rom_bytes) <= 0x0200:
         return 0
     aligned_len = len(rom_bytes) - (len(rom_bytes) % 2)
-    words_count = (aligned_len - 0x0200) // 2
+    _words_count = (aligned_len - 0x0200) // 2
     checksum = 0
     for offset in range(0x0200, aligned_len, 2):
-        checksum += U16(default=0, endian=">").unpack(rom_bytes, offset, ">")[0]
+        checksum += _U16_BE.unpack(rom_bytes, offset, ">")[0]
     return checksum & 0xFFFF
 
 
@@ -149,12 +154,14 @@ class MDHeader(MioRomResult):
     ram_end: int
     sram_support: bool
     region: str
+    reserved_b0: bytes = b"\x00" * 0x40
 
     @classmethod
     def parse(cls, header_bytes: bytes) -> "MDHeader":
         if len(header_bytes) < 0x0100:
             header_bytes = header_bytes.ljust(0x0100, b"\x00")
         parsed = MDHeaderStruct.from_bytes(header_bytes, offset=0)
+        reserved_raw = bytes(parsed._reserved_0xB0)
         return cls(
             system_type=parsed.system_type.strip(),
             copyright=parsed.copyright.strip(),
@@ -167,14 +174,57 @@ class MDHeader(MioRomResult):
             rom_end=parsed.rom_end,
             ram_start=parsed.ram_start,
             ram_end=parsed.ram_end,
-            sram_support=parsed._reserved_0xB0[:2] == b"RA",
+            sram_support=reserved_raw[:2] == b"RA",
             region=parsed.region.strip(),
+            reserved_b0=reserved_raw,
         )
 
+    @property
+    def sram_start(self) -> Optional[int]:
+        """SRAM starting physical address (e.g. 0x00200001)."""
+        if self.sram_support and len(self.reserved_b0) >= 8:
+            return int.from_bytes(self.reserved_b0[4:8], "big")
+        return None
+
+    @property
+    def sram_end(self) -> Optional[int]:
+        """SRAM ending physical address (e.g. 0x00200FFF)."""
+        if self.sram_support and len(self.reserved_b0) >= 12:
+            return int.from_bytes(self.reserved_b0[8:12], "big")
+        return None
+
+    def configure_sram(
+        self,
+        start_addr: int = 0x00200001,
+        end_addr: int = 0x00200FFF,
+        flags: int = 0xF8,
+        access: int = 0x20,
+    ) -> None:
+        """Configures official Sega cartridge backup RAM (SRAM) mapping."""
+        buf = bytearray(self.reserved_b0.ljust(0x40, b"\x00")[:0x40])
+        buf[0:2] = b"RA"
+        buf[2] = flags & 0xFF
+        buf[3] = access & 0xFF
+        buf[4:8] = start_addr.to_bytes(4, "big")
+        buf[8:12] = end_addr.to_bytes(4, "big")
+        self.reserved_b0 = bytes(buf)
+        self.sram_support = True
+
     def pack(self) -> bytes:
-        reserved = bytearray(0x40)
+        reserved = bytearray(
+            self.reserved_b0 if len(self.reserved_b0) == 0x40 else self.reserved_b0.ljust(0x40, b"\x00")[:0x40]
+        )
         if self.sram_support:
-            reserved[:2] = b"RA"
+            if reserved[:2] != b"RA":
+                reserved[:2] = b"RA"
+                if reserved[4:12] == b"\x00" * 8:
+                    reserved[2] = 0xF8
+                    reserved[3] = 0x20
+                    reserved[4:8] = (0x00200001).to_bytes(4, "big")
+                    reserved[8:12] = (0x00200FFF).to_bytes(4, "big")
+        else:
+            if reserved[:2] == b"RA":
+                reserved[:2] = b"\x00\x00"
         return MDHeaderStruct(
             system_type=self.system_type,
             copyright=self.copyright,
@@ -222,6 +272,32 @@ class MDRom:
         self.header.checksum = checksum
         self.data[0x018E:0x0190] = MDChecksumStruct(checksum=checksum).to_bytes()[0x018E:]
         return checksum
+
+    @property
+    def has_sram(self) -> bool:
+        """True if ROM header defines battery-backed backup RAM (SRAM)."""
+        return self.header.sram_support
+
+    @property
+    def sram_start(self) -> Optional[int]:
+        """SRAM start address."""
+        return self.header.sram_start
+
+    @property
+    def sram_end(self) -> Optional[int]:
+        """SRAM end address."""
+        return self.header.sram_end
+
+    def configure_sram(
+        self,
+        start_addr: int = 0x00200001,
+        end_addr: int = 0x00200FFF,
+        flags: int = 0xF8,
+        access: int = 0x20,
+    ) -> None:
+        """Configures official Sega cartridge backup RAM (SRAM) mapping."""
+        self.header.configure_sram(start_addr, end_addr, flags, access)
+        self.data[0x0100:0x0200] = self.header.pack()
 
     def to_bytes(self, smd_format: bool = False) -> bytes:
         """Export ROM as flat binary (.bin/.md) or interleaved SMD (.smd)."""

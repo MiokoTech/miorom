@@ -1,5 +1,4 @@
-import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, Optional
 
 
 class ByteTrieNode:
@@ -61,14 +60,14 @@ class TrieTranscoder:
         Example:
             00=<END>
             0A=\n
-            8140=　
+            8140=[SPACE]
             8260=Ａ
             88=[HERO]
         """
         lines = table_content.splitlines()
         for raw_line in lines:
-            line = raw_line.strip()
-            if not line or line.startswith("#") or line.startswith(";"):
+            line = raw_line.rstrip("\r\n")
+            if not line or line.lstrip().startswith(("#", ";", "//")):
                 continue
 
             if "=" in line:
@@ -92,7 +91,7 @@ class TrieTranscoder:
 
     def load_table_file(self, filepath: str, encoding: str = "utf-8"):
         """Load .tbl character mapping file."""
-        with open(filepath, "r", encoding=encoding, errors="replace") as f:
+        with open(filepath, encoding=encoding, errors="replace") as f:
             self.load_table(f.read())
 
     @property

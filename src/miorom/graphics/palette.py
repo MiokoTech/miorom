@@ -1,8 +1,8 @@
-import math
-from miorom.errors import ParseError
-import struct
 from dataclasses import dataclass
-from typing import List, Tuple, Union, Optional
+from typing import List, Optional
+
+from miorom.core import schema
+from miorom.errors import ParseError
 
 
 @dataclass(frozen=True)
@@ -97,7 +97,7 @@ class Palette:
         """Reads a list of BGR555 16-bit little-endian values."""
         colors = []
         for i in range(0, len(data) - 1, 2):
-            val = struct.unpack_from("<H", data, i)[0]
+            val = schema.unpack_from("<H", data, i)[0]
             colors.append(Color.from_bgr555(val))
         return cls(colors)
 
@@ -105,7 +105,7 @@ class Palette:
         """Serializes palette into BGR555 16-bit little-endian binary bytes."""
         out = bytearray()
         for col in self.colors:
-            out.extend(struct.pack("<H", col.to_bgr555()))
+            out.extend(schema.pack("<H", col.to_bgr555()))
         return bytes(out)
 
     @classmethod
@@ -114,7 +114,7 @@ class Palette:
         colors = []
         fmt = f"{endian}H"
         for i in range(0, len(data) - 1, 2):
-            val = struct.unpack_from(fmt, data, i)[0]
+            val = schema.unpack_from(fmt, data, i)[0]
             colors.append(Color.from_md_color(val))
         return cls(colors)
 
@@ -123,7 +123,7 @@ class Palette:
         out = bytearray()
         fmt = f"{endian}H"
         for col in self.colors:
-            out.extend(struct.pack(fmt, col.to_md_color()))
+            out.extend(schema.pack(fmt, col.to_md_color()))
         return bytes(out)
 
     def to_act(self) -> bytes:
@@ -136,7 +136,7 @@ class Palette:
             else:
                 out.extend([0, 0, 0])
         # ACT 4-byte footer
-        out.extend(struct.pack(">HH", min(256, len(self.colors)), 0xFFFF))
+        out.extend(schema.pack(">HH", min(256, len(self.colors)), 0xFFFF))
         return bytes(out)
 
     @classmethod
@@ -146,7 +146,7 @@ class Palette:
             raise ParseError(f"Data too short for ACT palette: expected at least 768 bytes, got {len(data)}")
         count = 256
         if len(data) >= 772:
-            count_in_file = struct.unpack_from(">H", data, 768)[0]
+            count_in_file = schema.unpack_from(">H", data, 768)[0]
             if 0 < count_in_file <= 256:
                 count = count_in_file
         colors = []

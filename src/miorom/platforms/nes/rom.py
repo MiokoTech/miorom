@@ -8,8 +8,9 @@ PRG-ROM / CHR-ROM separation and re-injection.
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple
-from miorom.core.schema import BinaryStruct, RawBytes, U8
+from typing import Dict, Optional
+
+from miorom.core.schema import U8, BinaryStruct, RawBytes
 from miorom.errors import ParseError
 
 
@@ -80,7 +81,7 @@ class NESRom:
         self._header = NESHeaderStruct.from_bytes(self.data, offset=0)
 
     @classmethod
-    def from_file(cls, path: str) -> "NESRom":
+    def from_file(cls, path: str) -> NESRom:
         with open(path, "rb") as f:
             return cls(f.read())
 

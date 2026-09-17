@@ -6,8 +6,8 @@ Generates side-by-side or inline color-coded hex diffs (with ANSI escape codes)
 to let reverse engineers visually verify binary writes and patches before committing.
 """
 
-from typing import List, Optional
 import logging
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 

@@ -1,10 +1,10 @@
-from miorom.result import MioRomResult
 import os
-from miorom.errors import ParseError
 from dataclasses import dataclass
-from miorom.core.schema import BinaryStruct, FixedString, RawBytes, U8, U16, U32
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional
 
+from miorom.core.schema import U8, U16, U32, BinaryStruct, FixedString, RawBytes
+from miorom.errors import ParseError
+from miorom.result import MioRomResult
 from miorom.security import sanitize_extract_path
 
 
@@ -90,11 +90,11 @@ class NARCArchive:
 
         # NARC header (16 bytes)
         narc_header = cls._Header.from_bytes(data, offset=0)
-        bom = narc_header.bom
-        version = narc_header.version
-        file_size = narc_header.file_size
+        _bom = narc_header.bom
+        _version = narc_header.version
+        _file_size = narc_header.file_size
         header_size = narc_header.header_size
-        num_chunks = narc_header.num_chunks
+        _num_chunks = narc_header.num_chunks
 
         # File Allocation Table (BTAF)
         btaf_pos = header_size
@@ -131,7 +131,7 @@ class NARCArchive:
         gmif_pos = btnf_pos + btnf_size
         gmif_header = cls._SectionHeader.from_bytes(data, offset=gmif_pos)
         gmif_magic = gmif_header.magic
-        gmif_size = gmif_header.size
+        _gmif_size = gmif_header.size
         if gmif_magic != cls.GMIF_MAGIC:
             raise ParseError(f"Expected GMIF header at 0x{gmif_pos:X}, got {gmif_magic}")
 
@@ -152,33 +152,64 @@ class NARCArchive:
 
     @classmethod
     def _parse_btnf_names(cls, btnf_data: bytes, file_count: int) -> List[str]:
-        # Dummy BTNF check (<= 16 bytes)
         if len(btnf_data) <= 16:
             return [""] * file_count
 
-        # Fallback to empty names on complex tree
-        return [""] * file_count
+        def parse_name_entries(pos: int) -> List[str]:
+            names: List[str] = []
+            while pos < len(btnf_data) and len(names) < file_count:
+                entry_byte = btnf_data[pos]
+                pos += 1
+                if entry_byte == 0:
+                    break
+                name_len = entry_byte & 0x7F
+                is_dir = bool(entry_byte & 0x80)
+                if pos + name_len > len(btnf_data):
+                    break
+                name = btnf_data[pos:pos + name_len].decode("ascii", errors="replace")
+                pos += name_len
+                if is_dir:
+                    pos += 2  # Skip first_file_id for directory entries
+                else:
+                    names.append(name)
+            return names
+
+        try:
+            # Standard flat NARC BTNF: section header, root record, then name entries.
+            names = parse_name_entries(16)
+            if not names:
+                # Backward-compatible fallback for older flat tables without root records.
+                names = parse_name_entries(8)
+            while len(names) < file_count:
+                names.append("")
+            return names
+        except Exception:
+            return [""] * file_count
 
     @classmethod
     def pack(cls, input_dir: str, output_narc_path: str) -> None:
         """Packs a directory of files into a standard NDS NARC archive."""
         files = sorted(os.listdir(input_dir))
         file_payloads = []
+        file_names = []
 
         for f in files:
             full_path = os.path.join(input_dir, f)
             if os.path.isfile(full_path):
                 with open(full_path, "rb") as f_in:
                     file_payloads.append(f_in.read())
+                file_names.append(f)
 
-        narc_bytes = cls.pack_files(file_payloads)
+        narc_bytes = cls.pack_files(file_payloads, names=file_names)
         with open(output_narc_path, "wb") as f_out:
             f_out.write(narc_bytes)
 
     @classmethod
-    def pack_files(cls, files: List[bytes]) -> bytes:
+    def pack_files(cls, files: List[bytes], names: Optional[List[str]] = None) -> bytes:
         """Constructs a binary NARC archive from a list of byte payloads."""
         file_count = len(files)
+        if names is not None and len(names) != file_count:
+            raise ValueError("names length must match files length")
 
         # Build GMIF payload with 4-byte alignment
         gmif_body = bytearray()
@@ -214,12 +245,24 @@ class NARCArchive:
         btaf_section.extend(cls._SectionHeader(magic=cls.BTAF_MAGIC, size=len(btaf_body) + 8).to_bytes()[4:])
         btaf_section.extend(btaf_body)
 
-        # Build minimal BTNF section
+        # Build BTNF section
+        btnf_body = bytearray()
+        btnf_body.extend(cls._BtNFRoot(root_offset=4, first_file_id=0, directory_count=1, _reserved=0).to_bytes())
+        if names is not None:
+            for name in names:
+                encoded = name.encode("ascii")
+                if len(encoded) > 0x7F:
+                    raise ValueError(f"NARC filename is too long for flat BTNF entry: {name!r}")
+                btnf_body.append(len(encoded))
+                btnf_body.extend(encoded)
+            btnf_body.append(0)
+            while len(btnf_body) % 4 != 0:
+                btnf_body.append(0)
+
         btnf_section = bytearray()
         btnf_section.extend(cls.BTNF_MAGIC)
-        btnf_section.extend(cls._SectionHeader(magic=cls.BTNF_MAGIC, size=16).to_bytes()[4:])
-        # 8 bytes standard root directory record
-        btnf_section.extend(cls._BtNFRoot(root_offset=4, first_file_id=0, directory_count=1, _reserved=0).to_bytes())
+        btnf_section.extend(cls._SectionHeader(magic=cls.BTNF_MAGIC, size=len(btnf_body) + 8).to_bytes()[4:])
+        btnf_section.extend(btnf_body)
 
         # Build NARC header
         header_size = 16

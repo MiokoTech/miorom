@@ -1,8 +1,11 @@
-from miorom.result import MioRomResult
-import struct
-from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from dataclasses import dataclass
+from typing import List
 
+from miorom.core import schema
+from miorom.core.schema import I16
+from miorom.result import MioRomResult
+
+_I16_LE = I16(endian="<")
 
 FILTER_K1 = (0, 60, 115, 98, 122)
 FILTER_K2 = (0, 0, -52, -55, -60)
@@ -92,9 +95,8 @@ class CdXaDecoder:
             shifts[4 + u] = min(12, hdr_hi & 0x0F)
             filters[4 + u] = min(4, (hdr_hi >> 4) & 0x07)
 
-        # Decode each sound unit (28 samples per unit)
-        unit_samples: List[List[int]] = [[] for _ in range(8)]
-
+        # Unpack nibbles for each of the 8 sound units (28 samples per unit)
+        unit_nibbles: List[List[int]] = [[] for _ in range(8)]
         for s in range(28):
             row_offset = 16 + s * 4
             b0 = group_data[row_offset]
@@ -102,11 +104,6 @@ class CdXaDecoder:
             b2 = group_data[row_offset + 2]
             b3 = group_data[row_offset + 3]
 
-            # Nibble distribution:
-            # b0: low nibble -> unit 0, high nibble -> unit 1
-            # b1: low nibble -> unit 2, high nibble -> unit 3
-            # b2: low nibble -> unit 4, high nibble -> unit 5
-            # b3: low nibble -> unit 6, high nibble -> unit 7
             n0 = b0 & 0x0F
             n1 = (b0 >> 4) & 0x0F
             n2 = b1 & 0x0F
@@ -119,19 +116,24 @@ class CdXaDecoder:
             nibbles = (n0, n1, n2, n3, n4, n5, n6, n7)
             for u in range(8):
                 nib = nibbles[u]
-                # Sign extend 4-bit nibble
                 if nib >= 8:
                     nib -= 16
+                unit_nibbles[u].append(nib)
 
-                shift = shifts[u]
-                filt = filters[u]
-                k1 = FILTER_K1[filt]
-                k2 = FILTER_K2[filt]
+        # Decode each sound unit sequentially with its corresponding channel filter state
+        unit_samples: List[List[int]] = [[] for _ in range(8)]
+        for u in range(8):
+            shift = shifts[u]
+            filt = filters[u]
+            k1 = FILTER_K1[filt]
+            k2 = FILTER_K2[filt]
 
-                state = self.left_state if (stereo and (u % 2 == 0)) else (
-                    self.right_state if stereo else self.left_state
-                )
+            state = self.left_state if (stereo and (u % 2 == 0)) else (
+                self.right_state if stereo else self.left_state
+            )
 
+            for s in range(28):
+                nib = unit_nibbles[u][s]
                 sample_enc = nib << 12
                 sample_dec = sample_enc >> shift
                 pred = (k1 * state.prev1 + k2 * state.prev2 + 32) >> 6
@@ -155,12 +157,13 @@ class CdXaDecoder:
                 l_samples = unit_samples[pair[0]]
                 r_samples = unit_samples[pair[1]]
                 for left, right in zip(l_samples, r_samples):
-                    out.extend(struct.pack("<hh", left, right))
+                    out.extend(_I16_LE.pack(left))
+                    out.extend(_I16_LE.pack(right))
         else:
             # Sequential units 0..7
             for u in range(8):
                 for val in unit_samples[u]:
-                    out.extend(struct.pack("<h", val))
+                    out.extend(_I16_LE.pack(val))
 
         return bytes(out)
 
@@ -197,7 +200,7 @@ def cdxa_to_wav(
     block_align = num_channels * (bits_per_sample // 8)
 
     # RIFF WAV header (44 bytes)
-    header = struct.pack(
+    header = schema.pack(
         "<4sI4s4sIHHIIHH4sI",
         b"RIFF",
         36 + len(pcm_data),

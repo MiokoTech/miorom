@@ -11,16 +11,16 @@ decompressing text streams, and generating optimal tree repacks for translations
 
 from __future__ import annotations
 
-from collections import Counter
-from dataclasses import dataclass, field
 import heapq
-import struct
-from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
+from collections import Counter
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Set, Tuple
 
+from miorom.core import schema
 from miorom.core.bitstream import BitReader, BitWriter
-from miorom.errors import CompressionError, ParseError
+from miorom.errors import ParseError
 from miorom.result import MioRomResult
-
 
 # ============================================================================
 # Data Models
@@ -190,8 +190,8 @@ class TextCompressionHunter:
         nodes: List[HuffmanNodeEntry] = []
         for i in range(node_count):
             pos = offset + (i * node_size)
-            left_raw = struct.unpack_from(fmt, data, pos)[0]
-            right_raw = struct.unpack_from(fmt, data, pos + entry_size)[0]
+            left_raw = schema.unpack_from(fmt, data, pos)[0]
+            right_raw = schema.unpack_from(fmt, data, pos + entry_size)[0]
 
             left_is_leaf = bool(left_raw & leaf_mask)
             right_is_leaf = bool(right_raw & leaf_mask)
@@ -300,8 +300,8 @@ class TextCompressionHunter:
             if pos + node_size > len(data):
                 return None
 
-            left_raw = struct.unpack_from(fmt, data, pos)[0]
-            right_raw = struct.unpack_from(fmt, data, pos + entry_size)[0]
+            left_raw = schema.unpack_from(fmt, data, pos)[0]
+            right_raw = schema.unpack_from(fmt, data, pos + entry_size)[0]
 
             left_is_leaf = bool(left_raw & leaf_mask)
             right_is_leaf = bool(right_raw & leaf_mask)
@@ -565,7 +565,6 @@ class TextCompressionHunter:
 
         # 4. Flatten tree into contiguous retro console node array
         # Root is node 0
-        node_list: List[Tuple[int, int, bool, bool]] = []
         # Layout: assign sequential node indices using BFS
         from collections import deque
         queue = deque([root])
@@ -607,8 +606,8 @@ class TextCompressionHunter:
             else:
                 right_val = leaf_mask
 
-            tree_bytes.extend(struct.pack(fmt, left_val))
-            tree_bytes.extend(struct.pack(fmt, right_val))
+            tree_bytes.extend(schema.pack(fmt, left_val))
+            tree_bytes.extend(schema.pack(fmt, right_val))
 
         # 5. Compress each string into bitstream
         compressed_streams: List[bytes] = []

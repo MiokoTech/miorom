@@ -7,24 +7,16 @@ from disassembled bytecode scripts and Control Flow Graphs into human-readable
 Python and C pseudo-code.
 """
 
-from miorom.result import MioRomResult
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import List, Optional, Union
 
-from miorom.script.engine import DisassembledScript, Instruction
-from miorom.script.control_flow import ControlFlowGraph, BasicBlock
+from miorom.result import MioRomResult
 from miorom.script.ast import (
-    ScriptAST,
     ScriptASTBuilder,
-    BlockStmt,
-    IfStmt,
-    WhileStmt,
-    Statement,
-    InstructionStmt,
-    LabelStmt,
-    GotoStmt,
-    ReturnStmt,
 )
+from miorom.script.control_flow import ControlFlowGraph
+from miorom.script.engine import DisassembledScript
 
 
 @dataclass

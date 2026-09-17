@@ -22,11 +22,11 @@ Usage:
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from miorom.result import MioRomResult
 from miorom.scanner.xref import XRefEntry, XRefGraph, XRefType
@@ -131,7 +131,7 @@ class AnalysisDatabase:
         return target
 
     @classmethod
-    def load(cls, path: str) -> "AnalysisDatabase":
+    def load(cls, path: str) -> AnalysisDatabase:
         """Load a SQLite database; legacy JSON sidecar files remain readable."""
         database = cls(path)
         if not cls._is_sqlite(path):
@@ -255,7 +255,7 @@ class AnalysisDatabase:
             pass
 
         try:
-            with open(path + ".labels", "r", encoding="utf-8") as file_obj:
+            with open(path + ".labels", encoding="utf-8") as file_obj:
                 data = json.load(file_obj)
         except FileNotFoundError:
             return

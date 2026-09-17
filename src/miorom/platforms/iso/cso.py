@@ -9,13 +9,12 @@ PS2, and PlayStation emulators (PPSSPP, PCSX2), reducing ISO sizes by 40-60%.
 
 import io
 import os
-import struct
 import zlib
-from typing import BinaryIO, List, Optional, Tuple, Union
+from typing import BinaryIO, List, Optional, Union
 
+from miorom.core import schema
 from miorom.errors import CompressionError, ParseError
 from miorom.result import MioRomResult
-
 
 CSO_MAGIC = b"CISO"
 DEFAULT_BLOCK_SIZE = 2048
@@ -52,7 +51,7 @@ class CSOImage(MioRomResult):
             self.block_size,
             self.version,
             self.align,
-        ) = struct.unpack_from("<IQIBB", hdr, 4)
+        ) = schema.unpack_from("<IQIBB", hdr, 4)
 
         if self.block_size == 0:
             self.block_size = DEFAULT_BLOCK_SIZE
@@ -66,7 +65,7 @@ class CSOImage(MioRomResult):
             raise ParseError("Incomplete CSO index table.")
 
         self._index: List[int] = list(
-            struct.unpack_from(f"<{self.total_blocks + 1}I", index_bytes)
+            schema.unpack_from(f"<{self.total_blocks + 1}I", index_bytes)
         )
 
     def close(self):
@@ -150,6 +149,10 @@ class CSOImage(MioRomResult):
                 count = min(chunk_sectors, self.total_blocks - lba)
                 out_fp.write(self.read_sectors(lba, count))
 
+    def to_iso_bytes(self) -> bytes:
+        """Decompresses the entire CSO image to raw ISO 9660 bytes."""
+        return self.read_bytes(0, self.uncompressed_size)
+
     @classmethod
     def compress_iso(
         cls,
@@ -210,10 +213,10 @@ class CSOImage(MioRomResult):
             # Build CSO binary header
             header = bytearray(24)
             header[0:4] = CSO_MAGIC
-            struct.pack_into("<IQIBBH", header, 4, header_size, iso_size, block_size, 1, align, 0)
+            schema.pack_into("<IQIBBH", header, 4, header_size, iso_size, block_size, 1, align, 0)
 
             # Pack index table
-            packed_index = struct.pack(f"<{total_blocks + 1}I", *index_table)
+            packed_index = schema.pack(f"<{total_blocks + 1}I", *index_table)
 
             if output_path:
                 os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
@@ -233,3 +236,17 @@ class CSOImage(MioRomResult):
         finally:
             if should_close:
                 stream.close()
+
+
+class CSOCompressor:
+    """
+    Convenience compressor for creating Compressed ISO (CSO) images.
+    """
+
+    @staticmethod
+    def compress_bytes(data: bytes, compression_level: int = 9) -> bytes:
+        return CSOImage.compress_iso(data, compression_level=compression_level)
+
+    @staticmethod
+    def compress_file(src_path: str, dst_path: str, compression_level: int = 9) -> None:
+        CSOImage.compress_iso(src_path, output_path=dst_path, compression_level=compression_level)

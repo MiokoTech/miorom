@@ -1,7 +1,8 @@
 """Patch primitive for programmatic inspection, filtering, and composition."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Callable, Dict, Iterable, List
+from typing import Callable, Dict, List
 
 from miorom.result import MioRomResult
 

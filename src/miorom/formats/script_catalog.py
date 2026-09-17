@@ -16,10 +16,9 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional
 
 from miorom.formats.csv_handler import CsvHandler, TranslationRow
-from miorom.result import MioRomResult
 
 
 class DialogueCleaner:
@@ -103,7 +102,7 @@ class ScriptCatalog:
     @classmethod
     def load_script(cls, filepath: str, encoding: str = "utf-8") -> Dict[int, str]:
         """Reads a [id] script file from disk."""
-        with open(filepath, "r", encoding=encoding) as f:
+        with open(filepath, encoding=encoding) as f:
             return cls.parse_script(f.read())
 
     @classmethod

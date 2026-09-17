@@ -1,4 +1,3 @@
-import struct
 from typing import Optional, Tuple
 
 
@@ -48,6 +47,19 @@ class RetroChecksum:
             for _ in range(8):
                 if crc & 1:
                     crc = (crc >> 1) ^ 0xA001
+                else:
+                    crc >>= 1
+        return crc & 0xFFFF
+
+    @staticmethod
+    def crc16_nds(data: bytes, init: int = 0xFFFF) -> int:
+        """Nintendo DS BIOS SWI 0x0E CRC-16 (reflected CCITT poly 0x8408, initial value 0xFFFF)."""
+        crc = init
+        for b in data:
+            crc ^= b
+            for _ in range(8):
+                if crc & 1:
+                    crc = (crc >> 1) ^ 0x8408
                 else:
                     crc >>= 1
         return crc & 0xFFFF
@@ -129,7 +141,7 @@ class RetroChecksum:
             raw_sum = sum(data)
         else:
             # Find largest power of 2 smaller than rom_len
-            largest_pow2 = 1 << ((rom_len.bit_length() - 1))
+            largest_pow2 = 1 << (rom_len.bit_length() - 1)
             remainder = rom_len - largest_pow2
             # How many times remainder mirrors to fill power of two
             next_pow2_rem = 1 << (remainder - 1).bit_length()

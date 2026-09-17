@@ -5,10 +5,10 @@ Rule-based function auto-naming from IR analysis signals.
 Every rule is explicit, auditable code — no AI/ML. Users can add/remove rules.
 """
 
-from miorom.result import MioRomResult
 from dataclasses import dataclass
-from typing import Callable, List, Optional
+from typing import Any, Callable, List, Optional
 
+from miorom.result import MioRomResult
 from miorom.script.ir import IRFunction, IROp
 
 
@@ -32,7 +32,14 @@ class FunctionNamer:
         func_     — default fallback (same as BinaryLifter sub_ prefix).
     """
 
-    def __init__(self, rules: Optional[List[NamingRule]] = None):
+    def __init__(
+        self,
+        rules: Optional[List[NamingRule]] = None,
+        symbol_map: Optional[Any] = None,
+        symbol_resolver: Optional[Callable[[int], Optional[str]]] = None,
+    ):
+        self.symbol_map = symbol_map
+        self.symbol_resolver = symbol_resolver
         self.rules = rules or [
             NamingRule(
                 prefix="checksum_",
@@ -46,8 +53,7 @@ class FunctionNamer:
             ),
         ]
 
-    @staticmethod
-    def _is_checksum_routine(func: IRFunction) -> bool:
+    def _is_checksum_routine(self, func: IRFunction) -> bool:
         """Detect XOR-shift loops or calls to named checksum functions."""
         xor_count = sum(
             1 for block in func.blocks.values() for ins in block.instructions if ins.op == IROp.XOR
@@ -56,14 +62,41 @@ class FunctionNamer:
             1 for block in func.blocks.values() for ins in block.instructions if ins.op == IROp.SHL
         )
         call_names = [
-            str(ins.args[0]) for block in func.blocks.values() for ins in block.instructions
+            self._resolve_call_target_name(ins.args[0])
+            for block in func.blocks.values()
+            for ins in block.instructions
             if ins.op == IROp.CALL and ins.args
         ]
         for name in call_names:
+            if name is None:
+                continue
             lower = name.lower()
             if "crc" in lower or "checksum" in lower or "hash" in lower:
                 return True
         return xor_count >= 4 and shl_count >= 2
+
+    def _resolve_call_target_name(self, target: object) -> Optional[str]:
+        if isinstance(target, str):
+            return target
+        if not isinstance(target, int):
+            return None
+
+        if self.symbol_resolver is not None:
+            resolved = self.symbol_resolver(target)
+            if resolved is not None:
+                return str(resolved)
+
+        if self.symbol_map is None:
+            return None
+
+        resolve = getattr(self.symbol_map, "resolve", None)
+        if not callable(resolve):
+            return None
+
+        symbol = resolve(target)
+        if symbol is None:
+            return None
+        return str(getattr(symbol, "name", symbol))
 
     @staticmethod
     def _is_pure_utility(func: IRFunction) -> bool:
@@ -76,7 +109,7 @@ class FunctionNamer:
         """Return the best-guess name for a function based on registered rules."""
         for rule in self.rules:
             if rule.predicate(func):
-                if not current_name.startswith(f"sub_"):
+                if not current_name.startswith("sub_"):
                     return current_name
                 return f"{rule.prefix}{current_name[4:]}"
         return current_name

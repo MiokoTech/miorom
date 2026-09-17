@@ -1,19 +1,17 @@
-from miorom.result import MioRomResult
-import struct
 from dataclasses import dataclass
-from miorom.core.schema import U16, U32
 from typing import Dict, List, Optional, Tuple
 
+from miorom.core import schema
+from miorom.core.schema import U16, U32
 from miorom.link.elf import (
-    Elf32File,
-    ElfRelocation,
-    ElfSection,
-    ElfSymbol,
     EM_ARM,
     EM_MIPS,
     EM_PPC,
     SHT_NOBITS,
+    Elf32File,
+    ElfSection,
 )
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -324,6 +322,6 @@ class CompoundRelocationLinker:
         Computes (hi16, lo16) pair for MIPS LUI / ADDIU instructions with sign-extension carry.
         """
         lo = target_addr & 0xFFFF
-        simm = struct.unpack(">h", struct.pack(">H", lo))[0]
+        simm = schema.unpack(">h", schema.pack(">H", lo))[0]
         hi = ((target_addr - simm) >> 16) & 0xFFFF
         return hi, lo

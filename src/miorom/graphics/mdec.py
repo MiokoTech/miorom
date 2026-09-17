@@ -1,7 +1,7 @@
 import math
-import struct
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional
 
+from miorom.core.binary import BinaryReader
 
 # Standard 8x8 Zigzag ordering
 ZIGZAG = (
@@ -55,8 +55,13 @@ class MdecDecoder:
     Decompresses MDEC DCT run-length encoded macroblock streams into 24-bit RGB images.
     """
 
-    def __init__(self, quant_table: Optional[List[int]] = None):
+    def __init__(
+        self,
+        quant_table: Optional[List[int]] = None,
+        chroma_quant_table: Optional[List[int]] = None,
+    ):
         self.quant_table = quant_table or DEFAULT_LUMA_QUANT
+        self.chroma_quant_table = chroma_quant_table or self.quant_table
 
     def decode_block(
         self,
@@ -65,6 +70,7 @@ class MdecDecoder:
     ) -> List[List[float]]:
         """Decode a single 8x8 DCT block from 16-bit halfwords."""
         coeffs = [0.0] * 64
+        table = self.chroma_quant_table if is_chroma else self.quant_table
 
         try:
             first_word = next(words_iter)
@@ -79,7 +85,7 @@ class MdecDecoder:
         dc_val = first_word & 0x3FF
         if dc_val >= 512:
             dc_val -= 1024
-        coeffs[0] = float(dc_val * self.quant_table[0])
+        coeffs[0] = float(dc_val * table[0])
 
         # AC coefficients
         coeff_idx = 0
@@ -94,10 +100,13 @@ class MdecDecoder:
 
             coeff_idx += run + 1
             if coeff_idx >= 64:
+                for rem_word in words_iter:
+                    if rem_word == 0xFE00:
+                        break
                 break
 
             pos = ZIGZAG[coeff_idx]
-            coeffs[pos] = float(level * self.quant_table[pos])
+            coeffs[pos] = float(level * table[pos])
 
         # Convert 1D 64 coefficients into 8x8 matrix
         matrix = [coeffs[y * 8:(y + 1) * 8] for y in range(8)]
@@ -114,7 +123,8 @@ class MdecDecoder:
         """
         # Ensure 16-bit halfword alignment
         num_words = len(bs_data) // 2
-        words = struct.unpack_from(f"<{num_words}H", bs_data, 0)
+        reader = BinaryReader(bs_data, endian="<")
+        words = [reader.read_u16() for _ in range(num_words)]
         words_iter = iter(words)
 
         mb_width = (width + 15) // 16
@@ -177,10 +187,22 @@ class MdecDecoder:
         return bytes(out_rgb)
 
     def to_image(self, bs_data: bytes, width: int, height: int) -> Any:
-        """Decode bitstream and return a Pillow Image object (requires Pillow)."""
+        """Decode bitstream and return a Pillow Image (if available) or raw RGB bytes.
+
+        When Pillow is installed, returns a ``PIL.Image.Image`` in RGB mode.
+        Without Pillow, returns a :class:`~miorom.graphics.png_codec.PNGImage` built
+        from the decoded RGB data, which supports :meth:`~miorom.graphics.png_codec.PNGImage.to_rgba_bytes`.
+        """
+        from miorom.graphics.png_codec import PNGColorType, PNGImage
         rgb_data = self.decode_stream(bs_data, width, height)
         try:
             from PIL import Image
             return Image.frombytes("RGB", (width, height), rgb_data)
         except ImportError:
-            return rgb_data
+            return PNGImage(
+                width=width,
+                height=height,
+                color_type=PNGColorType.RGB,
+                bit_depth=8,
+                pixels=rgb_data,
+            )

@@ -7,16 +7,15 @@ implicit or explicit Table-of-Contents (TOC) arrays, determines endianness and
 sub-stream types, and provides 1-click unpacking and format-preserving repacking.
 """
 
-from miorom.result import MioRomResult
 import os
 from dataclasses import dataclass, field
-from typing import BinaryIO, Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 from miorom.archive.container import ArchiveContainer, ArchiveEntry
-from miorom.core.schema import U16, U32
 from miorom.archive.vfs import VirtualFileSystem
+from miorom.core.schema import U16, U32
+from miorom.result import MioRomResult
 from miorom.security import sanitize_extract_path
-
 
 # Known magic signatures for sub-file type identification
 MAGIC_EXT_MAP: List[Tuple[bytes, str]] = [

@@ -7,10 +7,11 @@ pointer tables, record strides, string pools, and terminator delimiters
 without manual hex guessing.
 """
 
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
-import struct
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
+from typing import List, Optional, Tuple
 
+from miorom.core import schema
 from miorom.result import MioRomResult
 
 
@@ -140,7 +141,7 @@ class HeuristicTableDetector:
             consecutive_nulls = 0
 
             while check_pos + pointer_size <= len(data):
-                val = struct.unpack_from(fmt, data, check_pos)[0]
+                val = schema.unpack_from(fmt, data, check_pos)[0]
                 if allow_null and val in sentinel_vals:
                     consecutive_nulls += 1
                     if consecutive_nulls > max_null_streak:
@@ -264,7 +265,7 @@ class HeuristicTableDetector:
                     consecutive_nulls = 0
 
                     while rec_pos + stride <= len(data):
-                        val = struct.unpack_from(fmt, data, rec_pos + ptr_offset)[0]
+                        val = schema.unpack_from(fmt, data, rec_pos + ptr_offset)[0]
                         if allow_null and val in sentinel_vals:
                             consecutive_nulls += 1
                             if consecutive_nulls > max_null_streak:
@@ -389,7 +390,7 @@ class HeuristicTableDetector:
                 for ptr_off in range(0, stride - ptr_size + 1, ptr_size):
                     if len(data) < stride * min_records:
                         continue
-                    first_ptr = struct.unpack_from(fmt, data, ptr_off)[0]
+                    first_ptr = schema.unpack_from(fmt, data, ptr_off)[0]
                     if not (stride <= first_ptr < len(data)):
                         continue
                     if first_ptr % stride == 0:
@@ -402,7 +403,7 @@ class HeuristicTableDetector:
                         samples: List[str] = []
 
                         for k in range(min(count, 32)):
-                            ptr_val = struct.unpack_from(fmt, data, (k * stride) + ptr_off)[0]
+                            ptr_val = schema.unpack_from(fmt, data, (k * stride) + ptr_off)[0]
                             if not (first_ptr <= ptr_val < len(data)):
                                 valid = False
                                 break
@@ -463,7 +464,7 @@ class HeuristicTableDetector:
 
         for i in range(candidate.count):
             rec_off = candidate.offset + (i * candidate.stride) + candidate.pointer_offset_in_entry
-            target = struct.unpack_from(fmt, data, rec_off)[0] - base_address
+            target = schema.unpack_from(fmt, data, rec_off)[0] - base_address
 
             if not (0 <= target < len(data)):
                 yield (i, "")
@@ -493,5 +494,3 @@ class HeuristicTableDetector:
             terminators=terminators,
             encoding=encoding,
         ))
-
-        return extracted

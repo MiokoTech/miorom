@@ -1,17 +1,16 @@
 """
-from miorom.errors import RelocationError
 miorom.text.relative_search
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Relative text search engine for discovering unknown character tables (.tbl / CharMap).
 Finds text in binary ROM dumps where characters have custom byte mappings with fixed intervals.
 Supports 1-byte and 2-byte (endian-aware) relative searching and automated .tbl generation.
 """
-
-from miorom.result import MioRomResult
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
-import struct
+from typing import Dict, List, Optional
 
+from miorom.core import schema
+from miorom.errors import RelocationError
+from miorom.result import MioRomResult
 from miorom.text.charmap import CharMap
 
 
@@ -46,10 +45,10 @@ class RelativeMatch(MioRomResult):
                 b = bytes([val])
             elif self.mode == "2byte_be":
                 val = (code + self.base_delta) & 0xFFFF
-                b = struct.pack(">H", val)
+                b = schema.pack(">H", val)
             else:  # 2byte_le
                 val = (code + self.base_delta) & 0xFFFF
-                b = struct.pack("<H", val)
+                b = schema.pack("<H", val)
             mapping[b] = char
 
         if include_uppercase:
@@ -161,11 +160,11 @@ class RelativeSearcher:
         step = 2  # Aligned to 16-bit words
         for i in range(0, data_len - (q_len * 2) + 1, step):
             match = True
-            first_val = struct.unpack_from(fmt, data, i)[0]
+            first_val = schema.unpack_from(fmt, data, i)[0]
             cur_val = first_val
 
             for idx in range(q_len - 1):
-                next_val = struct.unpack_from(fmt, data, i + (idx + 1) * 2)[0]
+                next_val = schema.unpack_from(fmt, data, i + (idx + 1) * 2)[0]
                 diff = (next_val - cur_val) & 0xFFFF
                 expected_diff = deltas[idx] & 0xFFFF
                 if diff != expected_diff:

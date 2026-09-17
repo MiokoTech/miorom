@@ -3,7 +3,7 @@ MioROM: A Python library for ROM hacking and game reverse engineering.
 Designed as a modular building block for reverse engineering tools, unpackers, and custom ROM editors.
 """
 
-__version__ = "1.0.3"
+__version__ = "1.1.0"
 
 from miorom.archive import (
     AFSArchive,
@@ -240,6 +240,7 @@ from miorom.diff import (
 )
 from miorom.errors import (
     ChecksumError,
+    CompressedOverlayError,
     CompressionError,
     MioromError,
     ParseError,
@@ -356,7 +357,14 @@ from miorom.platforms.cdrom import (
     msf_to_lba,
 )
 from miorom.platforms.gb import GBRom, fix_gb_checksum
-from miorom.platforms.gba import GBAMultiboot, GBARom, GBASwiResolver, fix_gba_checksum
+from miorom.platforms.gba import (
+    GBAMultiboot,
+    GBARom,
+    GBASwiResolver,
+    create_synthetic_gba_rom,
+    fix_gba_checksum,
+    resolve_gba_region,
+)
 from miorom.platforms.gc import (
     FSTEntry,
     FstInjector,
@@ -410,10 +418,17 @@ from miorom.platforms.nds import (
     verify_nds_checksum,
 )
 from miorom.platforms.psp import (
+    AT3Audio,
+    AT3Codec,
+    AT3LoopPoint,
     GIMFormat,
     GIMImage,
     GIMPixelOrder,
     PBPFile,
+    PRXModule,
+    PSPFormat,
+    PSPNIDResolver,
+    PSPRom,
     SFOFile,
     psp_swizzle,
     psp_unswizzle,
@@ -422,18 +437,29 @@ from miorom.platforms.psx import (
     CdSector,
     PSXBlockState,
     PSXExe,
+    PSXFormat,
     PSXMemoryCard,
+    PSXRom,
     PSXSaveFile,
     StrDemuxer,
     StrFrame,
     TIMImage,
+    create_synthetic_psx_bin,
+    create_synthetic_psx_iso,
+    resolve_psx_region,
 )
 from miorom.platforms.sega_disc import DreamcastIpBin, GDISheet, GDITrack, SaturnDiscHeader
 from miorom.platforms.snes import SNESRom
 from miorom.platforms.wii import (
     BresIndexGroup,
     BRFNTFont,
+    BRLANFile,
+    BRLANKeyframe,
+    BRLANPaneAnim,
+    BRLANTrack,
     BRRESFile,
+    BRSTMChannelInfo,
+    BRSTMFile,
     BTIImage,
     PLT0Palette,
     RARCArchive,
@@ -745,6 +771,12 @@ __all__ = [
     "BresIndexGroup",
     "BTIImage",
     "BRFNTFont",
+    "BRLANFile",
+    "BRLANPaneAnim",
+    "BRLANTrack",
+    "BRLANKeyframe",
+    "BRSTMFile",
+    "BRSTMChannelInfo",
     "NARCArchive",
     "NARCEntry",
     "NDSRom",
@@ -767,6 +799,8 @@ __all__ = [
     "GBASwiResolver",
     "GBAMultiboot",
     "fix_gba_checksum",
+    "resolve_gba_region",
+    "create_synthetic_gba_rom",
     "GBRom",
     "fix_gb_checksum",
     "N64Rom",
@@ -796,7 +830,19 @@ __all__ = [
     "PSXMemoryCard",
     "PSXSaveFile",
     "PSXBlockState",
+    "PSXRom",
+    "PSXFormat",
+    "resolve_psx_region",
+    "create_synthetic_psx_iso",
+    "create_synthetic_psx_bin",
     "PBPFile",
+    "PSPRom",
+    "PSPFormat",
+    "PRXModule",
+    "PSPNIDResolver",
+    "AT3Audio",
+    "AT3Codec",
+    "AT3LoopPoint",
     "SFOFile",
     "GIMImage",
     "GIMFormat",
@@ -1224,6 +1270,7 @@ __all__ = [
     "PatchAuditor",
     "PatchCollision",
     "ChecksumError",
+    "CompressedOverlayError",
     "CompressionError",
     "MioromError",
     "ParseError",

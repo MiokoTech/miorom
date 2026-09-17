@@ -1,5 +1,6 @@
-import struct
 import zlib
+
+from miorom.core import schema
 
 
 class SaveChecksum:
@@ -59,7 +60,7 @@ class SaveChecksum:
         total = 0
         fmt = f"{endian}H"
         for i in range(0, len(data) - 1, 2):
-            val = struct.unpack_from(fmt, data, i)[0]
+            val = schema.unpack_from(fmt, data, i)[0]
             total = (total + val) & 0xFFFF
         return total
 
@@ -69,7 +70,7 @@ class SaveChecksum:
         total = 0
         fmt = f"{endian}I"
         for i in range(0, len(data) - 3, 4):
-            val = struct.unpack_from(fmt, data, i)[0]
+            val = schema.unpack_from(fmt, data, i)[0]
             total = (total + val) & 0xFFFFFFFF
         return total
 
@@ -91,17 +92,17 @@ class SaveChecksumEngine:
     ) -> bool:
         start, end = data_range
         payload = bytes(save_data[start:end])
-        
+
         algo_fn = getattr(SaveChecksum, algo.lower())
         computed = algo_fn(payload)
 
         fmt = f"{endian}H" if "16" in algo else f"{endian}I"
-        sz = 2 if "16" in algo else 4
+        _sz = 2 if "16" in algo else 4
 
-        current = struct.unpack_from(fmt, save_data, checksum_offset)[0]
+        current = schema.unpack_from(fmt, save_data, checksum_offset)[0]
         matched = (current == computed)
 
         if not matched:
-            struct.pack_into(fmt, save_data, checksum_offset, computed)
+            schema.pack_into(fmt, save_data, checksum_offset, computed)
 
         return matched

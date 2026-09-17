@@ -7,3 +7,6 @@ build/
 site/
 .cache/
 .pytest_cache/
+.ruff_cache/
+.hypothesis/
+.benchmarks/

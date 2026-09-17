@@ -1,11 +1,12 @@
 import pytest
+
 from miorom.platforms.nds.overlay import (
     NDSOverlayCompressor,
     NDSOverlayManager,
     NDSOverlayTable,
     OverlayAllocationReport,
 )
-from miorom.platforms.nds.rom import NDSFileEntry, NDSHeader, NDSOverlayEntry, NDSRom
+from miorom.platforms.nds.rom import NDSOverlayEntry, NDSRom
 
 
 def make_dummy_overlay_entry_bytes(
@@ -95,6 +96,21 @@ def test_overlay_compressor():
 
     decompressed = NDSOverlayCompressor.decompress(compressed, flags=0x01000000)
     assert decompressed == original_text
+
+
+def test_overlay_compressor_does_not_treat_odd_size_flag_as_compressed():
+    raw_overlay = b"\x00\x01\x02\x03" * 100
+
+    assert NDSOverlayCompressor.is_compressed(raw_overlay, flags=12345) is False
+    assert NDSOverlayCompressor.is_compressed(raw_overlay, flags=12344) is False
+
+
+def test_overlay_compressor_detects_lz10_by_flag_or_content():
+    compressed = NDSOverlayCompressor.compress(b"Overlay payload " * 20)
+
+    assert compressed[0] == 0x10
+    assert NDSOverlayCompressor.is_compressed(compressed, flags=0x01000000) is True
+    assert NDSOverlayCompressor.is_compressed(compressed, flags=0) is True
 
 
 def test_overlay_manager_replace_and_relocate():

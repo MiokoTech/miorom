@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-import re
 from typing import List, Optional, Tuple
 
 from miorom.result import MioRomResult
@@ -150,7 +149,7 @@ class GBASavePatcher:
             pos = out.find(b"FLASH_V", p)
             if pos == -1:
                 break
-            replacement = b"SRAM_V"
+            replacement = b"SRAM_V\x00"
             out[pos : pos + len(replacement)] = replacement
             patched_count += 1
             p = pos + len(replacement)

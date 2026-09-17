@@ -15,8 +15,6 @@ so library consumers can distinguish "the binary/format is at fault" from
 
 from typing import Optional
 
-from typing import Optional
-
 __all__ = [
     "MioromError",
     "ParseError",
@@ -27,6 +25,7 @@ __all__ = [
     "CompressionError",
     "PatchError",
     "SymbolError",
+    "CompressedOverlayError",
 ]
 
 
@@ -95,3 +94,8 @@ class PatchError(MioromError, ValueError):
 
 class SymbolError(MioromError):
     """A symbol map entry is malformed or a required symbol is missing."""
+
+
+class CompressedOverlayError(MioromError, ValueError):
+    """Linear address translation cannot be performed on compressed overlay data."""
+

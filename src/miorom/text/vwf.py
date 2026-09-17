@@ -1,16 +1,15 @@
 """
-from miorom.errors import ParseError
 miorom.text.vwf
 ~~~~~~~~~~~~~~~
 Variable Width Font (VWF) metrics engine and glyph width table manager.
 Handles pixel-precise text measurement, proportional line wrapping, and
 in-place width table editing for ROM hacking translations.
 """
+from dataclasses import dataclass
+from typing import List, Optional
 
+from miorom.errors import ParseError
 from miorom.result import MioRomResult
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Union
-
 from miorom.text.charmap import CharMap
 
 
@@ -192,7 +191,7 @@ class VWFMetricsInspector:
 
     def inspect(self, text: str, max_width_px: int, max_lines: int = 3) -> TextboxCollisionReport:
         lines = self.width_table.wrap_text(text, max_width_px)
-        max_w = max((self.measure_text(l) for l in lines), default=0)
+        max_w = max((self.measure_text(line_str) for line_str in lines), default=0)
         overflow = len(lines) > max_lines or max_w > max_width_px
         return TextboxCollisionReport(
             overflowed=overflow,

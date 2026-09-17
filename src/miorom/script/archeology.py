@@ -1,9 +1,9 @@
-from miorom.result import MioRomResult
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List
 
-from miorom.script.vm import ScriptVM, VMOpcodeSpec
+from miorom.result import MioRomResult
+from miorom.script.vm import ScriptVM
 
 
 @dataclass
@@ -60,7 +60,7 @@ class ScriptArcheologist:
 
         # Opcode frequency analysis
         byte_counts = Counter(data)
-        common_bytes = [b for b, count in byte_counts.most_common(20)]
+        _common_bytes = [b for b, count in byte_counts.most_common(20)]
 
         # Instruction pattern heuristics
         opcodes: Dict[int, OpcodeCandidate] = {}
@@ -72,11 +72,11 @@ class ScriptArcheologist:
 
             # Check if followed by null-terminated ASCII string
             str_end = data.find(b"\x00", pos)
-            is_string = False
+            _is_string = False
             if 0 <= str_end - pos <= 256 and str_end != -1:
                 candidate_str = data[pos:str_end]
                 if len(candidate_str) >= 3 and all(0x20 <= c <= 0x7E or c in (0x0A, 0x0D, 0x09) for c in candidate_str):
-                    is_string = True
+                    _is_string = True
                     pos = str_end + 1
                     if op_byte not in opcodes:
                         opcodes[op_byte] = OpcodeCandidate(code=op_byte, count=1, inferred_args=["str"], confidence=0.85)

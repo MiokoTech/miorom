@@ -7,11 +7,11 @@ Provides structured scanning, visual text-grid extraction, dynamic label splicin
 and layout relocation for tilemap-based game menus (SNES, Genesis, GBA, NDS, NES, GB).
 """
 
-from dataclasses import dataclass, field
 import json
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Union
 
-from miorom.errors import ParseError
 from miorom.graphics.tilemap import Tilemap, TilemapEntry
 from miorom.result import MioRomResult
 from miorom.text.charmap import CharMap

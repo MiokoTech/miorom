@@ -8,21 +8,17 @@ ROM caves or expanded slack space and automatically patches split instruction
 pairs (ARM MOV/MOVT, PowerPC LIS/ADDI, MIPS LUI/ADDIU) and PC-relative literal pools.
 """
 
-from miorom.errors import RelocationError
-from miorom.result import MioRomResult
 from dataclasses import dataclass, field
-import struct
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import List, Union
 
 from miorom.asm.instruction_scanner import (
-    PPCInstructionScanner,
-    MIPSInstructionScanner,
     ARMInstructionScanner,
+    MIPSInstructionScanner,
+    PPCInstructionScanner,
     UniversalInstructionScanner,
-    CodePointer,
-    ARMLiteralPointer,
-    ARMMovPairPointer,
 )
+from miorom.errors import RelocationError
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -140,8 +136,8 @@ class CodeLiteralRelocator:
 
         else:
             # Universal fallback
-            all_ptrs = UniversalInstructionScanner.scan_all(
-                data=bytes(rom),
+            all_ptrs = UniversalInstructionScanner.find_code_pointers(
+                code=bytes(rom),
                 base_address=ram_base,
                 endian=endian,
             )

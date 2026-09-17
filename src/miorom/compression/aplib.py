@@ -8,12 +8,11 @@ retro game translations (SNES, GBA, PS1) for its high compression ratio and tiny
 
 from __future__ import annotations
 
-import struct
 from binascii import crc32
 from io import BytesIO
-from typing import List, Optional
 
-from miorom.core.schema import BinaryStruct, RawBytes, U32
+from miorom.core import schema
+from miorom.core.schema import U32, BinaryStruct, RawBytes
 from miorom.errors import CompressionError
 
 
@@ -57,6 +56,10 @@ class _BitWriter:
 
     def put_gamma(self, val: int):
         # Determine bit length of val excluding leading 1
+        # Special case: val=1 has zero non-leading bits; emit single terminator bit
+        if val <= 1:
+            self.put_bit(0)
+            return
         bits = []
         temp = val
         while temp > 1:
@@ -194,7 +197,7 @@ class APLib:
                     self.destination.extend(b)
                     lwm = 0
 
-        except (TypeError, IndexError, struct.error) as exc:
+        except (TypeError, IndexError, schema.error) as exc:
             if self.strict:
                 raise CompressionError(f"aPLib decompression error: {exc}")
 
@@ -248,14 +251,13 @@ class APLib:
         pos = 1
         src_len = len(data)
         lwm = 0
-        r0 = -1
 
         while pos < src_len:
             best_dist = 0
             best_len = 0
 
             # Check backreferences in sliding window (up to 32KB)
-            win_start = max(0, pos - 32000)
+            win_start = max(0, pos - 32767)
             max_check = min(256, src_len - pos)
 
             if max_check >= 2:
@@ -275,7 +277,6 @@ class APLib:
                 writer.put_bit(0)
                 writer.put_byte((best_dist << 1) | (best_len - 2))
                 pos += best_len
-                r0 = best_dist
                 lwm = 1
             # Block match (length >= 3)
             elif best_len >= 3:
@@ -298,7 +299,6 @@ class APLib:
                     writer.put_byte(best_dist & 0xFF)
                     writer.put_gamma(enc_len)
                     pos += best_len
-                    r0 = best_dist
                     lwm = 1
                 else:
                     # Emit literal

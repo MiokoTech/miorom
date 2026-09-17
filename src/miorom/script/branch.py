@@ -7,14 +7,13 @@ bytecode streams without requiring a full disassembler definition.
 Also provides safe in-place offset remapping with signed overflow protection.
 """
 
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 from miorom.core.binary import BinaryReader, BinaryWriter
-
-from miorom.result import MioRomResult
-
 from miorom.errors import PointerOverflowError
+from miorom.result import MioRomResult
 
 
 @dataclass

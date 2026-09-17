@@ -1,41 +1,42 @@
 import importlib.metadata
 import logging
 
-from miorom.compression.lz10 import LZ10
-from miorom.errors import CompressionError
-from miorom.compression.lz11 import LZ11
-from miorom.compression.rle import RLE
-from miorom.compression.yaz0 import Yaz0
-from miorom.compression.yay0 import Yay0
 from miorom.compression.aplib import APLib
-from miorom.compression.refpack import RefPack
-from miorom.compression.lzss import LZSS
-from miorom.compression.huffman import Huffman
-from miorom.compression.kosinski import KosinskiCodec, Kosinski
-from miorom.compression.nemesis import NemesisCodec, Nemesis
-from miorom.compression.enigma import EnigmaCodec, Enigma
-from miorom.compression.mio0 import MIO0Codec, MIO0
-from miorom.compression.saxman import SaxmanCodec, Saxman
-from miorom.compression.comper import ComperCodec, Comper
+from miorom.compression.blz import BLZ, BLZTrailerStruct
+from miorom.compression.carver import CarvedStream, CompressionCarver
+from miorom.compression.comper import Comper, ComperCodec
+from miorom.compression.enigma import Enigma, EnigmaCodec
 from miorom.compression.heuristic import (
-    LZSSConfig,
-    decompress_lzss,
-    compress_lzss,
     HeuristicLZSolver,
+    LZSSConfig,
+    compress_lzss,
+    decompress_lzss,
 )
-from miorom.compression.carver import CompressionCarver, CarvedStream
-from miorom.compression.speculative import SpeculativeStreamCarver, SpeculativeStream
+from miorom.compression.huffman import Huffman
 from miorom.compression.inspector import (
-    CompressionHeaderInspector,
     CompressedSizeComparator,
+    CompressionHeaderInspector,
     CompressionSizeReport,
 )
+from miorom.compression.kosinski import Kosinski, KosinskiCodec
+from miorom.compression.lz10 import LZ10
+from miorom.compression.lz11 import LZ11
+from miorom.compression.lzss import LZSS
+from miorom.compression.mio0 import MIO0, MIO0Codec
+from miorom.compression.nemesis import Nemesis, NemesisCodec
+from miorom.compression.refpack import RefPack
+from miorom.compression.rle import RLE
+from miorom.compression.saxman import Saxman, SaxmanCodec
+from miorom.compression.speculative import SpeculativeStream, SpeculativeStreamCarver
 from miorom.compression.text_compression_hunter import (
-    TextCompressionHunter,
-    HuffmanTreeCandidate,
-    HuffmanNodeEntry,
     DteDictionaryCandidate,
+    HuffmanNodeEntry,
+    HuffmanTreeCandidate,
+    TextCompressionHunter,
 )
+from miorom.compression.yay0 import Yay0
+from miorom.compression.yaz0 import Yaz0
+from miorom.errors import CompressionError
 
 __all__ = [
     "LZ10",
@@ -78,6 +79,8 @@ __all__ = [
     "HuffmanTreeCandidate",
     "HuffmanNodeEntry",
     "DteDictionaryCandidate",
+    "BLZ",
+    "BLZTrailerStruct",
 ]
 
 _compress_registry: dict = {}
@@ -144,6 +147,7 @@ register_codec("enigma", EnigmaCodec)
 register_codec("mio0", MIO0Codec, magic_bytes=b"MIO0")
 register_codec("saxman", SaxmanCodec)
 register_codec("comper", ComperCodec)
+register_codec("blz", BLZ)
 
 def _discover_codec_plugins():
     """Auto-discover third-party compression codecs via entry_points."""

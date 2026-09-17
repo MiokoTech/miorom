@@ -6,10 +6,11 @@ Carves contiguous text sequences (null-terminated and Pascal-length prefixed)
 from arbitrary binary ROM buffers with encoding verification and printable filtering.
 """
 
-from miorom.result import MioRomResult
 from dataclasses import dataclass
-import struct
-from typing import List, Optional, Tuple
+from typing import List, Optional
+
+from miorom.core import schema
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -95,7 +96,7 @@ class StringPoolCarver:
         fmt = "B" if length_size == 1 else (f"{endian}H" if length_size == 2 else f"{endian}I")
 
         while cur + length_size < limit:
-            length = struct.unpack_from(fmt, data, cur)[0]
+            length = schema.unpack_from(fmt, data, cur)[0]
             if min_len <= length <= 256 and cur + length_size + length <= limit:
                 chunk = data[cur + length_size : cur + length_size + length]
                 try:

@@ -9,8 +9,9 @@ Supports multi-section NCLR files (PLTT/TTLP and PCMP/PMCP palette mapping).
 from __future__ import annotations
 
 from typing import Dict, List, Optional
+
 from miorom.core.binary import BinaryReader, BinaryWriter
-from miorom.core.schema import BinaryStruct, RawBytes, U16, U32
+from miorom.core.schema import U16, U32, BinaryStruct, RawBytes
 from miorom.errors import ParseError
 from miorom.graphics.palette import Color, Palette
 
@@ -93,7 +94,7 @@ class NCLRFile:
         return result
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "NCLRFile":
+    def from_bytes(cls, data: bytes) -> NCLRFile:
         if len(data) < 0x20:
             raise ParseError("Data too small for NCLR header.")
 
@@ -145,7 +146,7 @@ class NCLRFile:
         pal: Palette,
         bpp: int = 4,
         pmcp_indices: Optional[List[int]] = None,
-    ) -> "NCLRFile":
+    ) -> NCLRFile:
         return cls(colors=pal.colors, bpp=bpp, pmcp_indices=pmcp_indices)
 
     def to_palette(self, expand_pmcp: bool = True) -> Palette:

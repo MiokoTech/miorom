@@ -1,9 +1,10 @@
-from miorom.result import MioRomResult
 from dataclasses import dataclass
 from typing import List, Optional
 
-
 from miorom.errors import RelocationError
+from miorom.result import MioRomResult
+
+
 @dataclass
 class CodeCave(MioRomResult):
     offset: int

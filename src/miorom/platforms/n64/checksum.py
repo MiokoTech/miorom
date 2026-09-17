@@ -1,7 +1,8 @@
 import hashlib
 from enum import Enum
-from miorom.core.schema import BinaryStruct, U32
 from typing import Optional, Tuple
+
+from miorom.core.schema import U32, BinaryStruct
 
 
 class N64EntryPointStruct(BinaryStruct):

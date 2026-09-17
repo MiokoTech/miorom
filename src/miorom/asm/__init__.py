@@ -1,98 +1,101 @@
-from miorom.asm.branch import (
-    ARMBranch,
-    ThumbBranch,
-    PowerPCBranch,
-    MIPSBranch,
-    calc_arm_branch,
-    resolve_arm_branch,
-    calc_thumb_branch,
-    resolve_thumb_branch,
-    calc_mips_jump,
-    resolve_mips_jump,
-    calc_mips_branch,
-    resolve_mips_branch,
-    calc_6502_branch,
-    resolve_6502_branch,
-)
-from miorom.asm.codecave import CodeCave, CodeCaveFinder
-from miorom.asm.trampoline import TrampolineHook, HookRecord
-from miorom.asm.instruction_scanner import (
-    CodePointer,
-    PPCInstructionScanner,
-    MIPSInstructionScanner,
-    ARMLiteralPointer,
-    ARMMovPairPointer,
-    ARMInstructionScanner,
-    UniversalInstructionScanner,
-)
-from miorom.asm.cheat import (
-    CheatCodeGenerator,
-    CheatEntry,
-    GeckoCode,
-    ActionReplayCode,
-    CWCheatCode,
-    GameSharkCode,
-)
-
-from miorom.asm.disasm import UniversalDisassembler, DisasmInstruction
-from miorom.asm.disambiguator import (
-    CodeDataDisambiguator,
-    ByteClassification,
-    ClassifiedRange,
-    DisambiguationReport,
-)
-from miorom.asm.slicer import DataFlowSlicer, JumpTable
-from miorom.asm.jump_table import JumpTableDetector, JumpTableResolver
 from miorom.asm.ap_bypass import (
     AntiPiracyBypasser,
-    APVectorType,
-    APMatch,
     APBypassReport,
+    APMatch,
+    APVectorType,
 )
-from miorom.asm.xref import (
-    GlobalXrefEngine,
-    XRef,
-    XRefType,
-    CallerGraph,
-    SymbolicXrefEngine,
-    XRefDatabase,
-    XRefRecord,
-    XRefDirection,
+from miorom.asm.branch import (
+    ARMBranch,
+    MIPSBranch,
+    PowerPCBranch,
+    ThumbBranch,
+    calc_6502_branch,
+    calc_arm_branch,
+    calc_mips_branch,
+    calc_mips_jump,
+    calc_thumb_branch,
+    resolve_6502_branch,
+    resolve_arm_branch,
+    resolve_mips_branch,
+    resolve_mips_jump,
+    resolve_thumb_branch,
 )
-from miorom.asm.reloc_calc import BranchRelocator, BranchRelocation
+from miorom.asm.cheat import (
+    ActionReplayCode,
+    CheatCodeGenerator,
+    CheatEntry,
+    CWCheatCode,
+    GameSharkCode,
+    GeckoCode,
+)
+from miorom.asm.codecave import CodeCave, CodeCaveFinder
+from miorom.asm.disambiguator import (
+    ByteClassification,
+    ClassifiedRange,
+    CodeDataDisambiguator,
+    DisambiguationReport,
+)
+from miorom.asm.disasm import DisasmInstruction, UniversalDisassembler
+from miorom.asm.hook_manager import (
+    ArmHookBuilder,
+    CodeCaveManager,
+    HookManager,
+)
+from miorom.asm.hook_manager import (
+    CodeCave as HookCodeCave,
+)
+from miorom.asm.hook_manager import (
+    HookRecord as HookManagerRecord,
+)
+from miorom.asm.instruction_scanner import (
+    ARMInstructionScanner,
+    ARMLiteralPointer,
+    ARMMovPairPointer,
+    CodePointer,
+    MIPSInstructionScanner,
+    PPCInstructionScanner,
+    UniversalInstructionScanner,
+)
+from miorom.asm.jump_table import JumpTableDetector, JumpTableResolver
 from miorom.asm.literal_relocator import (
     CodeLiteralRelocator,
     LiteralRelocationReport,
 )
+from miorom.asm.m68k import M68kDisassembler, M68kInstruction
 from miorom.asm.micro_patcher import (
+    OpcodeTransmuter,
     SplitImmediateCalculator,
     StackAllocPatcher,
-    OpcodeTransmuter,
 )
+from miorom.asm.prologue_scanner import DiscoveredFunction, FunctionPrologueScanner
+from miorom.asm.reloc_calc import BranchRelocation, BranchRelocator
+from miorom.asm.slicer import DataFlowSlicer, JumpTable
 from miorom.asm.snippet import (
-    AsmSnippet,
     ArmSnippet,
-    ThumbSnippet,
+    AsmSnippet,
+    M68kSnippet,
     MipsSnippet,
+    Mos6502Snippet,
     PpcSnippet,
     SM83Snippet,
     SnesSnippet,
-    M68kSnippet,
-    Mos6502Snippet,
+    ThumbSnippet,
 )
-from miorom.asm.prologue_scanner import FunctionPrologueScanner, DiscoveredFunction
-from miorom.asm.hook_manager import (
-    CodeCave as HookCodeCave,
-    HookRecord as HookManagerRecord,
-    CodeCaveManager,
-    ArmHookBuilder,
-    HookManager,
-)
-from miorom.asm.m68k import M68kInstruction, M68kDisassembler
+from miorom.asm.trampoline import HookRecord, TrampolineHook
 from miorom.asm.vwf_hook_engine import (
-    VWFHookEngine,
-    VWFHookConfig,
     VWFDeploymentReport,
+    VWFHookConfig,
+    VWFHookEngine,
+)
+from miorom.asm.xref import (
+    CallerGraph,
+    GlobalXrefEngine,
+    SymbolicXrefEngine,
+    XRef,
+    XRefDatabase,
+    XRefDirection,
+    XRefRecord,
+    XRefType,
 )
 
 __all__ = [

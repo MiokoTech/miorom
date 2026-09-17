@@ -7,14 +7,13 @@ Standard format used for sound effects, character voices, and music samples.
 
 from __future__ import annotations
 
-import math
-import struct
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
+from typing import List, Optional, Tuple
 
 from miorom.audio.adpcm import ADPCMCodec
+from miorom.core import schema
 from miorom.errors import ParseError
-
 
 # Standard Sony SPU-ADPCM Filter coefficients
 SPU_FILTERS: List[Tuple[float, float]] = [
@@ -44,7 +43,7 @@ class VAGHeader:
         if magic not in (b"VAGp", b"VAGi", b"VAG1", b"VAG2"):
             raise ParseError(f"Invalid VAG magic: {magic!r}")
 
-        version, interleave, data_size, sample_rate = struct.unpack(">IIII", data[4:20])
+        version, interleave, data_size, sample_rate = schema.unpack(">IIII", data[4:20])
         # Skip 12 reserved bytes (20:32)
         raw_name = data[32:48].split(b"\x00")[0]
         try:
@@ -64,7 +63,7 @@ class VAGHeader:
     def to_bytes(self) -> bytes:
         buf = bytearray()
         buf.extend(self.magic[:4].ljust(4, b"\x00"))
-        buf.extend(struct.pack(">IIII", self.version, self.interleave, self.data_size, self.sample_rate))
+        buf.extend(schema.pack(">IIII", self.version, self.interleave, self.data_size, self.sample_rate))
         buf.extend(b"\x00" * 12)  # reserved
         name_bytes = self.name.encode("ascii", errors="replace")[:16].ljust(16, b"\x00")
         buf.extend(name_bytes)
@@ -177,10 +176,10 @@ class VAGCodec:
                 test_s2 = test_s1
                 test_s1 = float(s)
 
-            # Find minimum shift (0..12) that accommodates max_res
-            shift = 0
-            while shift < 12 and (max_res > (7 << (12 - shift))):
-                shift += 1
+            # Find optimal shift (0..12) that accommodates max_res
+            shift = 12
+            while shift > 0 and (max_res > (7 << (12 - shift))):
+                shift -= 1
 
             # Quantize
             enc_nibbles: List[int] = []
@@ -308,3 +307,24 @@ class VAGFile:
             name=name,
         )
         return cls(header=header, audio_data=encoded)
+
+    @classmethod
+    def from_wav(
+        cls,
+        wav_data: bytes,
+        name: str = "",
+        loop_point: Optional[int] = None,
+    ) -> VAGFile:
+        """
+        Creates a VAGFile instance by decoding a WAV file container.
+        Automatically mixes stereo down to mono if required by VAG.
+        """
+        from miorom.audio.wav_codec import WavCodec
+
+        sound = WavCodec.decode(wav_data).to_mono()
+        return cls.from_pcm(
+            samples=sound.samples,
+            sample_rate=sound.sample_rate,
+            name=name,
+            loop_point=loop_point,
+        )

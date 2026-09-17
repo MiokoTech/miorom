@@ -8,11 +8,12 @@ Solves the classic ROM hacking problem where string and data addresses are
 split across paired load instructions (e.g. lis/addi in PowerPC, lui/addiu in MIPS).
 """
 
-from miorom.errors import UnsupportedFormatError
-from miorom.result import MioRomResult
-import struct
 from dataclasses import dataclass
 from typing import Any, List, Optional, Tuple, Union
+
+from miorom.core import schema
+from miorom.errors import UnsupportedFormatError
+from miorom.result import MioRomResult
 
 
 @dataclass
@@ -46,9 +47,9 @@ class CodePointer(MioRomResult):
 
         # Patch lis / lui (upper 16-bit immediate)
         fmt = f"{endian}H"
-        struct.pack_into(fmt, buffer, self.lis_offset + 2, hi)
+        schema.pack_into(fmt, buffer, self.lis_offset + 2, hi)
         # Patch addi / addiu / ori (lower 16-bit immediate)
-        struct.pack_into(fmt, buffer, self.addi_offset + 2, lo)
+        schema.pack_into(fmt, buffer, self.addi_offset + 2, lo)
 
 
 class PPCInstructionScanner:
@@ -72,7 +73,7 @@ class PPCInstructionScanner:
         fmt = f"{endian}I"
 
         for i in range(0, n, 4):
-            insn1 = struct.unpack_from(fmt, code, i)[0]
+            insn1 = schema.unpack_from(fmt, code, i)[0]
             op1 = insn1 >> 26
             ra1 = (insn1 >> 16) & 0x1F
 
@@ -87,7 +88,7 @@ class PPCInstructionScanner:
                     if off2 + 4 > len(code):
                         break
 
-                    insn2 = struct.unpack_from(fmt, code, off2)[0]
+                    insn2 = schema.unpack_from(fmt, code, off2)[0]
                     op2 = insn2 >> 26
                     rd2 = (insn2 >> 21) & 0x1F
                     ra2 = (insn2 >> 16) & 0x1F
@@ -149,7 +150,7 @@ class MIPSInstructionScanner:
         fmt = f"{endian}I"
 
         for i in range(0, n, 4):
-            insn1 = struct.unpack_from(fmt, code, i)[0]
+            insn1 = schema.unpack_from(fmt, code, i)[0]
             op1 = insn1 >> 26
             rs1 = (insn1 >> 21) & 0x1F
 
@@ -163,7 +164,7 @@ class MIPSInstructionScanner:
                     if off2 + 4 > len(code):
                         break
 
-                    insn2 = struct.unpack_from(fmt, code, off2)[0]
+                    insn2 = schema.unpack_from(fmt, code, off2)[0]
                     op2 = insn2 >> 26
                     rs2 = (insn2 >> 21) & 0x1F
                     rt2 = (insn2 >> 16) & 0x1F
@@ -222,7 +223,7 @@ class ARMLiteralPointer(MioRomResult):
     def patch(self, buffer: bytearray, new_target: int, endian: str = "<") -> None:
         """Patch the literal pool entry in the buffer in-place."""
         fmt = f"{endian}I"
-        struct.pack_into(fmt, buffer, self.pool_offset, new_target)
+        schema.pack_into(fmt, buffer, self.pool_offset, new_target)
         self.target_address = new_target
 
 
@@ -247,18 +248,18 @@ class ARMMovPairPointer(MioRomResult):
         fmt = f"{endian}I"
 
         # movw: imm4 at [19:16], imm12 at [11:0]
-        movw_val = struct.unpack_from(fmt, buffer, self.movw_offset)[0]
+        movw_val = schema.unpack_from(fmt, buffer, self.movw_offset)[0]
         imm4_lo = (lo >> 12) & 0xF
         imm12_lo = lo & 0xFFF
         movw_val = (movw_val & 0xFFF0F000) | (imm4_lo << 16) | imm12_lo
-        struct.pack_into(fmt, buffer, self.movw_offset, movw_val)
+        schema.pack_into(fmt, buffer, self.movw_offset, movw_val)
 
         # movt: imm4 at [19:16], imm12 at [11:0]
-        movt_val = struct.unpack_from(fmt, buffer, self.movt_offset)[0]
+        movt_val = schema.unpack_from(fmt, buffer, self.movt_offset)[0]
         imm4_hi = (hi >> 12) & 0xF
         imm12_hi = hi & 0xFFF
         movt_val = (movt_val & 0xFFF0F000) | (imm4_hi << 16) | imm12_hi
-        struct.pack_into(fmt, buffer, self.movt_offset, movt_val)
+        schema.pack_into(fmt, buffer, self.movt_offset, movt_val)
 
         self.target_address = new_target
 
@@ -293,7 +294,7 @@ class ARMInstructionScanner:
         if mode.lower() == "thumb":
             fmt16 = f"{endian}H"
             for i in range(0, code_len - 1, 2):
-                insn = struct.unpack_from(fmt16, code, i)[0]
+                insn = schema.unpack_from(fmt16, code, i)[0]
                 # Thumb LDR Rd, [PC, #imm8]
                 if (insn & 0xF800) == 0x4800:
                     rd = (insn >> 8) & 0x7
@@ -304,7 +305,7 @@ class ARMInstructionScanner:
                     pool_addr = effective_pc + (imm8 * 4)
                     pool_off = pool_addr - base_address
                     if 0 <= pool_off <= code_len - 4:
-                        target = struct.unpack_from(fmt32, code, pool_off)[0]
+                        target = schema.unpack_from(fmt32, code, pool_off)[0]
                         if min_target <= target <= max_target:
                             results.append(ARMLiteralPointer(
                                 insn_offset=i,
@@ -318,7 +319,7 @@ class ARMInstructionScanner:
         else:
             # ARM 32-bit mode
             for i in range(0, code_len - 3, 4):
-                insn = struct.unpack_from(fmt32, code, i)[0]
+                insn = schema.unpack_from(fmt32, code, i)[0]
                 # ARM LDR Rd, [PC, #+/-imm12]:
                 # bits [27:25] == 010 (immediate data transfer)
                 # bit 22 == 0 (word transfer)
@@ -326,7 +327,6 @@ class ARMInstructionScanner:
                 # bits [19:16] == 1111 (Rn == PC)
                 # Mask: 0x0E5F0000, value: 0x041F0000
                 if (insn & 0x0E5F0000) == 0x041F0000:
-                    p = (insn >> 24) & 1
                     u = (insn >> 23) & 1
                     rd = (insn >> 12) & 0xF
                     imm12 = insn & 0xFFF
@@ -336,7 +336,7 @@ class ARMInstructionScanner:
                     pool_addr = (effective_pc + imm12) if u else (effective_pc - imm12)
                     pool_off = pool_addr - base_address
                     if 0 <= pool_off <= code_len - 4:
-                        target = struct.unpack_from(fmt32, code, pool_off)[0]
+                        target = schema.unpack_from(fmt32, code, pool_off)[0]
                         if min_target <= target <= max_target:
                             results.append(ARMLiteralPointer(
                                 insn_offset=i,
@@ -368,7 +368,7 @@ class ARMInstructionScanner:
         code_len = len(code)
 
         for i in range(0, code_len - 3, 4):
-            insn1 = struct.unpack_from(fmt, code, i)[0]
+            insn1 = schema.unpack_from(fmt, code, i)[0]
             # movw Rd, #imm16
             if (insn1 & 0x0FF00000) == 0x03000000:
                 rd1 = (insn1 >> 12) & 0xF
@@ -380,7 +380,7 @@ class ARMInstructionScanner:
                     off2 = i + (j * 4)
                     if off2 + 4 > code_len:
                         break
-                    insn2 = struct.unpack_from(fmt, code, off2)[0]
+                    insn2 = schema.unpack_from(fmt, code, off2)[0]
                     # movt Rd, #imm16
                     if (insn2 & 0x0FF00000) == 0x03400000:
                         rd2 = (insn2 >> 12) & 0xF

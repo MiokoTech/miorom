@@ -18,9 +18,9 @@ Format Specification:
 
 from __future__ import annotations
 
-import struct
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
+from miorom.core import schema
 from miorom.errors import CompressionError
 
 
@@ -46,14 +46,14 @@ class SaxmanCodec:
         if with_size is True:
             has_size_header = True
         elif with_size is None and total_len >= 2:
-            declared_size = struct.unpack_from("<H", data, 0)[0]
+            declared_size = schema.unpack_from("<H", data, 0)[0]
             if declared_size == total_len - 2:
                 has_size_header = True
 
         if has_size_header:
             if total_len < 2:
                 raise CompressionError("Data too short for Saxman 2-byte size header.")
-            declared_size = struct.unpack_from("<H", data, 0)[0]
+            declared_size = schema.unpack_from("<H", data, 0)[0]
             pos = 2
             end_pos = min(total_len, 2 + declared_size)
         else:
@@ -114,7 +114,7 @@ class SaxmanCodec:
         Compresses raw binary data using the Saxman algorithm.
         """
         if not data:
-            return struct.pack("<H", 0) if with_size else b""
+            return schema.pack("<H", 0) if with_size else b""
 
         src_len = len(data)
         out = bytearray()
@@ -125,7 +125,6 @@ class SaxmanCodec:
         pos = 0
         while pos < src_len:
             # Search for best match in sliding window (up to 4096 bytes back)
-            best_dist = 0
             best_len = 0
             best_offset = 0
 
@@ -183,7 +182,7 @@ class SaxmanCodec:
             out.extend(payload_chunk)
 
         if with_size:
-            return struct.pack("<H", len(out)) + bytes(out)
+            return schema.pack("<H", len(out)) + bytes(out)
         return bytes(out)
 
 

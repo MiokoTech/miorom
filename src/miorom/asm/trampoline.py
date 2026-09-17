@@ -1,12 +1,13 @@
-import struct
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union
-from miorom.result import MioRomResult
-from miorom.asm.branch import ARMBranch, ThumbBranch, PowerPCBranch, MIPSBranch
+
+from miorom.asm.branch import ARMBranch, MIPSBranch, PowerPCBranch, ThumbBranch
 from miorom.asm.codecave import CodeCaveFinder
-
-
+from miorom.core import schema
 from miorom.errors import ParseError, RelocationError, UnsupportedFormatError
+from miorom.result import MioRomResult
+
+
 @dataclass
 class HookRecord(MioRomResult):
     arch: str
@@ -56,6 +57,10 @@ class TrampolineHook:
         hook_bytes = ARMBranch.encode_b(source_pc=hook_ram_addr, target_addr=cave_ram_addr)
 
         cave_bytes = bytearray(custom_payload_bytes)
+        # NOTE: original_instr_bytes are copied verbatim. If they contain PC-relative
+        # instructions (LDR PC, ADR, B, BL), the relocated instruction will be incorrect.
+        # Callers must ensure original_instr_bytes do not contain PC-relative ops,
+        # or manually rebase them before passing.
         cave_bytes.extend(original_instr_bytes)
 
         cur_cave_pc = cave_ram_addr + len(cave_bytes)
@@ -82,6 +87,10 @@ class TrampolineHook:
         hook_bytes = ThumbBranch.encode_b(source_pc=hook_ram_addr, target_addr=cave_ram_addr)
 
         cave_bytes = bytearray(custom_payload_bytes)
+        # NOTE: original_instr_bytes are copied verbatim. If they contain PC-relative
+        # instructions (LDR PC, ADR, B, BL), the relocated instruction will be incorrect.
+        # Callers must ensure original_instr_bytes do not contain PC-relative ops,
+        # or manually rebase them before passing.
         cave_bytes.extend(original_instr_bytes)
 
         cur_cave_pc = cave_ram_addr + len(cave_bytes)
@@ -113,6 +122,10 @@ class TrampolineHook:
         )
 
         cave_bytes = bytearray(custom_payload_bytes)
+        # NOTE: original_instr_bytes are copied verbatim. If they contain PC-relative
+        # instructions (LDR PC, ADR, B, BL), the relocated instruction will be incorrect.
+        # Callers must ensure original_instr_bytes do not contain PC-relative ops,
+        # or manually rebase them before passing.
         cave_bytes.extend(original_instr_bytes)
 
         cur_cave_pc = cave_ram_addr + len(cave_bytes)
@@ -177,7 +190,12 @@ class TrampolineHook:
         if len(original_instr_bytes) < 3:
             raise RelocationError("MOS 6502 hook site must be at least 3 bytes for JMP instruction.")
 
-        hook_bytes = b"\x4C" + struct.pack("<H", cave_ram_addr & 0xFFFF)
+        if cave_ram_addr > 0xFFFF:
+            raise RelocationError(
+                f"6502 cave address 0x{cave_ram_addr:X} exceeds 16-bit 6502 address space (max 0xFFFF)."
+            )
+
+        hook_bytes = b"\x4C" + schema.pack("<H", cave_ram_addr & 0xFFFF)
         if len(original_instr_bytes) > 3:
             hook_bytes += b"\xEA" * (len(original_instr_bytes) - 3)
 
@@ -186,7 +204,7 @@ class TrampolineHook:
 
         return_target = (hook_ram_addr + len(original_instr_bytes)) & 0xFFFF
         cave_bytes.append(0x4C)
-        cave_bytes.extend(struct.pack("<H", return_target))
+        cave_bytes.extend(schema.pack("<H", return_target))
 
         return hook_bytes, bytes(cave_bytes)
 
@@ -210,7 +228,7 @@ class TrampolineHook:
         mode_norm = mode.lower()
         opcode = 0x22 if mode_norm == "jsl" else 0x5C
 
-        target_24 = struct.pack("<I", cave_ram_addr & 0xFFFFFF)[:3]
+        target_24 = schema.pack("<I", cave_ram_addr & 0xFFFFFF)[:3]
         hook_bytes = bytes([opcode]) + target_24
         if len(original_instr_bytes) > 4:
             hook_bytes += b"\xEA" * (len(original_instr_bytes) - 4)
@@ -223,7 +241,7 @@ class TrampolineHook:
         else:
             return_target = (hook_ram_addr + len(original_instr_bytes)) & 0xFFFFFF
             cave_bytes.append(0x5C)  # JML
-            cave_bytes.extend(struct.pack("<I", return_target)[:3])
+            cave_bytes.extend(schema.pack("<I", return_target)[:3])
 
         return hook_bytes, bytes(cave_bytes)
 
@@ -282,13 +300,13 @@ class TrampolineHook:
         buf = bytearray(data)
         arch_l = arch.lower()
         if "mips" in arch_l or arch_l in ("psx", "n64", "psp"):
-            min_hook_size = 8
+            _min_hook_size = 8
         elif arch_l in ("6502", "nes"):
-            min_hook_size = 3
+            _min_hook_size = 3
         elif arch_l in ("thumb", "arm_thumb", "gba_thumb"):
-            min_hook_size = 2
+            _min_hook_size = 2
         else:
-            min_hook_size = 4
+            _min_hook_size = 4
 
         # Estimate required cave size
         est_cave_size = len(custom_payload_bytes) + len(original_instr_bytes) + 8

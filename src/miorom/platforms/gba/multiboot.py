@@ -9,13 +9,12 @@ or GameCube-GBA Joybus cable to slave consoles without a cartridge inserted.
 
 from __future__ import annotations
 
-import struct
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
+from miorom.core import schema
 from miorom.errors import ParseError
 from miorom.platforms.gba.rom import GBARom
 from miorom.result import MioRomResult
-
 
 MULTIBOOT_HEADER_SIZE = 0xE0
 EWRAM_BASE = 0x02000000
@@ -52,7 +51,7 @@ class GBAMultiboot(MioRomResult):
         buf = bytearray(MULTIBOOT_HEADER_SIZE + len(code_bytes))
 
         # Branch to entrypoint 0x020000E0 (B 0xE0)
-        struct.pack_into("<I", buf, 0, 0xEA000036)
+        schema.pack_into("<I", buf, 0, 0xEA000036)
 
         # Insert Nintendo logo
         logo = GBARom.NINTENDO_LOGO

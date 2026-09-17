@@ -1,7 +1,7 @@
+from dataclasses import dataclass
+from typing import Any, List, Optional, Tuple
+
 from miorom.result import MioRomResult
-import re
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
 
 try:
     from PIL import Image, ImageDraw
@@ -80,7 +80,8 @@ class AutoPaginator:
             measure_func = font_or_measurer.measure_string
         else:
             # Default fallback: 8 pixels per monospace character
-            measure_func = lambda s: len(s) * 8
+            def measure_func(s: str) -> int:
+                return len(s) * 8
 
         # Normalize line breaks and explicit page break tags
         # Replace <PAGE> with special marker
@@ -125,7 +126,7 @@ class AutoPaginator:
                 if not page_slice and pages:
                     continue
 
-                max_w = max((measure_func(l) for l in page_slice), default=0)
+                max_w = max((measure_func(line_str) for line_str in page_slice), default=0)
                 overflow = max_w > usable_width or len(page_slice) > cfg.max_lines_per_page
 
                 pages.append(

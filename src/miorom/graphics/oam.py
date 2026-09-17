@@ -6,10 +6,11 @@ Parses, manipulates, and serializes low-level sprite attributes across NES, Game
 SNES (Table 1 + Hi-OAM Table 2), Sega Genesis (Sprite Attribute Table), and GBA.
 """
 
-import struct
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Tuple
 
+from miorom.core import schema
 from miorom.result import MioRomResult
 
 
@@ -44,7 +45,7 @@ class HardwareOamCodec:
         count = len(data) // 4
         for i in range(count):
             offset = i * 4
-            y, tile, attr, x = struct.unpack_from("<BBBB", data, offset)
+            y, tile, attr, x = schema.unpack_from("<BBBB", data, offset)
             palette = attr & 0x03
             priority = (attr >> 5) & 0x01
             flip_h = bool((attr >> 6) & 0x01)
@@ -74,7 +75,7 @@ class HardwareOamCodec:
                 attr |= 1 << 6
             if s.flip_v:
                 attr |= 1 << 7
-            out.extend(struct.pack("<BBBB", s.y & 0xFF, s.tile_id & 0xFF, attr, s.x & 0xFF))
+            out.extend(schema.pack("<BBBB", s.y & 0xFF, s.tile_id & 0xFF, attr, s.x & 0xFF))
         return bytes(out)
 
     @classmethod
@@ -84,7 +85,7 @@ class HardwareOamCodec:
         count = len(data) // 4
         for i in range(count):
             offset = i * 4
-            raw_y, raw_x, tile, flags = struct.unpack_from("<BBBB", data, offset)
+            raw_y, raw_x, tile, flags = schema.unpack_from("<BBBB", data, offset)
             x = raw_x - 8
             y = raw_y - 16
             cgb_pal = flags & 0x07
@@ -124,7 +125,7 @@ class HardwareOamCodec:
                 flags |= 1 << 6
             if s.priority:
                 flags |= 1 << 7
-            out.extend(struct.pack("<BBBB", raw_y, raw_x, s.tile_id & 0xFF, flags))
+            out.extend(schema.pack("<BBBB", raw_y, raw_x, s.tile_id & 0xFF, flags))
         return bytes(out)
 
     @classmethod
@@ -138,7 +139,7 @@ class HardwareOamCodec:
 
         for i in range(count):
             t1_off = i * 4
-            x_low, y, tile_low, attr = struct.unpack_from("<BBBB", table1, t1_off)
+            x_low, y, tile_low, attr = schema.unpack_from("<BBBB", table1, t1_off)
 
             tile_bit8 = attr & 0x01
             palette = (attr >> 1) & 0x07
@@ -197,7 +198,7 @@ class HardwareOamCodec:
             if s.flip_v:
                 attr |= 1 << 7
 
-            table1.extend(struct.pack("<BBBB", x_low, s.y & 0xFF, tile_low, attr))
+            table1.extend(schema.pack("<BBBB", x_low, s.y & 0xFF, tile_low, attr))
 
             t2_byte_idx = i // 4
             t2_bit_shift = (i % 4) * 2
@@ -213,7 +214,7 @@ class HardwareOamCodec:
         count = len(data) // 8
         for i in range(count):
             offset = i * 8
-            y_raw, dim, link, attr, x_raw = struct.unpack_from(">HBBHH", data, offset)
+            y_raw, dim, link, attr, x_raw = schema.unpack_from(">HBBHH", data, offset)
             y = (y_raw & 0x03FF) - 128
             x = (x_raw & 0x03FF) - 128
 
@@ -263,7 +264,7 @@ class HardwareOamCodec:
             if s.priority:
                 attr |= 1 << 15
 
-            out.extend(struct.pack(">HBBHH", y_raw, dim, s.link & 0xFF, attr, x_raw))
+            out.extend(schema.pack(">HBBHH", y_raw, dim, s.link & 0xFF, attr, x_raw))
         return bytes(out)
 
     @classmethod
@@ -273,7 +274,7 @@ class HardwareOamCodec:
         count = len(data) // 8
         for i in range(count):
             offset = i * 8
-            attr0, attr1, attr2, _ = struct.unpack_from("<HHHH", data, offset)
+            attr0, attr1, attr2, _ = schema.unpack_from("<HHHH", data, offset)
             y = attr0 & 0xFF
             shape = (attr0 >> 14) & 0x03
 
@@ -323,5 +324,5 @@ class HardwareOamCodec:
             attr2 |= (s.priority & 0x03) << 10
             attr2 |= (s.palette & 0x0F) << 12
 
-            out.extend(struct.pack("<HHHH", attr0, attr1, attr2, 0))
+            out.extend(schema.pack("<HHHH", attr0, attr1, attr2, 0))
         return bytes(out)
